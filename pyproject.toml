@@ -1,0 +1,19 @@
+[project]
+name = "orcaset"
+version = "0.1.0"
+description = "Financial models in Python"
+readme = "README.md"
+license = "SSPL-1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "python-dateutil>=2.9.0.post0",
+    "types-python-dateutil>=2.9.0.20260508",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.14,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
