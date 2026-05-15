@@ -3,37 +3,86 @@
 
 from __future__ import annotations
 
+from collections import namedtuple
 from datetime import date
+from typing import Generator
 
 from dateutil.relativedelta import relativedelta
 
-type Period = tuple[date, date]
+
+class InvalidPeriodError(Exception):
+    """Error raised when trying to create a `Period` with `start` on or after `end`."""
+
+    pass
 
 
-def validate_period(period: Period) -> None:
-    start, end = period
-    if start >= end:
-        raise ValueError(f"Period start must be before end: {period!r}")
+_Period = namedtuple("_Period", ["start", "end"])
 
 
-def add_months_month_end(dt: date, months: int) -> date:
-    """Advance dates while preserving month-end behavior."""
+class Period(_Period):
+    __slots__ = ()
 
-    return dt + relativedelta(months=months, day=31)
+    def __new__(cls, start: date, end: date):
+        if start >= end:
+            raise InvalidPeriodError(
+                "Invalid Period constructor args: "
+                f"start date ({start.isoformat()}) must be strictly before "
+                f"end date ({end.isoformat()})"
+            )
+        return super().__new__(cls, start, end)
 
+    def __hash__(self) -> int:
+        return hash((self.start, self.end))
 
-def periods_by_months(start: date, end: date, months: int) -> list[Period]:
-    if months <= 0:
-        raise ValueError("months must be positive")
-    if start >= end:
-        return []
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        return self.start == other.start and self.end == other.end
 
-    periods: list[Period] = []
-    cursor = start
-    while cursor < end:
-        next_date = add_months_month_end(cursor, months)
-        if next_date > end:
-            next_date = end
-        periods.append((cursor, next_date))
-        cursor = next_date
-    return periods
+    def __repr__(self) -> str:
+        return f"Period({self.start.isoformat()}, {self.end.isoformat()})"
+
+    def from_end(self, offset: relativedelta) -> Period:
+        """New period with dates `end` and `end + offset`."""
+        a, b = self.end, self.end + offset
+        return Period(min(a, b), max(a, b))
+
+    def from_start(self, offset: relativedelta) -> Period:
+        """New period with dates `start` and `start + offset`."""
+        a, b = self.start, self.start + offset
+        return Period(min(a, b), max(a, b))
+
+    def shift(self, offset: relativedelta) -> Period:
+        """New period by shifting both start and end dates by `offset`."""
+        return Period(self.start + offset, self.end + offset)
+
+    @classmethod
+    def seq(
+        cls, start: date, freq: relativedelta, end: date | None
+    ) -> Generator[Period, None, None]:
+        """
+        Create a generator of periods with duration `freq`. Infinite if `end` is `None`.
+
+        `freq` must monotonically advance the period in chronological order. Preserves month-end dates
+        by multiplying `freq * period_count`.
+        """
+        i = 0
+        end = end or date.max
+        period = Period(start, min(start + freq, end))
+
+        while period.start < end:
+            yield period
+            if period.end == end:
+                break
+            i += 1
+            period = Period(start + (freq * i), min(start + (freq * (i + 1)), end))
+
+    @classmethod
+    def list(cls, start: date, freq: relativedelta, end: date) -> list[Period]:
+        """
+        Create a list of periods with duration `freq` ending at `end`.
+
+        `freq` must monotonically advance the period in chronological order. Preserves month-end dates
+        by multiplying `freq * period_count`.
+        """
+        return list(Period.seq(start, freq, end))
