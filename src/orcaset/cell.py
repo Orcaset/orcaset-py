@@ -3,16 +3,27 @@
 
 import itertools
 from datetime import date
+from typing import TYPE_CHECKING
 
 from .formula import Formula
 from .period import Period
 
+if TYPE_CHECKING:
+    from .context import Context
+
 
 class Cell:
     _ids = itertools.count()
+    fn: Formula
 
     def __init__(self):
         self._id = next(Cell._ids)
+
+    def id(self) -> int:
+        return self._id
+
+    def eval(self, ctx: "Context") -> float | None:
+        return ctx.eval_cell(self)
 
 
 class Span(Cell):
