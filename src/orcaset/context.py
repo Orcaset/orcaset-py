@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from dataclasses import dataclass
 from typing import Iterable, Iterator, cast
 from datetime import date
 
@@ -36,6 +37,33 @@ type CellValue = float | None
 
 class CellConvergenceError(RuntimeError):
     """Raised when recursive cell formulas do not converge."""
+
+
+@dataclass(frozen=True)
+class CellDependencyNode:
+    cell: Cell
+    value: CellValue
+
+
+@dataclass(frozen=True)
+class CellDependencyGraph:
+    root: Cell
+    nodes: dict[int, CellDependencyNode]
+    edges: dict[int, frozenset[int]]
+
+    def to_dot(self) -> str:
+        lines = ["digraph cell_dependencies {"]
+        for cell_id in sorted(self.nodes):
+            node = self.nodes[cell_id]
+            label = f"cell {cell_id}\\nvalue: {_dot_escape(repr(node.value))}"
+            lines.append(f'  cell_{cell_id} [label="{label}"];')
+
+        for source_id in sorted(self.edges):
+            for dependency_id in sorted(self.edges[source_id]):
+                lines.append(f"  cell_{source_id} -> cell_{dependency_id};")
+
+        lines.append("}")
+        return "\n".join(lines)
 
 
 class _ResolvingCell:
@@ -164,6 +192,28 @@ class Context:
             self._solving_cells = previous_solving_cells
             self._solving_cell_ids = previous_solving_cell_ids
 
+    def deps(self, cell: Cell) -> CellDependencyGraph:
+        if not isinstance(self._cell_values.get(cell.id()), _ResolvedCell):
+            self.solve_cells([cell])
+
+        nodes: dict[int, CellDependencyNode] = {}
+        edges: dict[int, frozenset[int]] = {}
+        pending = [cell.id()]
+
+        while pending:
+            cell_id = pending.pop()
+            if cell_id in nodes:
+                continue
+
+            cached_value = self._cell_values[cell_id]
+            nodes[cell_id] = CellDependencyNode(cached_value.cell, cached_value.value)
+
+            dependency_ids = frozenset(self._cell_dependencies.get(cell_id, set()))
+            edges[cell_id] = dependency_ids
+            pending.extend(dependency_ids)
+
+        return CellDependencyGraph(cell, nodes, edges)
+
     def _prime_cell(self, cell: Cell) -> None:
         cell_id = cell.id()
         if cell_id not in self._cell_values:
@@ -188,3 +238,7 @@ def _value_delta(old_value: CellValue, new_value: CellValue) -> float:
     if old_value == new_value:
         return 0.0
     return float("inf")
+
+
+def _dot_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
