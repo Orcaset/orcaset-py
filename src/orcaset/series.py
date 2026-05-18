@@ -4,7 +4,7 @@
 import itertools
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import TYPE_CHECKING, Iterable, final
+from typing import TYPE_CHECKING, Callable, Iterable, cast, final
 
 from .cell import Point, Span
 from .period import Period
@@ -38,6 +38,26 @@ class Series(ABC):
 
 
 class PointSeries(Series):
+    @classmethod
+    def define[S: "PointSeries"](
+        cls: type[S],
+        fn: Callable[[S, date], Formula[float | None]],
+        /,
+    ) -> type[S]:
+        return cast(
+            type[S],
+            type(
+                fn.__name__,
+                (cls,),
+                {
+                    "__module__": fn.__module__,
+                    "__qualname__": fn.__qualname__,
+                    "__doc__": fn.__doc__,
+                    "point": fn,
+                },
+            ),
+        )
+
     def query(self, dt: date) -> Formula[Point | None]:
         point_cache = self.ctx.get_or_create_point_cache(self)
         if dt in point_cache:
@@ -78,6 +98,26 @@ class SpanQueryOp(Op[list[Span | None]]):
 
 
 class SpanSeries(Series):
+    @classmethod
+    def define[S: "SpanSeries"](
+        cls: type[S],
+        fn: Callable[[S], Iterable[Span]],
+        /,
+    ) -> type[S]:
+        return cast(
+            type[S],
+            type(
+                fn.__name__,
+                (cls,),
+                {
+                    "__module__": fn.__module__,
+                    "__qualname__": fn.__qualname__,
+                    "__doc__": fn.__doc__,
+                    "spans": fn,
+                },
+            ),
+        )
+
     def query(self, period: Period) -> Formula[list[Span | None]]:
         return Formula(SpanQueryOp(self, period))
 
