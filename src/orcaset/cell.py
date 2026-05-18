@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 class Cell:
     _ids = itertools.count()
-    fn: Formula
+    fn: Formula[float | None]
 
     def __init__(self):
         self._id = next(Cell._ids)
@@ -27,7 +27,7 @@ class Cell:
 
 
 class Span(Cell):
-    def __init__(self, period: Period, fn: Formula):
+    def __init__(self, period: Period, fn: Formula[float | None]):
         super().__init__()
         self.period = period
         self.fn = fn
@@ -37,7 +37,7 @@ class Span(Cell):
 
 
 class Point(Cell):
-    def __init__(self, dt: date, fn: Formula):
+    def __init__(self, dt: date, fn: Formula[float | None]):
         super().__init__()
         self.dt = dt
         self.fn = fn

@@ -7,8 +7,8 @@ import pytest
 from orcaset import CellConvergenceError, Context, SpanSeries, Period, Span, Formula
 
 
-def eval_spans(ctx: Context, spans: list[Span | None]) -> list[float | None]:
-    return [span.eval(ctx) if span is not None else None for span in spans]
+def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
+    return [span.eval(ctx) for span in spans]
 
 
 def test_span_series_lookback_self_reference():
@@ -26,14 +26,7 @@ def test_span_series_lookback_self_reference():
                     yield Span(
                         period,
                         prior_spans.map(
-                            lambda spans: (
-                                sum(
-                                    span.eval(self.ctx) or 0.0
-                                    for span in spans
-                                    if span is not None
-                                )
-                                + 100.0
-                            )
+                            lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
                     )
 
@@ -41,6 +34,18 @@ def test_span_series_lookback_self_reference():
     revenue = ctx.get(Revenue)
     spans = revenue.query(Period(date(2025, 1, 1), date(2025, 3, 1)))
     assert eval_spans(ctx, spans.eval()) == [100.0, 200.0]
+
+
+def test_span_series_query_before_first_span_returns_empty_list():
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1)):
+                yield Span(period, Formula.pure(100.0))
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+
+    assert revenue.query(Period(date(2024, 1, 1), date(2024, 2, 1))).eval() == []
 
 
 def test_span_series_lookahead_self_reference():
@@ -58,14 +63,7 @@ def test_span_series_lookahead_self_reference():
                     yield Span(
                         period,
                         next_spans.map(
-                            lambda spans: (
-                                sum(
-                                    span.eval(self.ctx) or 0.0
-                                    for span in spans
-                                    if span is not None
-                                )
-                                + 100.0
-                            )
+                            lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
                     )
 
@@ -90,13 +88,7 @@ def test_span_series_same_period_self_reference():
                 yield Span(
                     period,
                     current_period.map(
-                        lambda spans: (
-                            sum(
-                                span.eval(self.ctx) or 0.0 for span in spans if span is not None
-                            )
-                            * 0.5
-                            + 10
-                        )
+                        lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) * 0.5 + 10
                     ),
                 )
 
@@ -109,19 +101,12 @@ def test_span_series_same_period_self_reference():
 def test_span_series_same_period_non_convergence():
     class Revenue(SpanSeries):
         def spans(self) -> Iterable[Span]:
-            for period in Period.list(
-                date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)
-            ):
+            for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)):
                 current_period = self.ctx.get(Revenue).query(period)
                 yield Span(
                     period,
                     current_period.map(
-                        lambda spans: (
-                            sum(
-                                span.eval(self.ctx) or 0.0 for span in spans if span is not None
-                            )
-                            + 1
-                        )
+                        lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 1
                     ),
                 )
 
@@ -130,7 +115,7 @@ def test_span_series_same_period_non_convergence():
     spans = revenue.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()
 
     with pytest.raises(CellConvergenceError):
-        ctx.solve_cells([span for span in spans if span is not None], max_iterations=3)
+        ctx.solve_cells(spans, max_iterations=3)
 
 
 def test_span_series_hidden_dynamic_dependency():
@@ -146,8 +131,8 @@ def test_span_series_hidden_dynamic_dependency():
                         period.from_start(relativedelta(months=-1))
                     )
 
-                    def read_first(spans: list[Span | None]) -> float:
-                        span = next(span for span in spans if span is not None)
+                    def read_first(spans: list[Span]) -> float:
+                        span = next(iter(spans))
                         return span.eval(self.ctx) or 0.0
 
                     yield Span(period, prior_spans.map(lambda spans: read_first(spans) + 50.0))
@@ -157,8 +142,6 @@ def test_span_series_hidden_dynamic_dependency():
     spans = revenue.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
 
     assert eval_spans(ctx, spans) == [100.0, 150.0]
-    assert spans[0] is not None
-    assert spans[1] is not None
     assert spans[0].id() in ctx._cell_dependencies[spans[1].id()]
 
 
@@ -177,22 +160,14 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
                     yield Span(
                         period,
                         prior_spans.map(
-                            lambda spans: (
-                                sum(
-                                    span.eval(self.ctx) or 0.0
-                                    for span in spans
-                                    if span is not None
-                                )
-                                + 100.0
-                            )
+                            lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
                     )
 
     ctx = Context()
     revenue = ctx.get(Revenue)
     spans = revenue.query(Period(date(2025, 1, 1), date(2025, 4, 1))).eval()
-    assert all(span is not None for span in spans)
-    first, second, third = [span for span in spans if span is not None]
+    first, second, third = spans
 
     graph = ctx.deps(third)
 
@@ -220,27 +195,19 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
 def test_context_deps_includes_recursive_self_edge():
     class Revenue(SpanSeries):
         def spans(self) -> Iterable[Span]:
-            for period in Period.list(
-                date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)
-            ):
+            for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)):
                 current_period = self.ctx.get(Revenue).query(period)
                 yield Span(
                     period,
                     current_period.map(
-                        lambda spans: (
-                            sum(
-                                span.eval(self.ctx) or 0.0 for span in spans if span is not None
-                            )
-                            * 0.5
-                            + 10
-                        )
+                        lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) * 0.5 + 10
                     ),
                 )
 
     ctx = Context()
     revenue = ctx.get(Revenue)
     spans = revenue.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()
-    span = next(span for span in spans if span is not None)
+    span = next(iter(spans))
 
     graph = ctx.deps(span)
 

@@ -13,7 +13,7 @@ from .series import Series, SpanSeries, PointSeries
 class _SpanCache:
     __slots__ = ("iterator", "spans", "_cursor_date", "_exhausted")
 
-    def __init__(self, iterator: Iterator[Span], spans: dict[Period, Span | None]) -> None:
+    def __init__(self, iterator: Iterator[Span], spans: dict[Period, Span]) -> None:
         self.iterator = iterator
         self.spans = spans
         # Date of last materialized span, or None if no spans have been materialized yet
@@ -32,9 +32,6 @@ class _SpanCache:
             self._cursor_date = next_span.period.end
 
 
-type CellValue = float | None
-
-
 class CellConvergenceError(RuntimeError):
     """Raised when recursive cell formulas do not converge."""
 
@@ -42,7 +39,7 @@ class CellConvergenceError(RuntimeError):
 @dataclass(frozen=True)
 class CellDependencyNode:
     cell: Cell
-    value: CellValue
+    value: float | None
 
 
 @dataclass(frozen=True)
@@ -69,7 +66,7 @@ class CellDependencyGraph:
 class _ResolvingCell:
     __slots__ = ("cell", "cell_id", "value")
 
-    def __init__(self, cell: Cell, value: CellValue):
+    def __init__(self, cell: Cell, value: float | None):
         self.cell = cell
         self.cell_id = cell.id()
         self.value = value
@@ -78,7 +75,7 @@ class _ResolvingCell:
 class _ResolvedCell:
     __slots__ = ("cell", "cell_id", "value")
 
-    def __init__(self, cell: Cell, value: CellValue):
+    def __init__(self, cell: Cell, value: float | None):
         self.cell = cell
         self.cell_id = cell.id()
         self.value = value
@@ -90,7 +87,7 @@ class Context:
     def __init__(self) -> None:
         self._values: dict[type[Series], Series] = {}
         self._span_cache: dict[int, _SpanCache] = {}
-        self._point_cache: dict[int, dict[date, Point | None]] = {}
+        self._point_cache: dict[int, dict[date, Point]] = {}
         self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
         self._solving_cells: list[Cell] = []
         self._solving_cell_ids: set[int] = set()
@@ -122,13 +119,13 @@ class Context:
         self._span_cache[series._id] = cache
         return cache
 
-    def get_or_create_point_cache(self, series: PointSeries) -> dict[date, Point | None]:
+    def get_or_create_point_cache(self, series: PointSeries) -> dict[date, Point]:
         if series._id in self._point_cache:
             return self._point_cache[series._id]
         self._point_cache[series._id] = {}
         return self._point_cache[series._id]
 
-    def eval_cell(self, cell: Cell) -> CellValue:
+    def eval_cell(self, cell: Cell) -> float | None:
         if self._active_cell is not None:
             self._cell_dependencies.setdefault(self._active_cell.id(), set()).add(cell.id())
 
@@ -150,7 +147,7 @@ class Context:
         *,
         tolerance: float = 1e-9,
         max_iterations: int = 1000,
-    ) -> list[CellValue]:
+    ) -> list[float | None]:
         input_cells = list(cells)
         previous_solving_cells = self._solving_cells
         previous_solving_cell_ids = self._solving_cell_ids
@@ -222,7 +219,7 @@ class Context:
             self._solving_cells.append(cell)
             self._solving_cell_ids.add(cell_id)
 
-    def _eval_cell_formula(self, cell: Cell) -> CellValue:
+    def _eval_cell_formula(self, cell: Cell) -> float | None:
         self._cell_dependencies[cell.id()] = set()
         previous_active_cell = self._active_cell
         self._active_cell = cell
@@ -232,7 +229,7 @@ class Context:
             self._active_cell = previous_active_cell
 
 
-def _value_delta(old_value: CellValue, new_value: CellValue) -> float:
+def _value_delta(old_value: float | None, new_value: float | None) -> float:
     if isinstance(old_value, int | float) and isinstance(new_value, int | float):
         return abs(float(new_value) - float(old_value))
     if old_value == new_value:

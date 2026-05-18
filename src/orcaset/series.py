@@ -58,7 +58,7 @@ class PointSeries(Series):
             ),
         )
 
-    def query(self, dt: date) -> Formula[Point | None]:
+    def query(self, dt: date) -> Formula[Point]:
         point_cache = self.ctx.get_or_create_point_cache(self)
         if dt in point_cache:
             return Formula.pure(point_cache[dt])
@@ -72,12 +72,12 @@ class PointSeries(Series):
         raise NotImplementedError
 
 
-class SpanQueryOp(Op[list[Span | None]]):
+class SpanQueryOp(Op[list[Span]]):
     def __init__(self, series: "SpanSeries", period: Period) -> None:
         self.series = series
         self.period = period
 
-    def eval(self) -> list[Span | None]:
+    def eval(self) -> list[Span]:
         span_cache = self.series.ctx.get_or_create_span_cache(self.series)
 
         # If the period is already materialized, return the span.
@@ -88,9 +88,7 @@ class SpanQueryOp(Op[list[Span | None]]):
         return [
             s
             for s in span_cache.spans.values()
-            if s is not None
-            and s.period.end >= self.period.start
-            and s.period.start <= self.period.end
+            if s.period.end >= self.period.start and s.period.start <= self.period.end
         ]
 
     def __repr__(self) -> str:
@@ -118,7 +116,7 @@ class SpanSeries(Series):
             ),
         )
 
-    def query(self, period: Period) -> Formula[list[Span | None]]:
+    def query(self, period: Period) -> Formula[list[Span]]:
         return Formula(SpanQueryOp(self, period))
 
     @abstractmethod

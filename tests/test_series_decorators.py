@@ -21,8 +21,8 @@ def test_point_series_define_creates_queryable_series():
     assert Price.__doc__ == "Daily price."
     assert issubclass(Price, PointSeries)
     assert isinstance(price, PointSeries)
-    assert point is not None
     assert point.eval(ctx) == 42.0
+    assert price.query(date(2026, 1, 2)).eval().eval(ctx) is None
 
 
 def test_span_series_define_creates_queryable_series():
@@ -41,4 +41,11 @@ def test_span_series_define_creates_queryable_series():
     assert Revenue.__doc__ == "Monthly revenue."
     assert issubclass(Revenue, SpanSeries)
     assert isinstance(revenue, SpanSeries)
-    assert [span.eval(ctx) for span in spans if span is not None] == [100.0, 100.0]
+    assert [span.eval(ctx) for span in spans] == [100.0, 100.0]
+
+
+def test_span_can_evaluate_to_none():
+    ctx = Context()
+    span = Span(Period(date(2026, 1, 1), date(2026, 2, 1)), Formula.pure(None))
+
+    assert span.eval(ctx) is None
