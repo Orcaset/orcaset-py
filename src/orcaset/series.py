@@ -435,12 +435,23 @@ def _div_values(values: Sequence[float | None]) -> float | None:
     return None if resolved is None else resolved[0] / resolved[1]
 
 
-def _extend_values(values: Sequence[float | None]) -> float | None:
-    base, extension = values
-    return extension if extension is not None else base
-
-
 class SpanSeries(Series):
+    @classmethod
+    def from_list(
+        cls,
+        values: Iterable[tuple[tuple[date, date], float | None]],
+        *,
+        split: SpanSplit = no_split,
+        name: str = "ListSpanSeries",
+    ) -> type["SpanSeries"]:
+        records = tuple(values)
+
+        def spans(self: SpanSeries) -> Iterable[Span]:
+            for (start, end), value in records:
+                yield Span(Period(start, end), Formula.pure(value), split)
+
+        return type(name, (cls,), {"spans": spans})
+
     @classmethod
     def define[S: "SpanSeries"](
         cls: type[S],

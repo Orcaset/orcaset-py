@@ -24,6 +24,41 @@ def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
     return [span.eval(ctx) for span in spans]
 
 
+def test_span_series_from_list_creates_queryable_series():
+    Revenue = SpanSeries.from_list(
+        [
+            ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
+            ((date(2025, 2, 1), date(2025, 3, 1)), None),
+        ],
+        name="Revenue",
+    )
+
+    ctx = Context()
+    spans = ctx.get(Revenue).query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
+
+    assert [span.period for span in spans] == [
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+        Period(date(2025, 2, 1), date(2025, 3, 1)),
+    ]
+    assert eval_spans(ctx, spans) == [310.0, None]
+
+
+def test_span_series_from_list_uses_split_function():
+    Revenue = SpanSeries.from_list(
+        [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
+        split=split_daily,
+        name="Revenue",
+    )
+
+    ctx = Context()
+    spans = ctx.get(Revenue).query(Period(date(2025, 1, 11), date(2025, 1, 21))).eval()
+
+    assert [span.period for span in spans] == [
+        Period(date(2025, 1, 11), date(2025, 1, 21)),
+    ]
+    assert eval_spans(ctx, spans) == pytest.approx([100.0])
+
+
 def test_span_aggregation_helpers_fill_none_values():
     class Revenue(SpanSeries):
         def spans(self) -> Iterable[Span]:
