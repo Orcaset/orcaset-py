@@ -3,7 +3,7 @@ from typing import Iterable
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, Formula, Period, PointSeries, Span, SpanSeries
+from orcaset import Context, Formula, Period, PointSeries, Span, SpanSeries, no_split
 
 
 def test_point_series_define_creates_queryable_series():
@@ -30,7 +30,7 @@ def test_span_series_define_creates_queryable_series():
     def Revenue(self: SpanSeries) -> Iterable[Span]:
         """Monthly revenue."""
         for period in Period.list(date(2026, 1, 1), relativedelta(months=1), date(2026, 3, 1)):
-            yield Span(period, Formula.pure(100.0))
+            yield Span(period, Formula.pure(100.0), no_split)
 
     ctx = Context()
     revenue = ctx.get(Revenue)
@@ -46,6 +46,6 @@ def test_span_series_define_creates_queryable_series():
 
 def test_span_can_evaluate_to_none():
     ctx = Context()
-    span = Span(Period(date(2026, 1, 1), date(2026, 2, 1)), Formula.pure(None))
+    span = Span(Period(date(2026, 1, 1), date(2026, 2, 1)), Formula.pure(None), no_split)
 
     assert span.eval(ctx) is None

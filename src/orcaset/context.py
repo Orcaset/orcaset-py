@@ -23,13 +23,21 @@ class _SpanCache:
     def ensure_materialized_through(self, date: date) -> None:
         """Ensure that the cache is materialized through `date`."""
         while not self._exhausted and (self._cursor_date is None or date > self._cursor_date):
-            try:
-                next_span = next(self.iterator)
-            except StopIteration:
-                self._exhausted = True
-                return
-            self.spans[next_span.period] = next_span
-            self._cursor_date = next_span.period.end
+            self.materialize_next()
+
+    def ensure_materialized_after(self, date: date) -> None:
+        """Ensure that at least one materialized span ends after `date`, if possible."""
+        while not self._exhausted and (self._cursor_date is None or date >= self._cursor_date):
+            self.materialize_next()
+
+    def materialize_next(self) -> None:
+        try:
+            next_span = next(self.iterator)
+        except StopIteration:
+            self._exhausted = True
+            return
+        self.spans[next_span.period] = next_span
+        self._cursor_date = next_span.period.end
 
 
 class CellConvergenceError(RuntimeError):

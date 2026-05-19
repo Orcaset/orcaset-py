@@ -4,7 +4,17 @@ from dateutil.relativedelta import relativedelta
 
 import pytest
 
-from orcaset import CellConvergenceError, Context, SpanSeries, Period, Span, Formula
+from orcaset import (
+    CellConvergenceError,
+    Context,
+    Formula,
+    Period,
+    Span,
+    SpanSeries,
+    SpanSplitError,
+    no_split,
+    split_daily,
+)
 
 
 def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
@@ -18,7 +28,7 @@ def test_span_series_lookback_self_reference():
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1))
             ):
                 if i == 0:
-                    yield Span(period, Formula.pure(100.0))
+                    yield Span(period, Formula.pure(100.0), no_split)
                 else:
                     prior_spans = self.ctx.get(Revenue).query(
                         period.from_start(relativedelta(months=-1))
@@ -28,6 +38,7 @@ def test_span_series_lookback_self_reference():
                         prior_spans.map(
                             lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
+                        no_split,
                     )
 
     ctx = Context()
@@ -36,16 +47,105 @@ def test_span_series_lookback_self_reference():
     assert eval_spans(ctx, spans.eval()) == [100.0, 200.0]
 
 
-def test_span_series_query_before_first_span_returns_empty_list():
+def test_span_series_query_before_first_span_returns_zero_padding():
     class Revenue(SpanSeries):
         def spans(self) -> Iterable[Span]:
             for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1)):
-                yield Span(period, Formula.pure(100.0))
+                yield Span(period, Formula.pure(100.0), no_split)
 
     ctx = Context()
     revenue = ctx.get(Revenue)
 
-    assert revenue.query(Period(date(2024, 1, 1), date(2024, 2, 1))).eval() == []
+    spans = revenue.query(Period(date(2024, 1, 1), date(2024, 2, 1))).eval()
+    assert [span.period for span in spans] == [Period(date(2024, 1, 1), date(2024, 2, 1))]
+    assert eval_spans(ctx, spans) == [0.0]
+
+
+def test_span_series_exact_query_returns_original_span_without_splitting():
+    def fail_split(span: Span, dt: date):
+        raise AssertionError("split should not be called")
+
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            period = Period(date(2025, 1, 1), date(2025, 2, 1))
+            yield Span(period, Formula.pure(100.0), fail_split)
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+    span = revenue.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()[0]
+
+    assert span.period == Period(date(2025, 1, 1), date(2025, 2, 1))
+    assert span.eval(ctx) == 100.0
+
+
+def test_span_series_partial_query_returns_clipped_prorated_span():
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            period = Period(date(2025, 1, 1), date(2025, 2, 1))
+            yield Span(period, Formula.pure(310.0), split_daily)
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+    spans = revenue.query(Period(date(2025, 1, 11), date(2025, 1, 21))).eval()
+
+    assert [span.period for span in spans] == [Period(date(2025, 1, 11), date(2025, 1, 21))]
+    assert eval_spans(ctx, spans) == pytest.approx([100.0])
+
+
+def test_span_series_query_pads_gaps_with_zero_value_spans():
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(
+                Period(date(2025, 1, 1), date(2025, 2, 1)),
+                Formula.pure(100.0),
+                no_split,
+            )
+            yield Span(
+                Period(date(2025, 3, 1), date(2025, 4, 1)),
+                Formula.pure(300.0),
+                no_split,
+            )
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+    spans = revenue.query(Period(date(2025, 1, 1), date(2025, 4, 1))).eval()
+
+    assert [span.period for span in spans] == [
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+        Period(date(2025, 2, 1), date(2025, 3, 1)),
+        Period(date(2025, 3, 1), date(2025, 4, 1)),
+    ]
+    assert eval_spans(ctx, spans) == [100.0, 0.0, 300.0]
+
+
+def test_span_series_partial_query_of_unsplittable_span_raises():
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            period = Period(date(2025, 1, 1), date(2025, 2, 1))
+            yield Span(period, Formula.pure(100.0), no_split)
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+
+    with pytest.raises(SpanSplitError):
+        revenue.query(Period(date(2025, 1, 1), date(2025, 1, 15))).eval()
+
+
+def test_clipped_span_depends_on_original_source_span():
+    class Revenue(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            period = Period(date(2025, 1, 1), date(2025, 2, 1))
+            yield Span(period, Formula.pure(310.0), split_daily)
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+    original = revenue.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()[0]
+    clipped = revenue.query(Period(date(2025, 1, 11), date(2025, 1, 21))).eval()[0]
+
+    assert clipped.eval(ctx) == pytest.approx(100.0)
+    graph = ctx.deps(clipped)
+    assert original.id() in graph.nodes
+    assert original.id() != clipped.id()
 
 
 def test_span_series_lookahead_self_reference():
@@ -55,7 +155,7 @@ def test_span_series_lookahead_self_reference():
                 Period.seq(date(2025, 1, 1), relativedelta(months=1), end=None)
             ):
                 if i >= 2:
-                    yield Span(period, Formula.pure(100.0))
+                    yield Span(period, Formula.pure(100.0), no_split)
                 else:
                     next_spans = self.ctx.get(Revenue).query(
                         period.from_end(relativedelta(months=1))
@@ -65,6 +165,7 @@ def test_span_series_lookahead_self_reference():
                         next_spans.map(
                             lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
+                        no_split,
                     )
 
     ctx = Context()
@@ -90,6 +191,7 @@ def test_span_series_same_period_self_reference():
                     current_period.map(
                         lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) * 0.5 + 10
                     ),
+                    no_split,
                 )
 
     ctx = Context()
@@ -108,6 +210,7 @@ def test_span_series_same_period_non_convergence():
                     current_period.map(
                         lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 1
                     ),
+                    no_split,
                 )
 
     ctx = Context()
@@ -125,7 +228,7 @@ def test_span_series_hidden_dynamic_dependency():
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1))
             ):
                 if i == 0:
-                    yield Span(period, Formula.pure(100.0))
+                    yield Span(period, Formula.pure(100.0), no_split)
                 else:
                     prior_spans = self.ctx.get(Revenue).query(
                         period.from_start(relativedelta(months=-1))
@@ -135,7 +238,11 @@ def test_span_series_hidden_dynamic_dependency():
                         span = next(iter(spans))
                         return span.eval(self.ctx) or 0.0
 
-                    yield Span(period, prior_spans.map(lambda spans: read_first(spans) + 50.0))
+                    yield Span(
+                        period,
+                        prior_spans.map(lambda spans: read_first(spans) + 50.0),
+                        no_split,
+                    )
 
     ctx = Context()
     revenue = ctx.get(Revenue)
@@ -152,7 +259,7 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 4, 1))
             ):
                 if i == 0:
-                    yield Span(period, Formula.pure(100.0))
+                    yield Span(period, Formula.pure(100.0), no_split)
                 else:
                     prior_spans = self.ctx.get(Revenue).query(
                         period.from_start(relativedelta(months=-1))
@@ -162,6 +269,7 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
                         prior_spans.map(
                             lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) + 100.0
                         ),
+                        no_split,
                     )
 
     ctx = Context()
@@ -202,6 +310,7 @@ def test_context_deps_includes_recursive_self_edge():
                     current_period.map(
                         lambda spans: sum(span.eval(self.ctx) or 0.0 for span in spans) * 0.5 + 10
                     ),
+                    no_split,
                 )
 
     ctx = Context()
