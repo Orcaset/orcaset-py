@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import date
 from typing import TYPE_CHECKING, cast, final
 
-from .cell import Point, Span, SpanFormulaTransform, no_split
+from .cell import Point, Span, SpanFormulaTransform, SpanSplit, no_split
 from .formula import Formula, Op
 from .period import Period
 
@@ -64,6 +64,38 @@ class PointSeries(Series):
         )
 
     @classmethod
+    def accumulate(
+        cls,
+        *,
+        start: date,
+        value: float | None,
+        changes: type["SpanSeries"],
+        name: str = "AccumulatedPointSeries",
+    ) -> type["PointSeries"]:
+        def point(self: PointSeries, dt: date) -> Formula[float | None]:
+            if dt < start:
+                return Formula.pure(None)
+            if dt == start:
+                return Formula.pure(value)
+
+            spans = self.ctx.get(changes).query(Period(start, dt))
+
+            def add_changes(spans: list[Span]) -> float | None:
+                if value is None:
+                    return None
+
+                total = 0.0
+                for span in spans:
+                    span_value = span.fn.eval()
+                    if span_value is not None:
+                        total += span_value
+                return value + total
+
+            return spans.map(add_changes)
+
+        return type(name, (cls,), {"point": point})
+
+    @classmethod
     def neg(cls, series: type["PointSeries"]) -> type["PointSeries"]:
         return _point_operator(cls, f"Neg{series.__name__}", [series], _neg_values)
 
@@ -89,17 +121,6 @@ class PointSeries(Series):
     def div(cls, left: type["PointSeries"], right: type["PointSeries"]) -> type["PointSeries"]:
         return _point_operator(
             cls, f"Div{left.__name__}{right.__name__}", [left, right], _div_values
-        )
-
-    @classmethod
-    def extend(
-        cls, base: type["PointSeries"], extension: type["PointSeries"]
-    ) -> type["PointSeries"]:
-        return _point_operator(
-            cls,
-            f"Extend{base.__name__}{extension.__name__}",
-            [base, extension],
-            _extend_values,
         )
 
     def query(self, dt: date) -> Formula[Point]:

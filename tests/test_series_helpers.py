@@ -64,9 +64,71 @@ def test_point_series_operator_constructors():
     assert ctx.get(PointSeries.mul([A, B])).query(dt).eval().eval(ctx) == 20.0
     assert ctx.get(PointSeries.div(A, B)).query(dt).eval().eval(ctx) == 5.0
 
-    extended = ctx.get(PointSeries.extend(A, B))
-    assert extended.query(date(2025, 1, 1)).eval().eval(ctx) == 2.0
-    assert extended.query(date(2025, 1, 2)).eval().eval(ctx) == 10.0
+
+def test_point_series_accumulate_sums_span_changes():
+    Changes = SpanSeries.from_list(
+        [
+            ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
+            ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
+        ],
+        split=split_daily,
+        name="Changes",
+    )
+    Balance = PointSeries.accumulate(
+        start=date(2025, 1, 1),
+        value=1000.0,
+        changes=Changes,
+        name="Balance",
+    )
+
+    ctx = Context()
+    balance = ctx.get(Balance)
+
+    assert balance.query(date(2024, 12, 31)).eval().eval(ctx) is None
+    assert balance.query(date(2025, 1, 1)).eval().eval(ctx) == 1000.0
+    assert balance.query(date(2025, 1, 11)).eval().eval(ctx) == pytest.approx(1100.0)
+    assert balance.query(date(2025, 2, 1)).eval().eval(ctx) == pytest.approx(1310.0)
+    assert balance.query(date(2025, 3, 1)).eval().eval(ctx) == pytest.approx(1590.0)
+
+
+def test_point_series_accumulate_treats_none_changes_as_zero():
+    Changes = SpanSeries.from_list(
+        [
+            ((date(2025, 1, 1), date(2025, 2, 1)), None),
+            ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
+        ],
+        name="Changes",
+    )
+    Balance = PointSeries.accumulate(
+        start=date(2025, 1, 1),
+        value=1000.0,
+        changes=Changes,
+        name="Balance",
+    )
+
+    ctx = Context()
+    balance = ctx.get(Balance)
+
+    assert balance.query(date(2025, 3, 1)).eval().eval(ctx) == pytest.approx(1280.0)
+
+
+def test_point_series_accumulate_none_start_value_stays_none():
+    Changes = SpanSeries.from_list(
+        [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
+        name="Changes",
+    )
+    Balance = PointSeries.accumulate(
+        start=date(2025, 1, 1),
+        value=None,
+        changes=Changes,
+        name="Balance",
+    )
+
+    ctx = Context()
+    balance = ctx.get(Balance)
+
+    assert balance.query(date(2025, 1, 1)).eval().eval(ctx) is None
+    assert balance.query(date(2025, 2, 1)).eval().eval(ctx) is None
 
 
 def test_span_series_sum_aligns_by_dates_not_index():
