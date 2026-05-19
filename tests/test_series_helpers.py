@@ -188,7 +188,7 @@ def test_align_spans_requires_series_from_same_context():
         list(align_spans([Context().get(A), Context().get(A)]))
 
 
-def test_span_series_extend_uses_extension_when_present():
+def test_span_series_extend_continues_after_base_end():
     class Base(SpanSeries):
         def spans(self) -> Iterable[Span]:
             yield Span(
@@ -197,21 +197,77 @@ def test_span_series_extend_uses_extension_when_present():
                 split_daily,
             )
 
-    class Extension(SpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 15), date(2025, 2, 15)),
-                Formula.pure(620.0),
-                split_daily,
-            )
+    @SpanSeries.extend(Base)
+    def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
+        assert start == date(2025, 3, 1)
+        yield Span(
+            Period(date(2025, 3, 1), date(2025, 4, 1)),
+            Formula.pure(620.0),
+            no_split,
+        )
 
     ctx = Context()
-    extended = ctx.get(SpanSeries.extend(Base, Extension))
+    extended = ctx.get(Extended)
+    spans = extended.query(Period(date(2025, 1, 1), date(2025, 4, 1))).eval()
+
+    assert [span.period for span in spans] == [
+        Period(date(2025, 1, 1), date(2025, 3, 1)),
+        Period(date(2025, 3, 1), date(2025, 4, 1)),
+    ]
+    assert eval_spans(ctx, spans) == pytest.approx([590.0, 620.0])
+
+
+def test_span_series_extend_passes_none_to_continuation_for_empty_base():
+    class Base(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield from ()
+
+    @SpanSeries.extend(Base)
+    def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
+        assert start is None
+        yield Span(
+            Period(date(2025, 1, 1), date(2025, 2, 1)),
+            Formula.pure(620.0),
+            no_split,
+        )
+
+    ctx = Context()
+    extended = ctx.get(Extended)
+    spans = extended.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()
+
+    assert [span.period for span in spans] == [
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+    ]
+    assert eval_spans(ctx, spans) == pytest.approx([620.0])
+
+
+def test_span_series_extend_continuation_can_query_base_spans_on_self():
+    class Base(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(
+                Period(date(2025, 1, 1), date(2025, 2, 1)),
+                Formula.pure(100.0),
+                no_split,
+            )
+
+    @SpanSeries.extend(Base)
+    def Extended(series: SpanSeries, start: date | None) -> Iterable[Span]:
+        assert start == date(2025, 2, 1)
+        prior = series.query(Period(date(2025, 1, 1), date(2025, 2, 1)))
+        yield Span(
+            Period(date(2025, 2, 1), date(2025, 3, 1)),
+            prior.map(
+                lambda spans: sum(span.eval(series.ctx) or 0.0 for span in spans) + 10.0
+            ),
+            no_split,
+        )
+
+    ctx = Context()
+    extended = ctx.get(Extended)
     spans = extended.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
 
     assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 1, 15)),
-        Period(date(2025, 1, 15), date(2025, 2, 15)),
-        Period(date(2025, 2, 15), date(2025, 3, 1)),
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+        Period(date(2025, 2, 1), date(2025, 3, 1)),
     ]
-    assert eval_spans(ctx, spans) == pytest.approx([140.0, 620.0, 140.0])
+    assert eval_spans(ctx, spans) == pytest.approx([100.0, 110.0])

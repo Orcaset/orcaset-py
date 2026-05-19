@@ -469,13 +469,34 @@ class SpanSeries(Series):
         )
 
     @classmethod
-    def extend(cls, base: type["SpanSeries"], extension: type["SpanSeries"]) -> type["SpanSeries"]:
-        return _span_operator(
-            cls,
-            f"Extend{base.__name__}{extension.__name__}",
-            [base, extension],
-            _extend_values,
-        )
+    def extend(
+        cls,
+        base: type["SpanSeries"],
+    ) -> Callable[[Callable[["SpanSeries", date | None], Iterable[Span]]], type["SpanSeries"]]:
+        def decorator(
+            continuation: Callable[["SpanSeries", date | None], Iterable[Span]],
+        ) -> type["SpanSeries"]:
+            def spans(self: SpanSeries) -> Iterable[Span]:
+                last_end: date | None = None
+
+                for span in self.ctx.get(base).spans():
+                    last_end = span.period.end
+                    yield span
+
+                yield from continuation(self, last_end)
+
+            return type(
+                continuation.__name__,
+                (cls,),
+                {
+                    "__module__": continuation.__module__,
+                    "__qualname__": continuation.__qualname__,
+                    "__doc__": continuation.__doc__,
+                    "spans": spans,
+                },
+            )
+
+        return decorator
 
     def query(self, period: Period) -> Formula[list[Span]]:
         return Formula(SpanQueryOp(self, period))
