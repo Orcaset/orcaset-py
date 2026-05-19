@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from . import point, span
 from .cell import (
     Point,
     Span,
@@ -22,6 +23,8 @@ from .yf import YF
 
 __all__ = [
     "Formula",
+    "point",
+    "span",
     "Span",
     "SpanFormula",
     "SpanFormulaTransform",

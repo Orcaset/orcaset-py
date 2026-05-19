@@ -13,6 +13,8 @@ from orcaset import (
     align_spans,
     avg_spans,
     no_split,
+    point,
+    span,
     split_const,
     split_daily,
     sum_spans,
@@ -25,7 +27,7 @@ def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
 
 
 def test_span_series_from_list_creates_queryable_series():
-    Revenue = SpanSeries.from_list(
+    Revenue = span.from_list(
         [
             ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
             ((date(2025, 2, 1), date(2025, 3, 1)), None),
@@ -44,7 +46,7 @@ def test_span_series_from_list_creates_queryable_series():
 
 
 def test_span_series_from_list_uses_split_function():
-    Revenue = SpanSeries.from_list(
+    Revenue = span.from_list(
         [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
         split=split_daily,
         name="Revenue",
@@ -92,16 +94,28 @@ def test_point_series_operator_constructors():
     ctx = Context()
     dt = date(2025, 1, 1)
 
-    assert ctx.get(PointSeries.neg(A)).query(dt).eval().eval(ctx) == -10.0
-    assert ctx.get(PointSeries.scale(A, 3.0)).query(dt).eval().eval(ctx) == 30.0
-    assert ctx.get(PointSeries.sum([A, B])).query(dt).eval().eval(ctx) == 12.0
-    assert ctx.get(PointSeries.sub(A, B)).query(dt).eval().eval(ctx) == 8.0
-    assert ctx.get(PointSeries.mul([A, B])).query(dt).eval().eval(ctx) == 20.0
-    assert ctx.get(PointSeries.div(A, B)).query(dt).eval().eval(ctx) == 5.0
+    assert ctx.get(point.neg(A)).query(dt).eval().eval(ctx) == -10.0
+    assert ctx.get(point.scale(A, -0.5)).query(dt).eval().eval(ctx) == -5.0
+    assert ctx.get(point.sum([A, B])).query(dt).eval().eval(ctx) == 12.0
+    assert ctx.get(point.sub(A, B)).query(dt).eval().eval(ctx) == 8.0
+    assert ctx.get(point.mul([A, B])).query(dt).eval().eval(ctx) == 20.0
+    assert ctx.get(point.div(A, B)).query(dt).eval().eval(ctx) == 5.0
+
+
+def test_point_series_value_returns_formula_for_point_value():
+    class Price(PointSeries):
+        def point(self, dt: date) -> Formula[float | None]:
+            return Formula.pure(42.0 if dt == date(2025, 1, 1) else None)
+
+    ctx = Context()
+    price = ctx.get(Price)
+
+    assert price.value(date(2025, 1, 1)).eval() == 42.0
+    assert price.value(date(2025, 1, 2)).eval() is None
 
 
 def test_point_series_accumulate_sums_span_changes():
-    Changes = SpanSeries.from_list(
+    Changes = span.from_list(
         [
             ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
             ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
@@ -109,7 +123,7 @@ def test_point_series_accumulate_sums_span_changes():
         split=split_daily,
         name="Changes",
     )
-    Balance = PointSeries.accumulate(
+    Balance = point.accumulate(
         start=date(2025, 1, 1),
         value=1000.0,
         changes=Changes,
@@ -127,14 +141,14 @@ def test_point_series_accumulate_sums_span_changes():
 
 
 def test_point_series_accumulate_treats_none_changes_as_zero():
-    Changes = SpanSeries.from_list(
+    Changes = span.from_list(
         [
             ((date(2025, 1, 1), date(2025, 2, 1)), None),
             ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
         ],
         name="Changes",
     )
-    Balance = PointSeries.accumulate(
+    Balance = point.accumulate(
         start=date(2025, 1, 1),
         value=1000.0,
         changes=Changes,
@@ -148,11 +162,11 @@ def test_point_series_accumulate_treats_none_changes_as_zero():
 
 
 def test_point_series_accumulate_none_start_value_stays_none():
-    Changes = SpanSeries.from_list(
+    Changes = span.from_list(
         [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
         name="Changes",
     )
-    Balance = PointSeries.accumulate(
+    Balance = point.accumulate(
         start=date(2025, 1, 1),
         value=None,
         changes=Changes,
@@ -184,7 +198,7 @@ def test_span_series_sum_aligns_by_dates_not_index():
             )
 
     ctx = Context()
-    summed = ctx.get(SpanSeries.sum([A, B]))
+    summed = ctx.get(span.sum([A, B]))
     spans = summed.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
 
     assert [span.period for span in spans] == [
@@ -219,11 +233,11 @@ def test_span_series_operator_constructors():
     ctx = Context()
     period = Period(date(2025, 1, 1), date(2025, 2, 1))
 
-    assert eval_spans(ctx, ctx.get(SpanSeries.neg(A)).query(period).eval()) == [-10.0]
-    assert eval_spans(ctx, ctx.get(SpanSeries.scale(A, 3.0)).query(period).eval()) == [30.0]
-    assert eval_spans(ctx, ctx.get(SpanSeries.sub(A, B)).query(period).eval()) == [8.0]
-    assert eval_spans(ctx, ctx.get(SpanSeries.mul([A, B])).query(period).eval()) == [20.0]
-    assert eval_spans(ctx, ctx.get(SpanSeries.div(A, B)).query(period).eval()) == [5.0]
+    assert eval_spans(ctx, ctx.get(span.neg(A)).query(period).eval()) == [-10.0]
+    assert eval_spans(ctx, ctx.get(span.scale(A, -0.5)).query(period).eval()) == [-5.0]
+    assert eval_spans(ctx, ctx.get(span.sub(A, B)).query(period).eval()) == [8.0]
+    assert eval_spans(ctx, ctx.get(span.mul([A, B])).query(period).eval()) == [20.0]
+    assert eval_spans(ctx, ctx.get(span.div(A, B)).query(period).eval()) == [5.0]
 
 
 def test_split_const_preserves_source_value_on_both_sides():
@@ -294,7 +308,7 @@ def test_span_series_extend_continues_after_base_end():
                 split_daily,
             )
 
-    @SpanSeries.extend(Base)
+    @span.extend(Base)
     def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
         assert start == date(2025, 3, 1)
         yield Span(
@@ -319,7 +333,7 @@ def test_span_series_extend_passes_none_to_continuation_for_empty_base():
         def spans(self) -> Iterable[Span]:
             yield from ()
 
-    @SpanSeries.extend(Base)
+    @span.extend(Base)
     def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
         assert start is None
         yield Span(
@@ -347,7 +361,7 @@ def test_span_series_extend_continuation_can_query_base_spans_on_self():
                 no_split,
             )
 
-    @SpanSeries.extend(Base)
+    @span.extend(Base)
     def Extended(series: SpanSeries, start: date | None) -> Iterable[Span]:
         assert start == date(2025, 2, 1)
         prior = series.query(Period(date(2025, 1, 1), date(2025, 2, 1)))

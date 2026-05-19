@@ -1,22 +1,18 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-import builtins
 import itertools
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, cast, final
+from typing import TYPE_CHECKING, final
 
-from .cell import Point, Span, SpanFormulaTransform, SpanSplit, no_split
+from .cell import Point, Span, SpanFormulaTransform, no_split
 from .formula import Formula, Op
 from .period import Period
 
 if TYPE_CHECKING:
     from .context import Context
-
-
-type ValueOp = Callable[[Sequence[float | None]], float | None]
 
 
 class Series(ABC):
@@ -43,86 +39,6 @@ class Series(ABC):
 
 
 class PointSeries(Series):
-    @classmethod
-    def define[S: "PointSeries"](
-        cls: type[S],
-        fn: Callable[[S, date], Formula[float | None]],
-        /,
-    ) -> type[S]:
-        return cast(
-            type[S],
-            type(
-                fn.__name__,
-                (cls,),
-                {
-                    "__module__": fn.__module__,
-                    "__qualname__": fn.__qualname__,
-                    "__doc__": fn.__doc__,
-                    "point": fn,
-                },
-            ),
-        )
-
-    @classmethod
-    def accumulate(
-        cls,
-        *,
-        start: date,
-        value: float | None,
-        changes: type["SpanSeries"],
-        name: str = "AccumulatedPointSeries",
-    ) -> type["PointSeries"]:
-        def point(self: PointSeries, dt: date) -> Formula[float | None]:
-            if dt < start:
-                return Formula.pure(None)
-            if dt == start:
-                return Formula.pure(value)
-
-            spans = self.ctx.get(changes).query(Period(start, dt))
-
-            def add_changes(spans: list[Span]) -> float | None:
-                if value is None:
-                    return None
-
-                total = 0.0
-                for span in spans:
-                    span_value = span.fn.eval()
-                    if span_value is not None:
-                        total += span_value
-                return value + total
-
-            return spans.map(add_changes)
-
-        return type(name, (cls,), {"point": point})
-
-    @classmethod
-    def neg(cls, series: type["PointSeries"]) -> type["PointSeries"]:
-        return _point_operator(cls, f"Neg{series.__name__}", [series], _neg_values)
-
-    @classmethod
-    def scale(cls, series: type["PointSeries"], factor: float) -> type["PointSeries"]:
-        return _point_operator(cls, f"Scale{series.__name__}", [series], _scale_values(factor))
-
-    @classmethod
-    def sum(cls, series: Sequence[type["PointSeries"]]) -> type["PointSeries"]:
-        return _point_operator(cls, "SumPointSeries", series, _sum_values)
-
-    @classmethod
-    def sub(cls, left: type["PointSeries"], right: type["PointSeries"]) -> type["PointSeries"]:
-        return _point_operator(
-            cls, f"Sub{left.__name__}{right.__name__}", [left, right], _sub_values
-        )
-
-    @classmethod
-    def mul(cls, series: Sequence[type["PointSeries"]]) -> type["PointSeries"]:
-        return _point_operator(cls, "MulPointSeries", series, _mul_values)
-
-    @classmethod
-    def div(cls, left: type["PointSeries"], right: type["PointSeries"]) -> type["PointSeries"]:
-        return _point_operator(
-            cls, f"Div{left.__name__}{right.__name__}", [left, right], _div_values
-        )
-
     def query(self, dt: date) -> Formula[Point]:
         point_cache = self.ctx.get_or_create_point_cache(self)
         if dt in point_cache:
@@ -131,6 +47,9 @@ class PointSeries(Series):
         point = self.point(dt)
         point_cache[dt] = Point(dt, point)
         return Formula.pure(point_cache[dt])
+
+    def value(self, dt: date) -> Formula[float | None]:
+        return self.query(dt).map(lambda point: point.eval(self.ctx))
 
     @abstractmethod
     def point(self, dt: date) -> Formula[float | None]:
@@ -184,32 +103,6 @@ class _SpanValueOp(Op[float | None]):
 
     def __repr__(self) -> str:
         return f"SpanValueOp(span={self.span!r})"
-
-
-class _PointTupleValueOp(Op[float | None]):
-    def __init__(self, ctx: "Context", points: Sequence[Point], op: ValueOp) -> None:
-        self.ctx = ctx
-        self.points = points
-        self.op = op
-
-    def eval(self) -> float | None:
-        return self.op([point.eval(self.ctx) for point in self.points])
-
-    def __repr__(self) -> str:
-        return f"PointTupleValueOp(points={self.points!r})"
-
-
-class _SpanTupleValueOp(Op[float | None]):
-    def __init__(self, ctx: "Context", spans: Sequence[Span], op: ValueOp) -> None:
-        self.ctx = ctx
-        self.spans = spans
-        self.op = op
-
-    def eval(self) -> float | None:
-        return self.op([span.eval(self.ctx) for span in self.spans])
-
-    def __repr__(self) -> str:
-        return f"SpanTupleValueOp(spans={self.spans!r})"
 
 
 def _bind_span(ctx: "Context", span: Span) -> Span:
@@ -320,216 +213,13 @@ def _next_span_start(caches, dt: date) -> date | None:
     return min(starts) if starts else None
 
 
-def _span_tuple_formula(
-    ctx: "Context", spans: Sequence[Span], op: ValueOp
-) -> Formula[float | None]:
-    return Formula(_SpanTupleValueOp(ctx, spans, op))
-
-
-def _span_tuple_split(
-    ctx: "Context", spans: Sequence[Span], op: ValueOp
-) -> Callable[[Span, date], tuple[SpanFormulaTransform, SpanFormulaTransform]]:
-    def split(span: Span, dt: date) -> tuple[SpanFormulaTransform, SpanFormulaTransform]:
-        source_spans = span._source_spans or spans
-        left_spans: list[Span] = []
-        right_spans: list[Span] = []
-        for source_span in source_spans:
-            left, right = _split_span(ctx, source_span, dt)
-            if left is None or right is None:
-                raise RuntimeError("operator split expected an interior split")
-            left_spans.append(left)
-            right_spans.append(right)
-
-        def left_transform(_: Formula[float | None]) -> Formula[float | None]:
-            return _span_tuple_formula(ctx, left_spans, op)
-
-        def right_transform(_: Formula[float | None]) -> Formula[float | None]:
-            return _span_tuple_formula(ctx, right_spans, op)
-
-        setattr(left_transform, "_source_spans", tuple(left_spans))
-        setattr(right_transform, "_source_spans", tuple(right_spans))
-        return left_transform, right_transform
-
-    return split
-
-
 def _copy_split_metadata(transform: SpanFormulaTransform, span: Span) -> None:
     source_spans = getattr(transform, "_source_spans", None)
     if source_spans is not None:
         span._source_spans = source_spans
 
 
-def _point_operator(
-    base: type[PointSeries],
-    name: str,
-    series_types: Sequence[type[PointSeries]],
-    op: ValueOp,
-) -> type[PointSeries]:
-    def point(self: PointSeries, dt: date) -> Formula[float | None]:
-        points = [self.ctx.get(series_type).query(dt).eval() for series_type in series_types]
-        return Formula(_PointTupleValueOp(self.ctx, points, op))
-
-    return type(name, (base,), {"point": point})
-
-
-def _span_operator(
-    base: type["SpanSeries"],
-    name: str,
-    series_types: Sequence[type["SpanSeries"]],
-    op: ValueOp,
-) -> type["SpanSeries"]:
-    def spans(self: SpanSeries) -> Iterable[Span]:
-        sources = [self.ctx.get(series_type) for series_type in series_types]
-        for aligned in align_spans(sources):
-            period = aligned[0].period
-            yield Span(
-                period,
-                _span_tuple_formula(self.ctx, aligned, op),
-                _span_tuple_split(self.ctx, aligned, op),
-            )
-
-    return type(name, (base,), {"spans": spans})
-
-
-def _none_if_any_none(values: Sequence[float | None]) -> list[float] | None:
-    if any(value is None for value in values):
-        return None
-    return cast(list[float], list(values))
-
-
-def _neg_values(values: Sequence[float | None]) -> float | None:
-    resolved = _none_if_any_none(values)
-    return None if resolved is None else -resolved[0]
-
-
-def _scale_values(factor: float) -> ValueOp:
-    def op(values: Sequence[float | None]) -> float | None:
-        resolved = _none_if_any_none(values)
-        return None if resolved is None else resolved[0] * factor
-
-    return op
-
-
-def _sum_values(values: Sequence[float | None]) -> float | None:
-    resolved = _none_if_any_none(values)
-    return None if resolved is None else builtins.sum(resolved)
-
-
-def _sub_values(values: Sequence[float | None]) -> float | None:
-    resolved = _none_if_any_none(values)
-    return None if resolved is None else resolved[0] - resolved[1]
-
-
-def _mul_values(values: Sequence[float | None]) -> float | None:
-    resolved = _none_if_any_none(values)
-    if resolved is None:
-        return None
-    product = 1.0
-    for value in resolved:
-        product *= value
-    return product
-
-
-def _div_values(values: Sequence[float | None]) -> float | None:
-    resolved = _none_if_any_none(values)
-    return None if resolved is None else resolved[0] / resolved[1]
-
-
 class SpanSeries(Series):
-    @classmethod
-    def from_list(
-        cls,
-        values: Iterable[tuple[tuple[date, date], float | None]],
-        *,
-        split: SpanSplit = no_split,
-        name: str = "ListSpanSeries",
-    ) -> type["SpanSeries"]:
-        records = tuple(values)
-
-        def spans(self: SpanSeries) -> Iterable[Span]:
-            for (start, end), value in records:
-                yield Span(Period(start, end), Formula.pure(value), split)
-
-        return type(name, (cls,), {"spans": spans})
-
-    @classmethod
-    def define[S: "SpanSeries"](
-        cls: type[S],
-        fn: Callable[[S], Iterable[Span]],
-        /,
-    ) -> type[S]:
-        return cast(
-            type[S],
-            type(
-                fn.__name__,
-                (cls,),
-                {
-                    "__module__": fn.__module__,
-                    "__qualname__": fn.__qualname__,
-                    "__doc__": fn.__doc__,
-                    "spans": fn,
-                },
-            ),
-        )
-
-    @classmethod
-    def neg(cls, series: type["SpanSeries"]) -> type["SpanSeries"]:
-        return _span_operator(cls, f"Neg{series.__name__}", [series], _neg_values)
-
-    @classmethod
-    def scale(cls, series: type["SpanSeries"], factor: float) -> type["SpanSeries"]:
-        return _span_operator(cls, f"Scale{series.__name__}", [series], _scale_values(factor))
-
-    @classmethod
-    def sum(cls, series: Sequence[type["SpanSeries"]]) -> type["SpanSeries"]:
-        return _span_operator(cls, "SumSpanSeries", series, _sum_values)
-
-    @classmethod
-    def sub(cls, left: type["SpanSeries"], right: type["SpanSeries"]) -> type["SpanSeries"]:
-        return _span_operator(
-            cls, f"Sub{left.__name__}{right.__name__}", [left, right], _sub_values
-        )
-
-    @classmethod
-    def mul(cls, series: Sequence[type["SpanSeries"]]) -> type["SpanSeries"]:
-        return _span_operator(cls, "MulSpanSeries", series, _mul_values)
-
-    @classmethod
-    def div(cls, left: type["SpanSeries"], right: type["SpanSeries"]) -> type["SpanSeries"]:
-        return _span_operator(
-            cls, f"Div{left.__name__}{right.__name__}", [left, right], _div_values
-        )
-
-    @classmethod
-    def extend(
-        cls,
-        base: type["SpanSeries"],
-    ) -> Callable[[Callable[["SpanSeries", date | None], Iterable[Span]]], type["SpanSeries"]]:
-        def decorator(
-            continuation: Callable[["SpanSeries", date | None], Iterable[Span]],
-        ) -> type["SpanSeries"]:
-            def spans(self: SpanSeries) -> Iterable[Span]:
-                last_end: date | None = None
-
-                for span in self.ctx.get(base).spans():
-                    last_end = span.period.end
-                    yield span
-
-                yield from continuation(self, last_end)
-
-            return type(
-                continuation.__name__,
-                (cls,),
-                {
-                    "__module__": continuation.__module__,
-                    "__qualname__": continuation.__qualname__,
-                    "__doc__": continuation.__doc__,
-                    "spans": spans,
-                },
-            )
-
-        return decorator
-
     def query(self, period: Period) -> Formula[list[Span]]:
         return Formula(SpanQueryOp(self, period))
 

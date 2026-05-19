@@ -3,30 +3,30 @@ from typing import Iterable
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, Formula, Period, PointSeries, Span, SpanSeries, no_split
+from orcaset import Context, Formula, Period, PointSeries, Span, SpanSeries, no_split, point, span
 
 
 def test_point_series_define_creates_queryable_series():
-    @PointSeries.define
+    @point.define
     def Price(self: PointSeries, dt: date) -> Formula[float | None]:
         """Daily price."""
         return Formula.pure(42.0 if dt == date(2026, 1, 1) else None)
 
     ctx = Context()
     price = ctx.get(Price)
-    point = price.query(date(2026, 1, 1)).eval()
+    cell = price.query(date(2026, 1, 1)).eval()
 
     assert Price.__name__ == "Price"
     assert Price.__qualname__.endswith("Price")
     assert Price.__doc__ == "Daily price."
     assert issubclass(Price, PointSeries)
     assert isinstance(price, PointSeries)
-    assert point.eval(ctx) == 42.0
+    assert cell.eval(ctx) == 42.0
     assert price.query(date(2026, 1, 2)).eval().eval(ctx) is None
 
 
 def test_span_series_define_creates_queryable_series():
-    @SpanSeries.define
+    @span.define
     def Revenue(self: SpanSeries) -> Iterable[Span]:
         """Monthly revenue."""
         for period in Period.list(date(2026, 1, 1), relativedelta(months=1), date(2026, 3, 1)):

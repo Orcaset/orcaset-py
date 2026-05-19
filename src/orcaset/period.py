@@ -58,7 +58,7 @@ class Period(_Period):
 
     @classmethod
     def seq(
-        cls, start: date, freq: relativedelta, end: date | None
+        cls, start: date, freq: relativedelta, end: date | None = None
     ) -> Generator[Period, None, None]:
         """
         Create a generator of periods with duration `freq`. Infinite if `end` is `None`.

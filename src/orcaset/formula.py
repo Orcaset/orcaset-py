@@ -1,12 +1,10 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-import builtins
-from typing import Any, Protocol, Callable
+from typing import Protocol, Callable, cast
 
 
-type Numeric = int | float
-type FormulaOperand = Formula[Any] | Numeric | None
+type FormulaOperand[N: int | float | None] = Formula[N] | N
 
 
 class Op[T](Protocol):
@@ -71,65 +69,87 @@ class Formula[T]:
 
         return Formula.pure(curried).apply(self).apply(other)
 
-    def __neg__(self: Formula[Any]) -> Formula[Numeric | None]:
+    def __neg__[N: int | float | None](self: Formula[N]) -> Formula[int | float | None]:
         return _unary_formula(self, lambda x: -x)
 
-    def __add__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __add__[L: int | float | None, R: int | float | None](
+        self: Formula[L], other: FormulaOperand[R]
+    ) -> Formula[int | float | None]:
         return _binary_formula(self, other, lambda x, y: x + y)
 
-    def __radd__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __radd__[N: int | float | None](
+        self: Formula[N], other: int | float | None
+    ) -> Formula[int | float | None]:
         return _binary_formula(other, self, lambda x, y: x + y)
 
-    def __sub__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __sub__[L: int | float | None, R: int | float | None](
+        self: Formula[L], other: FormulaOperand[R]
+    ) -> Formula[int | float | None]:
         return _binary_formula(self, other, lambda x, y: x - y)
 
-    def __rsub__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __rsub__[N: int | float | None](
+        self: Formula[N], other: int | float | None
+    ) -> Formula[int | float | None]:
         return _binary_formula(other, self, lambda x, y: x - y)
 
-    def __mul__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __mul__[L: int | float | None, R: int | float | None](
+        self: Formula[L], other: FormulaOperand[R]
+    ) -> Formula[int | float | None]:
         return _binary_formula(self, other, lambda x, y: x * y)
 
-    def __rmul__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __rmul__[N: int | float | None](
+        self: Formula[N], other: int | float | None
+    ) -> Formula[int | float | None]:
         return _binary_formula(other, self, lambda x, y: x * y)
 
-    def __truediv__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __truediv__[L: int | float | None, R: int | float | None](
+        self: Formula[L], other: FormulaOperand[R]
+    ) -> Formula[int | float | None]:
         return _binary_formula(self, other, lambda x, y: x / y)
 
-    def __rtruediv__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __rtruediv__[N: int | float | None](
+        self: Formula[N], other: int | float | None
+    ) -> Formula[int | float | None]:
         return _binary_formula(other, self, lambda x, y: x / y)
 
-    def __floordiv__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __floordiv__[L: int | float | None, R: int | float | None](
+        self: Formula[L], other: FormulaOperand[R]
+    ) -> Formula[int | float | None]:
         return _binary_formula(self, other, lambda x, y: x // y)
 
-    def __rfloordiv__(self: Formula[Any], other: FormulaOperand) -> Formula[Numeric | None]:
+    def __rfloordiv__[N: int | float | None](
+        self: Formula[N], other: int | float | None
+    ) -> Formula[int | float | None]:
         return _binary_formula(other, self, lambda x, y: x // y)
 
     def __repr__(self) -> str:
         return f"Formula(op={self.op!r})"
 
 
-def _unary_formula(
-    formula: Formula[Any], fn: Callable[[Numeric], Numeric]
-) -> Formula[Numeric | None]:
-    return formula.map(lambda value: None if value is None else fn(value))
+def _unary_formula[N: int | float | None](
+    formula: Formula[N], fn: Callable[[int | float], int | float]
+) -> Formula[int | float | None]:
+    return formula.map(lambda value: None if value is None else fn(cast(int | float, value)))
 
 
-def _binary_formula(
-    left: FormulaOperand,
-    right: FormulaOperand,
-    fn: Callable[[Numeric, Numeric], Numeric],
-) -> Formula[Numeric | None]:
+def _binary_formula[L: int | float | None, R: int | float | None](
+    left: FormulaOperand[L],
+    right: FormulaOperand[R],
+    fn: Callable[[int | float, int | float], int | float],
+) -> Formula[int | float | None]:
     left_formula = _as_formula(left)
     right_formula = _as_formula(right)
     return left_formula.map2(
         right_formula,
-        lambda x, y: None if x is None or y is None else fn(x, y),
+        lambda x, y: None
+        if x is None or y is None
+        else fn(cast(int | float, x), cast(int | float, y)),
     )
 
 
-def _as_formula(value: FormulaOperand) -> Formula[Any]:
+def _as_formula[N: int | float | None](value: FormulaOperand[N]) -> Formula[N]:
     if isinstance(value, Formula):
         return value
-    if value is None or isinstance(value, builtins.int | builtins.float):
+    if value is None or isinstance(value, int | float):
         return Formula.pure(value)
     raise TypeError(f"Unsupported Formula operand: {type(value).__name__}")
