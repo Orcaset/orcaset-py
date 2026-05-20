@@ -58,7 +58,7 @@ def test_span_series_query_before_first_span_returns_zero_padding():
 
     spans = revenue.query(Period(date(2024, 1, 1), date(2024, 2, 1))).eval()
     assert [span.period for span in spans] == [Period(date(2024, 1, 1), date(2024, 2, 1))]
-    assert eval_spans(ctx, spans) == [0.0]
+    assert eval_spans(ctx, spans) == [None]
 
 
 def test_span_series_exact_query_returns_original_span_without_splitting():
@@ -115,7 +115,7 @@ def test_span_series_query_pads_gaps_with_zero_value_spans():
         Period(date(2025, 2, 1), date(2025, 3, 1)),
         Period(date(2025, 3, 1), date(2025, 4, 1)),
     ]
-    assert eval_spans(ctx, spans) == [100.0, 0.0, 300.0]
+    assert eval_spans(ctx, spans) == [100.0, None, 300.0]
 
 
 def test_span_series_partial_query_of_unsplittable_span_raises():

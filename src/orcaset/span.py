@@ -7,10 +7,15 @@ from typing import TYPE_CHECKING, cast
 
 from ._value_ops import (
     ValueOp,
+    add_scalar_values,
+    div_scalar_values,
     div_values,
     mul_values,
     neg_values,
+    rdiv_scalar_values,
+    rsub_scalar_values,
     scale_values,
+    sub_scalar_values,
     sub_values,
     sum_values,
 )
@@ -23,12 +28,12 @@ if TYPE_CHECKING:
     from .context import Context
 
 
-def define[S: SpanSeries](
-    fn: Callable[[S], Iterable[Span]],
+def define(
+    fn: Callable[[SpanSeries], Iterable[Span]],
     /,
-) -> type[S]:
+) -> type[SpanSeries]:
     return cast(
-        type[S],
+        type[SpanSeries],
         type(
             fn.__name__,
             (SpanSeries,),
@@ -116,6 +121,15 @@ def scale(
     return _operator(name or f"Scale{series.__name__}", [series], scale_values(factor))
 
 
+def add_scalar(
+    series: type[SpanSeries],
+    value: int | float,
+    *,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    return _operator(name or f"Add{series.__name__}Scalar", [series], add_scalar_values(value))
+
+
 def sum(
     series: Sequence[type[SpanSeries]],
     *,
@@ -133,6 +147,24 @@ def sub(
     return _operator(name or f"Sub{left.__name__}{right.__name__}", [left, right], sub_values)
 
 
+def sub_scalar(
+    series: type[SpanSeries],
+    value: int | float,
+    *,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    return _operator(name or f"Sub{series.__name__}Scalar", [series], sub_scalar_values(value))
+
+
+def rsub_scalar(
+    value: int | float,
+    series: type[SpanSeries],
+    *,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    return _operator(name or f"RSubScalar{series.__name__}", [series], rsub_scalar_values(value))
+
+
 def mul(
     series: Sequence[type[SpanSeries]],
     *,
@@ -148,6 +180,24 @@ def div(
     name: str | None = None,
 ) -> type[SpanSeries]:
     return _operator(name or f"Div{left.__name__}{right.__name__}", [left, right], div_values)
+
+
+def div_scalar(
+    series: type[SpanSeries],
+    value: int | float,
+    *,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    return _operator(name or f"Div{series.__name__}Scalar", [series], div_scalar_values(value))
+
+
+def rdiv_scalar(
+    value: int | float,
+    series: type[SpanSeries],
+    *,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    return _operator(name or f"RDivScalar{series.__name__}", [series], rdiv_scalar_values(value))
 
 
 def extend(

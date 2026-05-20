@@ -2,17 +2,278 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 import itertools
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, TypeGuard, final, overload
 
-from .cell import Point, Span, SpanFormulaTransform, no_split
+from .cell import Point, Span, SpanFormulaTransform
 from .formula import Formula, Op
 from .period import Period
 
 if TYPE_CHECKING:
     from .context import Context
+
+
+type _Scalar = int | float
+
+
+def _is_scalar(value: object) -> TypeGuard[_Scalar]:
+    return isinstance(value, int | float)
+
+
+class _PointSeriesMeta(ABCMeta):
+    def __neg__(cls) -> type["PointSeries"]:
+        from . import point as point_ops
+
+        return point_ops.neg(cls)
+
+    @overload
+    def __add__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __add__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __add__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.sum([cls, other], name=f"Add{cls.__name__}{other.__name__}")
+        if _is_scalar(other):
+            return point_ops.add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __radd__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __radd__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __radd__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.sum([other, cls], name=f"Add{other.__name__}{cls.__name__}")
+        if _is_scalar(other):
+            return point_ops.add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __sub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __sub__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __sub__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.sub(cls, other)
+        if _is_scalar(other):
+            return point_ops.sub_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rsub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rsub__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __rsub__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.sub(other, cls)
+        if _is_scalar(other):
+            return point_ops.rsub_scalar(other, cls)
+        return NotImplemented
+
+    @overload
+    def __mul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __mul__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __mul__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.mul([cls, other], name=f"Mul{cls.__name__}{other.__name__}")
+        if _is_scalar(other):
+            return point_ops.scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rmul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rmul__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __rmul__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.mul([other, cls], name=f"Mul{other.__name__}{cls.__name__}")
+        if _is_scalar(other):
+            return point_ops.scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __truediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __truediv__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __truediv__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.div(cls, other)
+        if _is_scalar(other):
+            return point_ops.div_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rtruediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rtruediv__(cls, other: _Scalar, /) -> type["PointSeries"]: ...
+
+    def __rtruediv__(cls, other: object, /) -> object:
+        from . import point as point_ops
+
+        if isinstance(other, _PointSeriesMeta):
+            return point_ops.div(other, cls)
+        if _is_scalar(other):
+            return point_ops.rdiv_scalar(other, cls)
+        return NotImplemented
+
+
+class _SpanSeriesMeta(ABCMeta):
+    def __neg__(cls) -> type["SpanSeries"]:
+        from . import span as span_ops
+
+        return span_ops.neg(cls)
+
+    @overload
+    def __add__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __add__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __add__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.sum([cls, other], name=f"Add{cls.__name__}{other.__name__}")
+        if _is_scalar(other):
+            return span_ops.add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __radd__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __radd__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __radd__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.sum([other, cls], name=f"Add{other.__name__}{cls.__name__}")
+        if _is_scalar(other):
+            return span_ops.add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __sub__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __sub__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __sub__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.sub(cls, other)
+        if _is_scalar(other):
+            return span_ops.sub_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rsub__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __rsub__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __rsub__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.sub(other, cls)
+        if _is_scalar(other):
+            return span_ops.rsub_scalar(other, cls)
+        return NotImplemented
+
+    @overload
+    def __mul__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __mul__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __mul__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.mul([cls, other], name=f"Mul{cls.__name__}{other.__name__}")
+        if _is_scalar(other):
+            return span_ops.scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rmul__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __rmul__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __rmul__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.mul([other, cls], name=f"Mul{other.__name__}{cls.__name__}")
+        if _is_scalar(other):
+            return span_ops.scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __truediv__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __truediv__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __truediv__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.div(cls, other)
+        if _is_scalar(other):
+            return span_ops.div_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rtruediv__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
+
+    @overload
+    def __rtruediv__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
+
+    def __rtruediv__(cls, other: object, /) -> object:
+        from . import span as span_ops
+
+        if isinstance(other, _SpanSeriesMeta):
+            return span_ops.div(other, cls)
+        if _is_scalar(other):
+            return span_ops.rdiv_scalar(other, cls)
+        return NotImplemented
 
 
 class Series(ABC):
@@ -38,7 +299,7 @@ class Series(ABC):
         pass
 
 
-class PointSeries(Series):
+class PointSeries(Series, metaclass=_PointSeriesMeta):
     def query(self, dt: date) -> Formula[Point]:
         point_cache = self.ctx.get_or_create_point_cache(self)
         if dt in point_cache:
@@ -80,12 +341,12 @@ class SpanQueryOp(Op[list[Span]]):
         for span in spans:
             clipped = _clip_span(self.series.ctx, span, self.period)
             if cursor < clipped.period.start:
-                result.append(_zero_span(Period(cursor, clipped.period.start)))
+                result.append(_none_span(Period(cursor, clipped.period.start)))
             result.append(clipped)
             cursor = clipped.period.end
 
         if cursor < self.period.end:
-            result.append(_zero_span(Period(cursor, self.period.end)))
+            result.append(_none_span(Period(cursor, self.period.end)))
 
         return [_bind_span(self.series.ctx, span) for span in result]
 
@@ -149,10 +410,6 @@ def _clip_span(ctx: "Context", span: Span, period: Period) -> Span:
 
 def _none_span(period: Period) -> Span:
     return Span(period, Formula.pure(None), _none_split)
-
-
-def _zero_span(period: Period) -> Span:
-    return Span(period, Formula.pure(0.0), no_split)
 
 
 def align_spans(series: Sequence["SpanSeries"]) -> Iterator[tuple[Span, ...]]:
@@ -219,7 +476,7 @@ def _copy_split_metadata(transform: SpanFormulaTransform, span: Span) -> None:
         span._source_spans = source_spans
 
 
-class SpanSeries(Series):
+class SpanSeries(Series, metaclass=_SpanSeriesMeta):
     def query(self, period: Period) -> Formula[list[Span]]:
         return Formula(SpanQueryOp(self, period))
 

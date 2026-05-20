@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Iterable
+from typing import Any, Iterable, cast
 
 import pytest
 
@@ -100,6 +100,34 @@ def test_point_series_operator_constructors():
     assert ctx.get(point.sub(A, B)).query(dt).eval().eval(ctx) == 8.0
     assert ctx.get(point.mul([A, B])).query(dt).eval().eval(ctx) == 20.0
     assert ctx.get(point.div(A, B)).query(dt).eval().eval(ctx) == 5.0
+
+
+def test_point_series_dunder_operators():
+    class A(PointSeries):
+        def point(self, dt: date) -> Formula[float | None]:
+            return Formula.pure(10.0)
+
+    class B(PointSeries):
+        def point(self, dt: date) -> Formula[float | None]:
+            return Formula.pure(2.0)
+
+    ctx = Context()
+    dt = date(2025, 1, 1)
+
+    assert ctx.get(-cast(Any, A)).value(dt).eval() == -10.0
+    assert ctx.get(A + B).value(dt).eval() == 12.0
+    assert ctx.get(A + 2).value(dt).eval() == 12.0
+    assert ctx.get(2 + A).value(dt).eval() == 12.0
+    assert ctx.get(A - B).value(dt).eval() == 8.0
+    assert ctx.get(A - 2).value(dt).eval() == 8.0
+    assert ctx.get(12 - A).value(dt).eval() == 2.0
+    assert ctx.get(A * B).value(dt).eval() == 20.0
+    assert ctx.get(A * 2).value(dt).eval() == 20.0
+    assert ctx.get(2 * A).value(dt).eval() == 20.0
+    assert ctx.get(A / B).value(dt).eval() == 5.0
+    assert ctx.get(A / 2).value(dt).eval() == 5.0
+    assert ctx.get(20 / A).value(dt).eval() == 2.0
+    assert ctx.get((A + B) * -0.25).value(dt).eval() == -3.0
 
 
 def test_point_series_value_returns_formula_for_point_value():
@@ -238,6 +266,55 @@ def test_span_series_operator_constructors():
     assert eval_spans(ctx, ctx.get(span.sub(A, B)).query(period).eval()) == [8.0]
     assert eval_spans(ctx, ctx.get(span.mul([A, B])).query(period).eval()) == [20.0]
     assert eval_spans(ctx, ctx.get(span.div(A, B)).query(period).eval()) == [5.0]
+
+
+def test_span_series_dunder_operators():
+    class A(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(
+                Period(date(2025, 1, 1), date(2025, 2, 1)),
+                Formula.pure(10.0),
+                split_daily,
+            )
+
+    class B(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(
+                Period(date(2025, 1, 1), date(2025, 2, 1)),
+                Formula.pure(2.0),
+                split_daily,
+            )
+
+    ctx = Context()
+    period = Period(date(2025, 1, 1), date(2025, 2, 1))
+
+    assert eval_spans(ctx, ctx.get(-cast(Any, A)).query(period).eval()) == [-10.0]
+    assert eval_spans(ctx, ctx.get(A + B).query(period).eval()) == [12.0]
+    assert eval_spans(ctx, ctx.get(A + 2).query(period).eval()) == [12.0]
+    assert eval_spans(ctx, ctx.get(2 + A).query(period).eval()) == [12.0]
+    assert eval_spans(ctx, ctx.get(A - B).query(period).eval()) == [8.0]
+    assert eval_spans(ctx, ctx.get(A - 2).query(period).eval()) == [8.0]
+    assert eval_spans(ctx, ctx.get(12 - A).query(period).eval()) == [2.0]
+    assert eval_spans(ctx, ctx.get(A * B).query(period).eval()) == [20.0]
+    assert eval_spans(ctx, ctx.get(A * 2).query(period).eval()) == [20.0]
+    assert eval_spans(ctx, ctx.get(2 * A).query(period).eval()) == [20.0]
+    assert eval_spans(ctx, ctx.get(A / B).query(period).eval()) == [5.0]
+    assert eval_spans(ctx, ctx.get(A / 2).query(period).eval()) == [5.0]
+    assert eval_spans(ctx, ctx.get(20 / A).query(period).eval()) == [2.0]
+    assert eval_spans(ctx, ctx.get((A + B) * -0.25).query(period).eval()) == [-3.0]
+
+
+def test_series_dunder_operators_reject_mixed_series_types():
+    class Spans(SpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield from ()
+
+    class Points(PointSeries):
+        def point(self, dt: date) -> Formula[float | None]:
+            return Formula.pure(None)
+
+    with pytest.raises(TypeError):
+        _ = cast(Any, Spans) + Points
 
 
 def test_split_const_preserves_source_value_on_both_sides():

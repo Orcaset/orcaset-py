@@ -28,9 +28,33 @@ def scale_values(factor: float) -> ValueOp:
     return op
 
 
+def add_scalar_values(value: int | float) -> ValueOp:
+    def op(values: Sequence[float | None]) -> float | None:
+        resolved = none_if_any_none(values)
+        return None if resolved is None else resolved[0] + value
+
+    return op
+
+
 def sum_values(values: Sequence[float | None]) -> float | None:
     resolved = none_if_any_none(values)
     return None if resolved is None else builtins.sum(resolved)
+
+
+def sub_scalar_values(value: int | float) -> ValueOp:
+    def op(values: Sequence[float | None]) -> float | None:
+        resolved = none_if_any_none(values)
+        return None if resolved is None else resolved[0] - value
+
+    return op
+
+
+def rsub_scalar_values(value: int | float) -> ValueOp:
+    def op(values: Sequence[float | None]) -> float | None:
+        resolved = none_if_any_none(values)
+        return None if resolved is None else value - resolved[0]
+
+    return op
 
 
 def sub_values(values: Sequence[float | None]) -> float | None:
@@ -51,3 +75,19 @@ def mul_values(values: Sequence[float | None]) -> float | None:
 def div_values(values: Sequence[float | None]) -> float | None:
     resolved = none_if_any_none(values)
     return None if resolved is None else resolved[0] / resolved[1]
+
+
+def div_scalar_values(value: int | float) -> ValueOp:
+    def op(values: Sequence[float | None]) -> float | None:
+        resolved = none_if_any_none(values)
+        return None if resolved is None else resolved[0] / value
+
+    return op
+
+
+def rdiv_scalar_values(value: int | float) -> ValueOp:
+    def op(values: Sequence[float | None]) -> float | None:
+        resolved = none_if_any_none(values)
+        return None if resolved is None else value / resolved[0]
+
+    return op
