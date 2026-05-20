@@ -284,15 +284,18 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
     assert graph.nodes[first.id()].value == 100.0
     assert graph.nodes[second.id()].value == 200.0
     assert graph.nodes[third.id()].value == 300.0
+    assert graph.nodes[first.id()].cell.source is revenue
+    assert graph.nodes[second.id()].cell.source is revenue
+    assert graph.nodes[third.id()].cell.source is revenue
     assert graph.edges[third.id()] == frozenset({second.id()})
     assert graph.edges[second.id()] == frozenset({first.id()})
     assert graph.edges[first.id()] == frozenset()
     assert graph.to_dot() == "\n".join(
         [
             "digraph cell_dependencies {",
-            f'  cell_{first.id()} [label="cell {first.id()}\\nvalue: 100.0"];',
-            f'  cell_{second.id()} [label="cell {second.id()}\\nvalue: 200.0"];',
-            f'  cell_{third.id()} [label="cell {third.id()}\\nvalue: 300.0"];',
+            f'  cell_{first.id()} [label="cell {first.id()}\\nsource: Revenue\\nvalue: 100.0"];',
+            f'  cell_{second.id()} [label="cell {second.id()}\\nsource: Revenue\\nvalue: 200.0"];',
+            f'  cell_{third.id()} [label="cell {third.id()}\\nsource: Revenue\\nvalue: 300.0"];',
             f"  cell_{second.id()} -> cell_{first.id()};",
             f"  cell_{third.id()} -> cell_{second.id()};",
             "}",

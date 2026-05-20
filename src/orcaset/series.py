@@ -5,7 +5,7 @@ import itertools
 from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, TypeGuard, final, overload
+from typing import TYPE_CHECKING, ClassVar, TypeGuard, final, overload
 
 from .cell import Point, Span, SpanFormulaTransform
 from .formula import Formula, Op
@@ -286,6 +286,7 @@ class Series(ABC):
     """
 
     _ids = itertools.count()
+    label: ClassVar[str | None] = None
 
     @final
     def __init__(self, ctx: Context):
@@ -300,6 +301,10 @@ class Series(ABC):
     def __repr__(self) -> str:
         return f"Series(id={self.id})"
 
+    @classmethod
+    def display_name(cls) -> str:
+        return cls.label or cls.__name__
+
     def __post_init__(self) -> None:
         """Post-initialization hook."""
         pass
@@ -308,6 +313,9 @@ class Series(ABC):
 class PointSeriesFamily[K: Hashable](Series):
     def query(self, dt: date) -> Formula[PointFamilyResult[K]]:
         return Formula(PointFamilyQueryOp(self, dt))
+
+    def key_label(self, key: K) -> str:
+        return str(key)
 
     @abstractmethod
     def points(self, dt: date) -> PointFamilyResult[K]:
@@ -321,7 +329,7 @@ class PointSeries(Series, metaclass=_PointSeriesMeta):
             return Formula.pure(point_cache[dt])
 
         point = self.point(dt)
-        point_cache[dt] = Point(dt, point)
+        point_cache[dt] = Point(dt, point, self)
         return Formula.pure(point_cache[dt])
 
     def value(self, dt: date) -> Formula[float | None]:
@@ -338,7 +346,11 @@ class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
         self.dt = dt
 
     def eval(self) -> PointFamilyResult[K]:
-        return dict(self.family.points(self.dt))
+        result = dict(self.family.points(self.dt))
+        for point in result.values():
+            if point.source is None:
+                point.source = self.family
+        return result
 
     def __repr__(self) -> str:
         return f"PointFamilyQueryOp(family={self.family!r}, dt={self.dt!r})"
@@ -347,6 +359,9 @@ class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
 class SpanSeriesFamily[K: Hashable](Series):
     def query(self, period: Period) -> Formula[SpanFamilyResult[K]]:
         return Formula(SpanFamilyQueryOp(self, period))
+
+    def key_label(self, key: K) -> str:
+        return str(key)
 
     @abstractmethod
     def spans(self, period: Period) -> SpanFamilyResult[K]:
@@ -361,7 +376,7 @@ class SpanFamilyQueryOp[K: Hashable](Op[SpanFamilyResult[K]]):
     def eval(self) -> SpanFamilyResult[K]:
         result = self.family.spans(self.period)
         return {
-            key: tuple(_bind_span(self.family.ctx, span) for span in spans)
+            key: tuple(_bind_family_span(self.family, span) for span in spans)
             for key, spans in result.items()
         }
 
@@ -393,12 +408,12 @@ class SpanQueryOp(Op[list[Span]]):
         for span in spans:
             clipped = _clip_span(self.series.ctx, span, self.period)
             if cursor < clipped.period.start:
-                result.append(_none_span(Period(cursor, clipped.period.start)))
+                result.append(_none_span(Period(cursor, clipped.period.start), self.series))
             result.append(clipped)
             cursor = clipped.period.end
 
         if cursor < self.period.end:
-            result.append(_none_span(Period(cursor, self.period.end)))
+            result.append(_none_span(Period(cursor, self.period.end), self.series))
 
         return [_bind_span(self.series.ctx, span) for span in result]
 
@@ -423,6 +438,12 @@ def _bind_span(ctx: "Context", span: Span) -> Span:
     return span
 
 
+def _bind_family_span(family: SpanSeriesFamily, span: Span) -> Span:
+    if span.source is None:
+        span.source = family
+    return _bind_span(family.ctx, span)
+
+
 def _none_split(span: Span, _: date) -> tuple[SpanFormulaTransform, SpanFormulaTransform]:
     def transform(_: Formula[float | None]) -> Formula[float | None]:
         return Formula.pure(None)
@@ -438,8 +459,14 @@ def _split_span(ctx: "Context", span: Span, dt: date) -> tuple[Span | None, Span
 
     left_fn, right_fn = span.split(span, dt)
     source = Formula(_SpanValueOp(ctx, span))
-    left = _bind_span(ctx, Span(Period(span.period.start, dt), left_fn(source), span.split))
-    right = _bind_span(ctx, Span(Period(dt, span.period.end), right_fn(source), span.split))
+    left = _bind_span(
+        ctx,
+        Span(Period(span.period.start, dt), left_fn(source), span.split, span.source),
+    )
+    right = _bind_span(
+        ctx,
+        Span(Period(dt, span.period.end), right_fn(source), span.split, span.source),
+    )
     _copy_split_metadata(left_fn, left)
     _copy_split_metadata(right_fn, right)
     return left, right
@@ -447,7 +474,7 @@ def _split_span(ctx: "Context", span: Span, dt: date) -> tuple[Span | None, Span
 
 def _clip_span(ctx: "Context", span: Span, period: Period) -> Span:
     if span.period.end <= period.start or span.period.start >= period.end:
-        return _bind_span(ctx, _none_span(period))
+        return _bind_span(ctx, _none_span(period, span.source))
 
     period = Period(max(span.period.start, period.start), min(span.period.end, period.end))
     _, right = _split_span(ctx, span, period.start)
@@ -460,8 +487,8 @@ def _clip_span(ctx: "Context", span: Span, period: Period) -> Span:
     return left
 
 
-def _none_span(period: Period) -> Span:
-    return Span(period, Formula.pure(None), _none_split)
+def _none_span(period: Period, source: Series | None = None) -> Span:
+    return Span(period, Formula.pure(None), _none_split, source)
 
 
 def align_spans(series: Sequence["SpanSeries"]) -> Iterator[tuple[Span, ...]]:
@@ -497,8 +524,8 @@ def align_spans(series: Sequence["SpanSeries"]) -> Iterator[tuple[Span, ...]]:
         yield tuple(
             _bind_span(ctx, _clip_span(ctx, span, period))
             if span is not None
-            else _bind_span(ctx, _none_span(period))
-            for span in active
+            else _bind_span(ctx, _none_span(period, series[index]))
+            for index, span in enumerate(active)
         )
         cursor = end
 

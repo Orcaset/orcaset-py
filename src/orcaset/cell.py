@@ -14,6 +14,7 @@ from .period import Period
 
 if TYPE_CHECKING:
     from .context import Context
+    from .series import Series
 
 
 type SpanFormula = Formula[float | None]
@@ -29,8 +30,9 @@ class Cell:
     _ids = itertools.count()
     fn: Formula[float | None]
 
-    def __init__(self):
+    def __init__(self, source: Series | None):
         self._id = next(Cell._ids)
+        self.source = source
 
     def id(self) -> int:
         return self._id
@@ -40,8 +42,14 @@ class Cell:
 
 
 class Span(Cell):
-    def __init__(self, period: Period, fn: Formula[float | None], split: SpanSplit):
-        super().__init__()
+    def __init__(
+        self,
+        period: Period,
+        fn: Formula[float | None],
+        split: SpanSplit,
+        source: Series | None = None,
+    ):
+        super().__init__(source)
         self.period = period
         self.fn = fn
         self.split = split
@@ -102,8 +110,13 @@ def _span_value(span: Span, fill: float) -> float:
 
 
 class Point(Cell):
-    def __init__(self, dt: date, fn: Formula[float | None]):
-        super().__init__()
+    def __init__(
+        self,
+        dt: date,
+        fn: Formula[float | None],
+        source: Series | None = None,
+    ):
+        super().__init__(source)
         self.dt = dt
         self.fn = fn
 

@@ -18,9 +18,15 @@ from .series import (
 
 
 class _SpanCache:
-    __slots__ = ("iterator", "spans", "_cursor_date", "_exhausted")
+    __slots__ = ("series", "iterator", "spans", "_cursor_date", "_exhausted")
 
-    def __init__(self, iterator: Iterator[Span], spans: dict[Period, Span]) -> None:
+    def __init__(
+        self,
+        series: SpanSeries,
+        iterator: Iterator[Span],
+        spans: dict[Period, Span],
+    ) -> None:
+        self.series = series
         self.iterator = iterator
         self.spans = spans
         # Date of last materialized span, or None if no spans have been materialized yet
@@ -43,6 +49,8 @@ class _SpanCache:
         except StopIteration:
             self._exhausted = True
             return
+        if next_span.source is None:
+            next_span.source = self.series
         self.spans[next_span.period] = next_span
         self._cursor_date = next_span.period.end
 
@@ -67,7 +75,7 @@ class CellDependencyGraph:
         lines = ["digraph cell_dependencies {"]
         for cell_id in sorted(self.nodes):
             node = self.nodes[cell_id]
-            label = f"cell {cell_id}\\nvalue: {_dot_escape(repr(node.value))}"
+            label = _cell_dot_label(cell_id, node)
             lines.append(f'  cell_{cell_id} [label="{label}"];')
 
         for source_id in sorted(self.edges):
@@ -131,7 +139,7 @@ class Context:
     def get_or_create_span_cache(self, series: SpanSeries) -> _SpanCache:
         if series._id in self._span_cache:
             return self._span_cache[series._id]
-        cache = _SpanCache(iter(series.spans()), {})
+        cache = _SpanCache(series, iter(series.spans()), {})
         self._span_cache[series._id] = cache
         return cache
 
@@ -274,3 +282,16 @@ def _value_delta(old_value: float | None, new_value: float | None) -> float:
 
 def _dot_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _cell_dot_label(cell_id: int, node: CellDependencyNode) -> str:
+    parts = [f"cell {cell_id}"]
+    if node.cell.source is not None:
+        source_type = type(node.cell.source)
+        source_name = source_type.display_name()
+        if source_type.label is not None and source_name != source_type.__name__:
+            parts.append(f"source: {source_name} ({source_type.__name__})")
+        else:
+            parts.append(f"source: {source_name}")
+    parts.append(f"value: {repr(node.value)}")
+    return "\\n".join(_dot_escape(part) for part in parts)
