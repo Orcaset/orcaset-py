@@ -18,7 +18,16 @@ from .cell import (
 from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNode, Context
 from .formula import Formula
 from .period import Period
-from .series import PointSeries, Series, SpanSeries, align_spans
+from .series import (
+    PointFamilyResult,
+    PointSeries,
+    PointSeriesFamily,
+    Series,
+    SpanFamilyResult,
+    SpanSeries,
+    SpanSeriesFamily,
+    align_spans,
+)
 from .yf import YF
 
 __all__ = [
@@ -43,7 +52,11 @@ __all__ = [
     "CellDependencyNode",
     "Series",
     "PointSeries",
+    "PointSeriesFamily",
+    "PointFamilyResult",
     "SpanSeries",
+    "SpanSeriesFamily",
+    "SpanFamilyResult",
     "align_spans",
     "Period",
 ]

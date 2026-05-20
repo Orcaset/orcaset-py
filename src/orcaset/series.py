@@ -3,7 +3,7 @@
 
 import itertools
 from abc import ABC, ABCMeta, abstractmethod
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
 from datetime import date
 from typing import TYPE_CHECKING, TypeGuard, final, overload
 
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 
 type _Scalar = int | float
+type SpanFamilyResult[K: Hashable] = Mapping[K, Sequence[Span]]
+type PointFamilyResult[K: Hashable] = Mapping[K, Point]
 
 
 def _is_scalar(value: object) -> TypeGuard[_Scalar]:
@@ -291,12 +293,25 @@ class Series(ABC):
         self.ctx = ctx
         self.__post_init__()
 
+    @property
+    def id(self) -> int:
+        return self._id
+
     def __repr__(self) -> str:
-        return f"Series(id={self._id})"
+        return f"Series(id={self.id})"
 
     def __post_init__(self) -> None:
         """Post-initialization hook."""
         pass
+
+
+class PointSeriesFamily[K: Hashable](Series):
+    def query(self, dt: date) -> Formula[PointFamilyResult[K]]:
+        return Formula(PointFamilyQueryOp(self, dt))
+
+    @abstractmethod
+    def points(self, dt: date) -> PointFamilyResult[K]:
+        raise NotImplementedError
 
 
 class PointSeries(Series, metaclass=_PointSeriesMeta):
@@ -315,6 +330,43 @@ class PointSeries(Series, metaclass=_PointSeriesMeta):
     @abstractmethod
     def point(self, dt: date) -> Formula[float | None]:
         raise NotImplementedError
+
+
+class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
+    def __init__(self, family: PointSeriesFamily[K], dt: date) -> None:
+        self.family = family
+        self.dt = dt
+
+    def eval(self) -> PointFamilyResult[K]:
+        return dict(self.family.points(self.dt))
+
+    def __repr__(self) -> str:
+        return f"PointFamilyQueryOp(family={self.family!r}, dt={self.dt!r})"
+
+
+class SpanSeriesFamily[K: Hashable](Series):
+    def query(self, period: Period) -> Formula[SpanFamilyResult[K]]:
+        return Formula(SpanFamilyQueryOp(self, period))
+
+    @abstractmethod
+    def spans(self, period: Period) -> SpanFamilyResult[K]:
+        raise NotImplementedError
+
+
+class SpanFamilyQueryOp[K: Hashable](Op[SpanFamilyResult[K]]):
+    def __init__(self, family: SpanSeriesFamily[K], period: Period) -> None:
+        self.family = family
+        self.period = period
+
+    def eval(self) -> SpanFamilyResult[K]:
+        result = self.family.spans(self.period)
+        return {
+            key: tuple(_bind_span(self.family.ctx, span) for span in spans)
+            for key, spans in result.items()
+        }
+
+    def __repr__(self) -> str:
+        return f"SpanFamilyQueryOp(family={self.family!r}, period={self.period!r})"
 
 
 class SpanQueryOp(Op[list[Span]]):

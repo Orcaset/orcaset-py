@@ -1,13 +1,20 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from __future__ import annotations
+
+from collections.abc import Callable, Hashable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import Iterable, Iterator, cast
 from datetime import date
+from typing import cast
 
 from .cell import Cell, Point, Span
 from .period import Period
-from .series import Series, SpanSeries, PointSeries
+from .series import (
+    PointSeries,
+    Series,
+    SpanSeries,
+)
 
 
 class _SpanCache:
@@ -96,6 +103,7 @@ class Context:
         self._values: dict[type[Series], Series] = {}
         self._span_cache: dict[int, _SpanCache] = {}
         self._point_cache: dict[int, dict[date, Point]] = {}
+        self._family_series_types: dict[tuple[int, Hashable], type[Series]] = {}
         self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
         self._solving_cells: list[Cell] = []
         self._solving_cell_ids: set[int] = set()
@@ -132,6 +140,25 @@ class Context:
             return self._point_cache[series._id]
         self._point_cache[series._id] = {}
         return self._point_cache[series._id]
+
+    def family_series_by_key[T: Series](self, family: Series, key: Hashable) -> T | None:
+        series_type = self._family_series_types.get((family._id, key))
+        if series_type is None:
+            return None
+        return self.get(cast(type[T], series_type))
+
+    def get_or_create_family_series[T: Series](
+        self,
+        family: Series,
+        key: Hashable,
+        factory: Callable[[], type[T]],
+    ) -> T:
+        cache_key = (family._id, key)
+        series_type = self._family_series_types.get(cache_key)
+        if series_type is None:
+            series_type = factory()
+            self._family_series_types[cache_key] = series_type
+        return self.get(cast(type[T], series_type))
 
     def eval_cell(self, cell: Cell) -> float | None:
         if self._active_cell is not None:
