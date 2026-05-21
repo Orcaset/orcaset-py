@@ -1,8 +1,8 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from abc import ABCMeta
-from collections.abc import Callable, Sequence
+from abc import ABCMeta, abstractmethod
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from datetime import date
 from typing import TYPE_CHECKING, cast, overload
 
@@ -23,11 +23,14 @@ from ._value_ops import (
 from .cell import Point, Span
 from .formula import Formula, Op
 from .period import Period
-from .series import PointSeriesBase
+from .series import Series
 from .span import SpanSeries
 
 if TYPE_CHECKING:
     from .context import Context
+
+
+type PointFamilyResult[K: Hashable] = Mapping[K, Point]
 
 
 class _PointSeriesMeta(ABCMeta):
@@ -139,8 +142,50 @@ class _PointSeriesMeta(ABCMeta):
         return NotImplemented
 
 
-class PointSeries(PointSeriesBase, metaclass=_PointSeriesMeta):
-    """PointSeries with operator overloading."""
+class PointSeries(Series, metaclass=_PointSeriesMeta):
+    def query(self, dt: date) -> Formula[Point]:
+        point_cache = self.ctx.get_or_create_point_cache(self)
+        if dt in point_cache:
+            return Formula.pure(point_cache[dt])
+
+        point = self.point(dt)
+        point_cache[dt] = Point(dt, point, self)
+        return Formula.pure(point_cache[dt])
+
+    def value(self, dt: date) -> Formula[float | None]:
+        return self.query(dt).map(lambda point: point.eval(self.ctx))
+
+    @abstractmethod
+    def point(self, dt: date) -> Formula[float | None]:
+        raise NotImplementedError
+
+
+class PointSeriesFamily[K: Hashable](Series):
+    def query(self, dt: date) -> Formula[PointFamilyResult[K]]:
+        return Formula(PointFamilyQueryOp(self, dt))
+
+    def key_label(self, key: K) -> str:
+        return str(key)
+
+    @abstractmethod
+    def points(self, dt: date) -> PointFamilyResult[K]:
+        raise NotImplementedError
+
+
+class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
+    def __init__(self, family: PointSeriesFamily[K], dt: date) -> None:
+        self.family = family
+        self.dt = dt
+
+    def eval(self) -> PointFamilyResult[K]:
+        result = dict(self.family.points(self.dt))
+        for point in result.values():
+            if point.source is None:
+                point.source = self.family
+        return result
+
+    def __repr__(self) -> str:
+        return f"PointFamilyQueryOp(family={self.family!r}, dt={self.dt!r})"
 
 
 def define(

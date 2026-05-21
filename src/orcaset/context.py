@@ -10,7 +10,9 @@ from typing import cast
 
 from .cell import Cell, Point, Span
 from .period import Period
-from .series import PointSeriesBase, Series, SpanSeriesBase
+from .point import PointSeries
+from .series import Series
+from .span import SpanSeries
 
 
 class _SpanCache:
@@ -18,7 +20,7 @@ class _SpanCache:
 
     def __init__(
         self,
-        series: SpanSeriesBase,
+        series: SpanSeries,
         iterator: Iterator[Span],
         spans: dict[Period, Span],
     ) -> None:
@@ -132,14 +134,14 @@ class Context:
         self._values[series_type] = instance
         return instance
 
-    def get_or_create_span_cache(self, series: SpanSeriesBase) -> _SpanCache:
+    def get_or_create_span_cache(self, series: SpanSeries) -> _SpanCache:
         if series._id in self._span_cache:
             return self._span_cache[series._id]
         cache = _SpanCache(series, iter(series.spans()), {})
         self._span_cache[series._id] = cache
         return cache
 
-    def get_or_create_point_cache(self, series: PointSeriesBase) -> dict[date, Point]:
+    def get_or_create_point_cache(self, series: PointSeries) -> dict[date, Point]:
         if series._id in self._point_cache:
             return self._point_cache[series._id]
         self._point_cache[series._id] = {}

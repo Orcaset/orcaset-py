@@ -20,17 +20,9 @@ from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNo
 from .formatters import DateFormatter, ValueFormatter, fixed_width_table
 from .formula import Formula
 from .period import Period
-from .point import PointSeries
-from .series import (
-    PointFamilyResult,
-    PointSeriesFamily,
-    Series,
-    SpanAgg,
-    SpanFamilyResult,
-    SpanSeriesFamily,
-    align_spans,
-)
-from .span import SpanSeries
+from .point import PointFamilyResult, PointSeries, PointSeriesFamily
+from .series import Series
+from .span import SpanAgg, SpanFamilyResult, SpanSeries, SpanSeriesFamily, align_spans
 from .stmt import (
     FamilyLineRow,
     FamilyRow,
