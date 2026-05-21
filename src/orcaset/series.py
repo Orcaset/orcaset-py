@@ -3,9 +3,9 @@
 
 import itertools
 from abc import ABC, ABCMeta, abstractmethod
-from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, ClassVar, TypeGuard, final, overload
+from typing import TYPE_CHECKING, ClassVar, TypeGuard, cast, final, overload
 
 from .cell import Point, Span, SpanFormulaTransform
 from .formula import Formula, Op
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 
 type _Scalar = int | float
+type SpanAgg = Callable[[list[Span]], float | None]
 type SpanFamilyResult[K: Hashable] = Mapping[K, Sequence[Span]]
 type PointFamilyResult[K: Hashable] = Mapping[K, Point]
 
@@ -157,125 +158,61 @@ class _SpanSeriesMeta(ABCMeta):
 
         return span_ops.neg(cls)
 
-    @overload
-    def __add__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __add__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __add__(cls, other: object, /) -> object:
+    def __add__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.sum([cls, other], name=f"Add{cls.__name__}{other.__name__}")
-        if _is_scalar(other):
-            return span_ops.add_scalar(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.add_scalar(cls, other)
 
-    @overload
-    def __radd__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __radd__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __radd__(cls, other: object, /) -> object:
+    def __radd__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.sum([other, cls], name=f"Add{other.__name__}{cls.__name__}")
-        if _is_scalar(other):
-            return span_ops.add_scalar(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.add_scalar(cls, other)
 
-    @overload
-    def __sub__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __sub__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __sub__(cls, other: object, /) -> object:
+    def __sub__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.sub(cls, other)
-        if _is_scalar(other):
-            return span_ops.sub_scalar(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.sub_scalar(cls, other)
 
-    @overload
-    def __rsub__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __rsub__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __rsub__(cls, other: object, /) -> object:
+    def __rsub__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.sub(other, cls)
-        if _is_scalar(other):
-            return span_ops.rsub_scalar(other, cls)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.rsub_scalar(other, cls)
 
-    @overload
-    def __mul__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __mul__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __mul__(cls, other: object, /) -> object:
+    def __mul__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.mul([cls, other], name=f"Mul{cls.__name__}{other.__name__}")
-        if _is_scalar(other):
-            return span_ops.scale(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.scale(cls, other)
 
-    @overload
-    def __rmul__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __rmul__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __rmul__(cls, other: object, /) -> object:
+    def __rmul__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.mul([other, cls], name=f"Mul{other.__name__}{cls.__name__}")
-        if _is_scalar(other):
-            return span_ops.scale(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.scale(cls, other)
 
-    @overload
-    def __truediv__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __truediv__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __truediv__(cls, other: object, /) -> object:
+    def __truediv__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.div(cls, other)
-        if _is_scalar(other):
-            return span_ops.div_scalar(cls, other)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.div_scalar(cls, other)
 
-    @overload
-    def __rtruediv__(cls, other: type["SpanSeries"], /) -> type["SpanSeries"]: ...
-
-    @overload
-    def __rtruediv__(cls, other: _Scalar, /) -> type["SpanSeries"]: ...
-
-    def __rtruediv__(cls, other: object, /) -> object:
+    def __rtruediv__(cls, other: _Scalar, /) -> type["SpanSeries"]:
         from . import span as span_ops
 
-        if isinstance(other, _SpanSeriesMeta):
-            return span_ops.div(other, cls)
-        if _is_scalar(other):
-            return span_ops.rdiv_scalar(other, cls)
-        return NotImplemented
+        if not _is_scalar(other):
+            return NotImplemented
+        return span_ops.rdiv_scalar(other, cls)
 
 
 class Series(ABC):
@@ -360,12 +297,32 @@ class SpanSeriesFamily[K: Hashable](Series):
     def query(self, period: Period) -> Formula[SpanFamilyResult[K]]:
         return Formula(SpanFamilyQueryOp(self, period))
 
+    def value(self, period: Period) -> Formula[Mapping[K, float | None]]:
+        return self.query(period).map(self._value_result)
+
     def key_label(self, key: K) -> str:
         return str(key)
 
     @abstractmethod
     def spans(self, period: Period) -> SpanFamilyResult[K]:
         raise NotImplementedError
+
+    def _value_result(self, result: SpanFamilyResult[K]) -> Mapping[K, float | None]:
+        values: dict[K, float | None] = {}
+        for key, spans in result.items():
+            series = self.ctx.family_series_by_key(self, key)
+            if series is None:
+                raise ValueError(
+                    f"{type(self).__name__}.value expected a generated SpanSeries "
+                    f"registered for key {key!r}"
+                )
+            if not isinstance(series, SpanSeries):
+                raise ValueError(
+                    f"{type(self).__name__}.value expected key {key!r} to be backed by a SpanSeries"
+                )
+            series_type = cast(type[SpanSeries], type(series))
+            values[key] = series_type.agg(list(spans))
+        return values
 
 
 class SpanFamilyQueryOp[K: Hashable](Op[SpanFamilyResult[K]]):
@@ -558,6 +515,14 @@ def _copy_split_metadata(transform: SpanFormulaTransform, span: Span) -> None:
 class SpanSeries(Series, metaclass=_SpanSeriesMeta):
     def query(self, period: Period) -> Formula[list[Span]]:
         return Formula(SpanQueryOp(self, period))
+
+    def value(self, period: Period) -> Formula[float | None]:
+        return self.query(period).map(type(self).agg)
+
+    @staticmethod
+    @abstractmethod
+    def agg(spans: list[Span]) -> float | None:
+        raise NotImplementedError
 
     @abstractmethod
     def spans(self) -> Iterable[Span]:

@@ -16,6 +16,7 @@ from .cell import (
     sum_spans,
 )
 from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNode, Context
+from .formatters import DateFormatter, ValueFormatter, fixed_width_table
 from .formula import Formula
 from .period import Period
 from .series import (
@@ -23,6 +24,7 @@ from .series import (
     PointSeries,
     PointSeriesFamily,
     Series,
+    SpanAgg,
     SpanFamilyResult,
     SpanSeries,
     SpanSeriesFamily,
@@ -31,11 +33,13 @@ from .series import (
 from .stmt import (
     FamilyLineRow,
     FamilyRow,
+    DateValue,
     Group,
     GroupRow,
     LineRow,
+    PeriodValue,
+    StatementResult,
     Stmt,
-    StmtReducer,
     StmtRow,
     Total,
     TotalRow,
@@ -62,7 +66,11 @@ __all__ = [
     "CellConvergenceError",
     "CellDependencyGraph",
     "CellDependencyNode",
+    "DateFormatter",
+    "ValueFormatter",
+    "fixed_width_table",
     "Series",
+    "SpanAgg",
     "PointSeries",
     "PointSeriesFamily",
     "PointFamilyResult",
@@ -72,11 +80,13 @@ __all__ = [
     "align_spans",
     "FamilyLineRow",
     "FamilyRow",
+    "DateValue",
     "Group",
     "GroupRow",
     "LineRow",
+    "PeriodValue",
+    "StatementResult",
     "Stmt",
-    "StmtReducer",
     "StmtRow",
     "Total",
     "TotalRow",

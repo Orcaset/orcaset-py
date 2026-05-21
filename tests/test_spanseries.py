@@ -14,6 +14,7 @@ from orcaset import (
     SpanSplitError,
     no_split,
     split_daily,
+    sum_spans,
 )
 
 
@@ -21,8 +22,17 @@ def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
     return [span.eval(ctx) for span in spans]
 
 
+class _TestSpanSeries(SpanSeries):
+    @staticmethod
+    def agg(spans: list[Span]) -> float | None:
+        return sum_spans(0.0)(spans)
+
+    def spans(self) -> Iterable[Span]:
+        raise NotImplementedError
+
+
 def test_span_series_lookback_self_reference():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for i, period in enumerate(
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1))
@@ -48,7 +58,7 @@ def test_span_series_lookback_self_reference():
 
 
 def test_span_series_query_before_first_span_returns_zero_padding():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1)):
                 yield Span(period, Formula.pure(100.0), no_split)
@@ -65,7 +75,7 @@ def test_span_series_exact_query_returns_original_span_without_splitting():
     def fail_split(span: Span, dt: date):
         raise AssertionError("split should not be called")
 
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             period = Period(date(2025, 1, 1), date(2025, 2, 1))
             yield Span(period, Formula.pure(100.0), fail_split)
@@ -79,7 +89,7 @@ def test_span_series_exact_query_returns_original_span_without_splitting():
 
 
 def test_span_series_partial_query_returns_clipped_prorated_span():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             period = Period(date(2025, 1, 1), date(2025, 2, 1))
             yield Span(period, Formula.pure(310.0), split_daily)
@@ -93,7 +103,7 @@ def test_span_series_partial_query_returns_clipped_prorated_span():
 
 
 def test_span_series_query_pads_gaps_with_zero_value_spans():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             yield Span(
                 Period(date(2025, 1, 1), date(2025, 2, 1)),
@@ -119,7 +129,7 @@ def test_span_series_query_pads_gaps_with_zero_value_spans():
 
 
 def test_span_series_partial_query_of_unsplittable_span_raises():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             period = Period(date(2025, 1, 1), date(2025, 2, 1))
             yield Span(period, Formula.pure(100.0), no_split)
@@ -132,7 +142,7 @@ def test_span_series_partial_query_of_unsplittable_span_raises():
 
 
 def test_clipped_span_depends_on_original_source_span():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             period = Period(date(2025, 1, 1), date(2025, 2, 1))
             yield Span(period, Formula.pure(310.0), split_daily)
@@ -149,7 +159,7 @@ def test_clipped_span_depends_on_original_source_span():
 
 
 def test_span_series_lookahead_self_reference():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for i, period in enumerate(
                 Period.seq(date(2025, 1, 1), relativedelta(months=1), end=None)
@@ -180,7 +190,7 @@ def test_span_series_lookahead_self_reference():
 
 
 def test_span_series_same_period_self_reference():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for i, period in enumerate(
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1))
@@ -201,7 +211,7 @@ def test_span_series_same_period_self_reference():
 
 
 def test_span_series_same_period_non_convergence():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)):
                 current_period = self.ctx.get(Revenue).query(period)
@@ -222,7 +232,7 @@ def test_span_series_same_period_non_convergence():
 
 
 def test_span_series_hidden_dynamic_dependency():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for i, period in enumerate(
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 3, 1))
@@ -253,7 +263,7 @@ def test_span_series_hidden_dynamic_dependency():
 
 
 def test_context_deps_returns_transitive_graph_with_resolved_values():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for i, period in enumerate(
                 Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 4, 1))
@@ -304,7 +314,7 @@ def test_context_deps_returns_transitive_graph_with_resolved_values():
 
 
 def test_context_deps_includes_recursive_self_edge():
-    class Revenue(SpanSeries):
+    class Revenue(_TestSpanSeries):
         def spans(self) -> Iterable[Span]:
             for period in Period.list(date(2025, 1, 1), relativedelta(months=1), date(2025, 2, 1)):
                 current_period = self.ctx.get(Revenue).query(period)
