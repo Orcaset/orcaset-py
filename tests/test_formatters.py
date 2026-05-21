@@ -17,7 +17,9 @@ from orcaset import (
     SpanSeriesFamily,
     StatementResult,
     TotalRow,
+    csv_table,
     fixed_width_table,
+    markdown_table,
     sum_spans,
 )
 
@@ -149,6 +151,143 @@ def test_fixed_width_table_allows_custom_value_formatting():
     )
 
 
+def test_csv_table_formats_totals_groups_and_escapes_values_without_indentation():
+    result = StatementResult(
+        rows=(
+            LineRow("A", A, (PeriodValue(P1, 1.0), PeriodValue(P2, 2.0))),
+            TotalRow(
+                "Total",
+                A,
+                (PeriodValue(P1, 3.0), PeriodValue(P2, 4.0)),
+                (
+                    LineRow("B", B, (PeriodValue(P1, 1234.0), PeriodValue(P2, None))),
+                    FamilyRow(
+                        'Family, "Quoted"',
+                        Family,
+                        (
+                            FamilyLineRow(
+                                "Key",
+                                Family,
+                                "key",
+                                (PeriodValue(P1, 6.0), PeriodValue(P2, 7.0)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            GroupRow((LineRow("C", C, (PeriodValue(P1, 8.0), PeriodValue(P2, 9.0))),)),
+        ),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert csv_table(
+        result,
+        date_formatter=lambda dt: dt.strftime("%b %d, %Y"),
+    ) == "\n".join(
+        [
+            'Start,,"Jan 01, 2026","Apr 01, 2026"',
+            'End,"Jan 01, 2026","Apr 01, 2026","Jul 01, 2026"',
+            "A,,1.00,2.00",
+            'B,,"1,234.00",',
+            '"Family, ""Quoted"""',
+            "Key,,6.00,7.00",
+            "Total,,3.00,4.00",
+            "",
+            "C,,8.00,9.00",
+            "",
+        ]
+    )
+
+
+def test_csv_table_allows_custom_value_formatting():
+    result = StatementResult(
+        rows=(LineRow("A", A, (PeriodValue(P1, 1.25), PeriodValue(P2, None))),),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert csv_table(
+        result,
+        date_formatter=lambda dt: dt.strftime("%m/%d"),
+        value_formatter=lambda value: "-" if value is None else f"{value:.1f}x",
+    ) == "\n".join(
+        [
+            "Start,,01/01,04/01",
+            "End,01/01,04/01,07/01",
+            "A,,1.2x,-",
+        ]
+    )
+
+
+def test_markdown_table_formats_totals_groups_indentation_and_escapes_cells():
+    result = StatementResult(
+        rows=(
+            LineRow("A", A, (PeriodValue(P1, 1.0), PeriodValue(P2, 2.0))),
+            TotalRow(
+                "Total",
+                A,
+                (PeriodValue(P1, 3.0), PeriodValue(P2, 4.0)),
+                (
+                    LineRow("B", B, (PeriodValue(P1, 5.0), PeriodValue(P2, None))),
+                    FamilyRow(
+                        "Fam|ily *Name*",
+                        Family,
+                        (
+                            FamilyLineRow(
+                                "Key",
+                                Family,
+                                "key",
+                                (PeriodValue(P1, 6.0), PeriodValue(P2, 7.0)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            GroupRow((LineRow("C", C, (PeriodValue(P1, 8.0), PeriodValue(P2, 9.0))),)),
+        ),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert markdown_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "\n".join(
+        [
+            "| Start |  | 01/01 | 04/01 |",
+            "| --- | ---: | ---: | ---: |",
+            "| End | 01/01 | 04/01 | 07/01 |",
+            "| A |  | 1.00 | 2.00 |",
+            "| &nbsp;&nbsp;B |  | 5.00 |  |",
+            "| &nbsp;&nbsp;Fam\\|ily \\*Name\\* |  |  |  |",
+            "| &nbsp;&nbsp;&nbsp;&nbsp;Key |  | 6.00 | 7.00 |",
+            "| **Total** |  | **3.00** | **4.00** |",
+            "|  |  |  |  |",
+            "| &nbsp;&nbsp;C |  | 8.00 | 9.00 |",
+            "|  |  |  |  |",
+        ]
+    )
+
+
+def test_markdown_table_allows_custom_value_formatting():
+    result = StatementResult(
+        rows=(LineRow("A", A, (PeriodValue(P1, 1.25), PeriodValue(P2, None))),),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert markdown_table(
+        result,
+        date_formatter=lambda dt: dt.strftime("%m/%d"),
+        value_formatter=lambda value: "-" if value is None else f"{value:.1f}x",
+    ) == "\n".join(
+        [
+            "| Start |  | 01/01 | 04/01 |",
+            "| --- | ---: | ---: | ---: |",
+            "| End | 01/01 | 04/01 | 07/01 |",
+            "| A |  | 1.2x | - |",
+        ]
+    )
+
+
 def test_fixed_width_table_rejects_point_values_that_do_not_align_to_period_boundaries():
     result = StatementResult(
         rows=(LineRow("Cash", B, (DateValue(date(2026, 2, 1), 10.0),)),),
@@ -160,6 +299,28 @@ def test_fixed_width_table_rejects_point_values_that_do_not_align_to_period_boun
         fixed_width_table(result)
 
 
+def test_csv_table_rejects_point_values_that_do_not_align_to_period_boundaries():
+    result = StatementResult(
+        rows=(LineRow("Cash", B, (DateValue(date(2026, 2, 1), 10.0),)),),
+        periods=(P1, P2),
+        dates=(date(2026, 2, 1),),
+    )
+
+    with pytest.raises(ValueError, match="does not align"):
+        csv_table(result)
+
+
+def test_markdown_table_rejects_point_values_that_do_not_align_to_period_boundaries():
+    result = StatementResult(
+        rows=(LineRow("Cash", B, (DateValue(date(2026, 2, 1), 10.0),)),),
+        periods=(P1, P2),
+        dates=(date(2026, 2, 1),),
+    )
+
+    with pytest.raises(ValueError, match="does not align"):
+        markdown_table(result)
+
+
 def test_fixed_width_table_requires_period_result():
     result = StatementResult(
         rows=(LineRow("Cash", B, (DateValue(date(2026, 1, 1), 10.0),)),),
@@ -169,3 +330,25 @@ def test_fixed_width_table_requires_period_result():
 
     with pytest.raises(ValueError, match="requires .* periods"):
         fixed_width_table(result)
+
+
+def test_csv_table_requires_period_result():
+    result = StatementResult(
+        rows=(LineRow("Cash", B, (DateValue(date(2026, 1, 1), 10.0),)),),
+        periods=(),
+        dates=(date(2026, 1, 1),),
+    )
+
+    with pytest.raises(ValueError, match="requires .* periods"):
+        csv_table(result)
+
+
+def test_markdown_table_requires_period_result():
+    result = StatementResult(
+        rows=(LineRow("Cash", B, (DateValue(date(2026, 1, 1), 10.0),)),),
+        periods=(),
+        dates=(date(2026, 1, 1),),
+    )
+
+    with pytest.raises(ValueError, match="requires .* periods"):
+        markdown_table(result)

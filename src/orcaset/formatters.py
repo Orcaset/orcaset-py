@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+from io import StringIO
 
 from .period import Period
 from .stmt import (
@@ -65,6 +67,84 @@ def fixed_width_table(
             lines.append(_horizontal_line(widths, padding))
             continue
         lines.append(_format_line(row, widths, padding))
+
+    return "\n".join(lines)
+
+
+def csv_table(
+    result: StatementResult,
+    *,
+    date_formatter: DateFormatter | None = None,
+    value_formatter: ValueFormatter | None = None,
+) -> str:
+    """
+    Format a period-based statement result as CSV.
+
+    Point values align to the initial period start or to period end dates. Raises `ValueError`
+    if the result has no periods or contains point values at other dates.
+    """
+    if not result.periods:
+        raise ValueError("csv_table requires a statement result with periods")
+
+    date_format = date_formatter or _format_date
+    value_format = value_formatter or _format_value
+    columns = _period_columns(result.periods)
+    table = _render_table(result.rows, columns, date_format, value_format, indent=0)
+
+    output = StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(table.start_header)
+    writer.writerow(table.end_header)
+
+    for row in table.rows:
+        if isinstance(row, _Spacer):
+            writer.writerow(())
+            continue
+        if isinstance(row, _HorizontalRule):
+            continue
+        writer.writerow(row)
+
+    return output.getvalue().removesuffix("\n")
+
+
+def markdown_table(
+    result: StatementResult,
+    *,
+    date_formatter: DateFormatter | None = None,
+    value_formatter: ValueFormatter | None = None,
+    indent: int = 2,
+) -> str:
+    """
+    Format a period-based statement result as a Markdown table.
+
+    Point values align to the initial period start or to period end dates. Raises `ValueError`
+    if the result has no periods or contains point values at other dates.
+    """
+    if not result.periods:
+        raise ValueError("markdown_table requires a statement result with periods")
+
+    date_format = date_formatter or _format_date
+    value_format = value_formatter or _format_value
+    columns = _period_columns(result.periods)
+    table = _render_table(result.rows, columns, date_format, value_format, indent)
+    column_count = len(_column_widths(table))
+
+    lines = [
+        _markdown_line(table.start_header, column_count),
+        _markdown_separator(column_count),
+        _markdown_line(table.end_header, column_count),
+    ]
+
+    bold_next_row = False
+    for row in table.rows:
+        if isinstance(row, _Spacer):
+            lines.append(_markdown_line((), column_count))
+            continue
+        if isinstance(row, _HorizontalRule):
+            bold_next_row = True
+            continue
+        lines.append(_markdown_line(row, column_count, bold=bold_next_row))
+        bold_next_row = False
 
     return "\n".join(lines)
 
@@ -268,6 +348,39 @@ def _format_line(values: Sequence[str], widths: Sequence[int], padding: int) -> 
 
 def _horizontal_line(widths: Sequence[int], padding: int) -> str:
     return "-" * (sum(widths) + padding * (len(widths) - 1))
+
+
+def _markdown_line(values: Sequence[str], column_count: int, *, bold: bool = False) -> str:
+    cells = []
+    for index in range(column_count):
+        value = values[index] if index < len(values) else ""
+        cells.append(_markdown_cell(value, bold=bold))
+    return f"| {' | '.join(cells)} |"
+
+
+def _markdown_separator(column_count: int) -> str:
+    return f"| {' | '.join(('---', *(('---:',) * (column_count - 1))))} |"
+
+
+def _markdown_cell(value: str, *, bold: bool) -> str:
+    escaped = _escape_markdown_cell(value)
+    if bold and escaped:
+        return f"**{escaped}**"
+    return escaped
+
+
+def _escape_markdown_cell(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("*", "\\*")
+        .replace("_", "\\_")
+        .replace("\n", "<br>")
+    )
+    leading_spaces = len(escaped) - len(escaped.lstrip(" "))
+    if not leading_spaces:
+        return escaped
+    return f"{'&nbsp;' * leading_spaces}{escaped[leading_spaces:]}"
 
 
 def _format_value(value: float | None) -> str:

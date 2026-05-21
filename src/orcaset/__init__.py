@@ -18,7 +18,7 @@ from .cell import (
     sum_spans,
 )
 from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNode, Context
-from .formatters import DateFormatter, ValueFormatter, fixed_width_table
+from .formatters import DateFormatter, ValueFormatter, csv_table, fixed_width_table, markdown_table
 from .formula import Formula
 from .period import Period
 from .point import PointFamilyResult, PointSeries, PointSeriesFamily
@@ -63,7 +63,9 @@ __all__ = [
     "CellDependencyNode",
     "DateFormatter",
     "ValueFormatter",
+    "csv_table",
     "fixed_width_table",
+    "markdown_table",
     "Series",
     "SpanAgg",
     "PointSeries",
