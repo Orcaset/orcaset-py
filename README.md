@@ -2,11 +2,12 @@
 
 > *This library is in experimental status and the API is likely to change.*
 
-Orcaset is built for financial analysis by agents. It uses type annotations and runtime safety checks to prevent users and agents from accidentally creating malformed models. Strong protections give end users confidence that large-scale modifications do not cause hidden errors.
+Orcaset is a Python library for building financial models as code. Type annotations catch malformed models at write time, so humans and AI agents can build, modify, and audit large models with confidence.
 
-* Build and Update with Confidence - Strong typing prevents invalid models and helps agents navigate deep formula dependencies. Confidently modify models without breaking them.
-* Transparent and Deterministic - Calculations are open and transparent. Materialize and inspect query-specific traces to audit model calculations. No black boxes.
-* Efficient Construction - Faster insight. Reuse components across models and scenarios. Save tokens by writing formulas once per line item, not once per cell.
+* **Build and update with confidence** — Strong typing promotes correct models and surfaces relationship dependencies, so you can modify models without breaking them.
+* **Flexible integration** — Connect to any data source and embed in existing workflows by leveraging Python's ecosystem.
+* **Transparent and deterministic** — No black boxes. Materialize and inspect query-specific traces to audit every calculation.
+* **Efficient construction** — Reusable components and terse definitions mean faster iteration and less context rot for agents.
 
 ## Installation
 
@@ -24,42 +25,72 @@ Requires Python 3.14 or later.
 
 ## Orcaset at a glance
 
-Orcaset models are constructed by defining and combining line item classes. Values are materialized by querying over dates, with caching and circular references handled by the evaluation context.
+Orcaset models are built by defining and combining line item classes. Values are materialized by querying over dates, with caching and circular references handled by the evaluation context.
 
-This code snippet creates a simple model with revenue, expenses, and income.
+The snippet below defines a simple model with revenue, expenses, and income, then queries quarterly values through 2026.
 
 ```py
-# Define Assumptions
+from datetime import date
+from typing import Iterable
+
+from dateutil.relativedelta import relativedelta
+
+from orcaset import (
+    Context,
+    Formula,
+    Period,
+    Span,
+    SpanSeries,
+    Stmt,
+    Total,
+    fixed_width_table,
+    span,
+    split_daily,
+    sum_spans,
+)
+
+# Assumptions
 start_date = date(2025, 12, 31)
 initial_revenue = 100.0
 revenue_growth_rate = 0.05
 
 
-# Define Model
+# Model
 class Revenue(SpanSeries):
+    agg = sum_spans(0.0)
+
     def spans(self) -> Iterable[Span]:
         value = initial_revenue
         for period in Period.seq(start_date, relativedelta(months=1, day=31)):
             yield Span(period, Formula.pure(value), split_daily)
             value *= 1 + revenue_growth_rate / 12
 
-
 Expenses = Revenue * -0.7
-Income = Revenue + Expenses
-```
+Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0))
 
-Values can be queried over any range of dates. This snippet queries the model for total 2026 income.
+# Add human-readable labels
+Expenses.label = "Expenses"
+Income.label = "Income"
 
-```py
-# Query Model
+# Build a statement view
+stmt = Stmt(Total(Income, [Revenue, Expenses]))
+
+# Resolve and print formatted values
 ctx = Context()
-cy_2026 = Period(start_date, date(2026, 12, 31))
+qtrly_periods = Period.list(start_date, relativedelta(months=3, day=31), date(2026, 12, 31))
+print(fixed_width_table(stmt.values(ctx, qtrly_periods)))
 
-print(ctx.get(Income).query(cy_2026).map(sum_spans(0.0)).eval())
-# 368.36566474847893
+# Start                   2025-12-31  2026-03-31  2026-06-30  2026-09-30
+# End         2025-12-31  2026-03-31  2026-06-30  2026-09-30  2026-12-31
+#   Revenue                   301.25      305.03      308.86      312.74
+#   Expenses                 -210.88     -213.52     -216.20     -218.92
+# ----------------------------------------------------------------------
+# Income                       90.38       91.51       92.66       93.82
 ```
 
-See the [quickstart example](./examples/quickstart/README.md) for a more detailed guide to using Orcaset.
+Note that `Revenue` is defined on a monthly basis but queried quarterly. Orcaset automatically aligns, interpolates, and aggregates over partial periods.
+
+See the [quickstart example](./examples/quickstart/README.md) for a step-by-step guide covering cells, series, context, and structured output.
 
 ## License
 
