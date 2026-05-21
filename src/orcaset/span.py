@@ -157,28 +157,39 @@ class SpanQueryOp(Op[list[Span]]):
     def eval(self) -> list[Span]:
         span_cache = self.series.ctx.get_or_create_span_cache(self.series)
 
-        # If the period is already materialized, return the span.
-        if self.period in span_cache.spans:
-            return [_bind_span(self.series.ctx, span_cache.spans[self.period])]
+        # If the period is already cached, return the stable source or derived span.
+        cached_span = span_cache.get_span(self.period)
+        if cached_span is not None:
+            return [_bind_span(self.series.ctx, cached_span)]
 
         span_cache.ensure_materialized_through(self.period.end)
         spans = [
             span
-            for span in span_cache.spans.values()
+            for span in span_cache.source_spans.values()
             if span.period.start < self.period.end and span.period.end > self.period.start
         ]
 
         result: list[Span] = []
         cursor = self.period.start
         for span in spans:
-            clipped = _clip_span(self.series.ctx, span, self.period)
+            clipped = span_cache.get_or_add_derived_span(
+                _clip_span(self.series.ctx, span, self.period)
+            )
             if cursor < clipped.period.start:
-                result.append(_none_span(Period(cursor, clipped.period.start), self.series))
+                result.append(
+                    span_cache.get_or_add_derived_span(
+                        _none_span(Period(cursor, clipped.period.start), self.series)
+                    )
+                )
             result.append(clipped)
             cursor = clipped.period.end
 
         if cursor < self.period.end:
-            result.append(_none_span(Period(cursor, self.period.end), self.series))
+            result.append(
+                span_cache.get_or_add_derived_span(
+                    _none_span(Period(cursor, self.period.end), self.series)
+                )
+            )
 
         return [_bind_span(self.series.ctx, span) for span in result]
 
@@ -267,7 +278,7 @@ def align_spans(series: Sequence[SpanSeries]) -> Iterator[tuple[Span, ...]]:
         for cache in caches:
             cache.ensure_materialized_after(cursor)
 
-        active = [_active_span(cache.spans.values(), cursor) for cache in caches]
+        active = [_active_span(cache.source_spans.values(), cursor) for cache in caches]
         next_start = _next_span_start(caches, cursor)
 
         if all(span is None for span in active):
@@ -281,16 +292,18 @@ def align_spans(series: Sequence[SpanSeries]) -> Iterator[tuple[Span, ...]]:
         period = Period(cursor, end)
 
         yield tuple(
-            _bind_span(ctx, _clip_span(ctx, span, period))
+            _bind_span(ctx, caches[index].get_or_add_derived_span(_clip_span(ctx, span, period)))
             if span is not None
-            else _bind_span(ctx, _none_span(period, series[index]))
+            else _bind_span(
+                ctx, caches[index].get_or_add_derived_span(_none_span(period, series[index]))
+            )
             for index, span in enumerate(active)
         )
         cursor = end
 
 
 def _first_span_start(caches) -> date | None:
-    starts = [span.period.start for cache in caches for span in cache.spans.values()]
+    starts = [span.period.start for cache in caches for span in cache.source_spans.values()]
     return min(starts) if starts else None
 
 
@@ -302,7 +315,7 @@ def _next_span_start(caches, dt: date) -> date | None:
     starts = [
         span.period.start
         for cache in caches
-        for span in cache.spans.values()
+        for span in cache.source_spans.values()
         if span.period.start > dt
     ]
     return min(starts) if starts else None

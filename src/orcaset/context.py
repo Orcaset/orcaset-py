@@ -16,17 +16,25 @@ from .span import SpanSeries
 
 
 class _SpanCache:
-    __slots__ = ("series", "iterator", "spans", "_cursor_date", "_exhausted")
+    __slots__ = (
+        "series",
+        "iterator",
+        "source_spans",
+        "derived_spans",
+        "_cursor_date",
+        "_exhausted",
+    )
 
     def __init__(
         self,
         series: SpanSeries,
         iterator: Iterator[Span],
-        spans: dict[Period, Span],
+        source_spans: dict[Period, Span],
     ) -> None:
         self.series = series
         self.iterator = iterator
-        self.spans = spans
+        self.source_spans = source_spans
+        self.derived_spans: dict[Period, Span] = {}
         # Date of last materialized span, or None if no spans have been materialized yet
         self._cursor_date: date | None = None
         self._exhausted = False
@@ -49,8 +57,22 @@ class _SpanCache:
             return
         if next_span.source is None:
             next_span.source = self.series
-        self.spans[next_span.period] = next_span
+        self.source_spans[next_span.period] = next_span
+        self.derived_spans.pop(next_span.period, None)
         self._cursor_date = next_span.period.end
+
+    def get_span(self, period: Period) -> Span | None:
+        span = self.source_spans.get(period)
+        if span is not None:
+            return span
+        return self.derived_spans.get(period)
+
+    def get_or_add_derived_span(self, span: Span) -> Span:
+        cached = self.get_span(span.period)
+        if cached is not None:
+            return cached
+        self.derived_spans[span.period] = span
+        return span
 
 
 class CellConvergenceError(RuntimeError):

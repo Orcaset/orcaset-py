@@ -9,6 +9,7 @@ from orcaset import (
     Context,
     Formula,
     Period,
+    PointSeries,
     Span,
     SpanSeries,
     SpanSplitError,
@@ -100,6 +101,50 @@ def test_span_series_partial_query_returns_clipped_prorated_span():
 
     assert [span.period for span in spans] == [Period(date(2025, 1, 11), date(2025, 1, 21))]
     assert eval_spans(ctx, spans) == pytest.approx([100.0])
+
+
+def test_span_series_partial_query_reuses_derived_spans_without_polluting_sources():
+    class Revenue(_TestSpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(
+                Period(date(2025, 1, 1), date(2025, 2, 1)),
+                Formula.pure(310.0),
+                split_daily,
+            )
+
+    ctx = Context()
+    revenue = ctx.get(Revenue)
+    partial_period = Period(date(2025, 1, 11), date(2025, 1, 21))
+
+    first = revenue.query(partial_period).eval()[0]
+    second = revenue.query(partial_period).eval()[0]
+    expanded = revenue.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
+
+    assert first is second
+    assert [span.period for span in expanded] == [
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+        Period(date(2025, 2, 1), date(2025, 3, 1)),
+    ]
+    assert eval_spans(ctx, expanded) == [310.0, None]
+
+
+def test_span_series_value_inside_point_formula_reuses_clipped_spans():
+    start = date(2025, 1, 1)
+    query_date = date(2025, 1, 11)
+
+    class Revenue(_TestSpanSeries):
+        def spans(self) -> Iterable[Span]:
+            yield Span(Period(start, date(2025, 2, 1)), Formula.pure(310.0), split_daily)
+
+    class Balance(PointSeries):
+        def point(self, dt: date) -> Formula[float | None]:
+            if dt == start:
+                return Formula.pure(100.0)
+            return Formula.pure(100.0) + self.ctx.get(Revenue).value(Period(start, dt))
+
+    ctx = Context()
+
+    assert ctx.get(Balance).value(query_date).eval() == pytest.approx(200.0)
 
 
 def test_span_series_query_pads_gaps_with_zero_value_spans():
