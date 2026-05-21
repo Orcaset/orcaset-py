@@ -1,6 +1,6 @@
 # Quickstart Example
 
-Run from the repo root: `uv run python examples/quickstart/main.py`. Code: [main.py](./main.py).
+*Run from the repo root: `uv run python examples/quickstart/main.py`. Code: [main.py](./main.py).*
 
 This example introduces basic concepts by building a simple model of an interest-bearing account. The model has two line items:
 
@@ -38,12 +38,17 @@ historical_spans = [Span(Period(*c[0]), Formula.pure(c[1]), split_daily) for c i
 
 ### Series
 
+#### `Interest`
+
 Instead of working with cells directly, users generally work with cell factories representing line items in a model. These `Series` types enable efficient, strongly typed composition of cells.
 
 We can create an initial `Interest` series by subclassing `SpanSeries` and overriding the abstract `spans` method.
 
 ```py
+interest_rate = 0.05
+
 class Interest(SpanSeries):
+
     def spans(self) -> Iterable[Span]:
         s: Span | None = None
         # Yield historical interest accruals
@@ -53,20 +58,32 @@ class Interest(SpanSeries):
         # Yield projected interest accruals
         if s is None:
             return
+
+        # Initial example: grow at 5% compounding quarterly
         for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
             s = Span(
                 period=period,
-                fn=s.fn * (1 + 0.05 / 4),
+                fn=s.fn * (1 + interest_rate / 4),
                 split=split_daily,
             )
             yield s
 ```
 
-*Interest doesn't depend on the loan balance yet, it just grows at 5%, compounded quarterly. We'll update it later.*
+*Interest doesn't depend on the account balance yet, it just grows at 5%, compounded quarterly. We'll update it later.*
 
-Interest is calculated by first looping over and yielding the historical accruals. It continues by iterating over a sequence of quarterly periods from that last historical period and yielding spans that grow at a 5% quarterly rate. The value definition `fn=s.fn * (1 + 0.05 / 4)` says get the formula from the last span, creates a new `Formula` by multiplying it by `(1 + 5% / 4)`, and assign the new formula to the new span.
+Interest is calculated by first looping over and yielding the historical accruals. It continues by iterating over a sequence of quarterly periods from that last historical period and yielding spans that grow at a 5% annual rate. The value definition `fn=s.fn * (1 + interest_rate / 4)` gets the formula from the last span, creates a new `Formula` by multiplying it by `(1 + 0.05 / 4)`, and assigns the new formula to the new span.
 
-> Formulas are overloaded so that they return a new formula when used in arithmetic against numerical values. `fn=s.fn * (1 + 0.05 / 4)` is the same as `fn=s.fn.map(lambda x: None if x is None else x * (1 + 0.05 / 4))` which explicitly creates a new formula by mapping a new values from the old one.
+> Formulas are overloaded so that they return a new formula when used in arithmetic against numerical values. `fn=s.fn * (1 + 0.05 / 4)` is the same as `fn=s.fn.map(lambda x: None if x is None else x * (1 + 0.05 / 4))` which explicitly creates a new formula by mapping a new value from the old one.
+
+In addition to defining how spans should be split, we also need to define how spans should be aggregated. The `agg` attribute is a static function that reduces a list of `Span`s to a `float | None` value. `sum_spans(0.0)` is a convenience constructor for building a function that sums over span values, filling any null values with zero.
+
+```py
+class Interest(SpanSeries):
+    agg = sum_spans(0.0)
+    # ...
+```
+
+#### `Balance`
 
 Next, let's define the account balance. A balance is a point-in-time value, so we'll use points instead of spans.
 
@@ -80,8 +97,11 @@ initial_balance = 100.0
 
 class Balance(PointSeries):
     def point(self, dt: date) -> Formula[float | None]:
+        # Return None for dates before the start date
         if dt < start_date:
             return Formula.pure(None)
+
+        # Return the initial balance for the start date
         if dt == start_date:
             return Formula.pure(initial_balance)
         # ...
@@ -99,24 +119,25 @@ Series are instantiated with the current `ctx` object which we can use to get th
 class Balance(PointSeries):
     def point(self, dt: date) -> Formula[float | None]:
         # ...
-        interest = self.ctx.get(Interest).query(Period(start_date, dt)).map(sum_spans(0.0))
+        
+        interest = self.ctx.get(Interest).value(Period(start_date, dt))
         return initial_balance + interest
 ```
 
 Breaking this down:
 
-* `self.ctx.get(Interest)`: Get the interest object from the current context.
-* `.query(Period(start_date, dt))`: Query interest for the list of span cells from the start date to the query date. Partial cells are clipped to the query date bounds using the cell's split function. If the query bounds extend outside `Interest`'s range (e.g. if we queried for a period before the series started), pads with spans that have a value of `None`.
-* `.map(sum_spans(0.0))`: Map the list of spans to a float by summing their values. Fills `None` value spans with `0.0`.
+* `self.ctx.get(Interest)`: Get the interest object from the current context
+* `.value(Period(start_date, dt))`: Query interest from the starting date to the query date
 
 We can also update `Interest` to depend on the outstanding balance using a similar approach.
 
 ```py
-interest_rate = 0.05
-
 class Interest(SpanSeries):
+    agg = sum_spans(0.0)
+
     def spans(self) -> Iterable[Span]:
         # ...
+
         for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
             yield Span(
                 period=period,
@@ -127,17 +148,17 @@ class Interest(SpanSeries):
 
 ### Resolving values
 
-Cell values are resolved by calling `eval` and passing the model context.
+Cell values are resolved by calling `eval` and passing the model context. For example, we can evaluate the first historical interest span with this code.
 
 ```py
 ctx = Context()
 
 cell = historical_spans[0]
-print(cell.eval(ctx))
-# 1.0
+print("\nInitial interest cell value: ", cell.eval(ctx))
+# Initial interest cell value:  1.0
 ```
 
-To resolve values from a series, first ask the context for an instance of the series using `ctx.get(...)` then query and evaluate the applicable cells.
+To resolve values from a series, first ask the context for an instance of the series using `ctx.get(...)` then query and evaluate the applicable cells using `.value(...).eval()`.
 
 ```py
 interest = ctx.get(Interest)
@@ -145,7 +166,7 @@ balance = ctx.get(Balance)
 
 print("End Date\tBalance\tInterest")
 for period in Period.seq(start_date, period_length, end=date(2026, 12, 31)):
-    int_acc = interest.query(period).map(sum_spans(0.0)).eval()
+    int_acc = interest.value(period).eval()
     bal = balance.value(period.end).eval()
     print(f"{period.end:%m/%d/%Y}\t{bal:,.2f}\t{int_acc:,.2f}")
 
@@ -160,17 +181,19 @@ for period in Period.seq(start_date, period_length, end=date(2026, 12, 31)):
 
 > `Context.get` is invariant on the class argument. `ctx.get(SomeClass)` always returns an instance of `SomeClass`. It will not return any instances of a subclass of `SomeClass`, even if they already exist in the model.
 
+Notice that we defined interest periods on a quarterly basis but queried on a monthly basis. Orcaset automatically interpolates partial periods in response to the monthly queries. In this case, interest spans were created using the `split_daily` function which pro rates partial periods based on the relative proportion of days.
+
 ## Simplifying the Model
 
-Orcaset comes with many functions for building, combining and evaluating series.
+Orcaset comes with many functions for building and combining series.
 
 For example, the `point.accumulate` function is a convenience constructor for building point series that start from an initial value and change based on accumulating over a span series. We could redefine the balance line item in a single line:
 
 ```py
-Balance2 = point.accumulate(start_date, initial_balance, Interest)
+Balance2 = point.accumulate(start=start_date, value=initial_balance, changes=Interest)
 ```
 
-There are series combinators for `neg`, `scale`, `sum`, `sub`, `mul`, and `div` which can be invoked directly or through regular operator notation. The binary constructors all combine series on a date-aligned basis. This means you can define arbitrary sequence periods and they will be combined correctly.
+There are series combinators for `neg`, `scale`, `sum`, `sub`, `mul`, and `div`. Scalar operations can use regular operator notation, while binary and multi-series span combinations use explicit constructors with an `agg` function. The binary constructors all combine series on a date-aligned basis. This means you can define arbitrary sequences of periods and they will be combined correctly.
 
 ```py
 # OperatingIncome: 100 annually
@@ -178,14 +201,78 @@ OperatingIncome = span.define(
     lambda _: [
         Span(p, Formula.pure(100.0), split_daily)
         for p in Period.seq(start_date, relativedelta(years=1))
-    ]
+    ],
+    agg=sum_spans(0.0),
 )
 
-# Operating income is defined with yearly periods. Orcaset automatically aligns and 
+# Operating income is defined with yearly periods. Orcaset automatically aligns and
 # interpolates periods when combining with Interest which is defined with quarterly periods
-PreTaxIncome = OperatingIncome + Interest
+PreTaxIncome = span.sum([OperatingIncome, Interest], agg=sum_spans(0.0))
 Taxes = PreTaxIncome * -0.25
-NetIncome = PreTaxIncome - Taxes
+NetIncome = span.sum([PreTaxIncome, Taxes], agg=sum_spans(0.0))
 ```
 
-In addition to the packaged convenience constructors you can, of course, build your own library of constructors to efficiently build models and connect to data sources.
+Beyond the packaged convenience constructors you can, of course, build your own library of constructors to efficiently build models and connect to data sources.
+
+### Structured output
+
+In addition to manually querying values, we can create statements views using the `stmt` module. Statements create views that can be queried with a single call and formatted into structure output (CSV, markdown, JSON, etc).
+
+For example, to create this statement structure:
+
+```txt
+Income statement(Group)
+└── Net income (Total)
+    ├── Pre-tax income (Total)
+    │   ├── Operating income (Series)
+    │   └── Interest (Series)
+    └── Taxes (Series)
+Balance sheet (Group)
+└── Balance (Series)
+```
+
+we would define this statement:
+
+```py
+# Add human-readable labels
+NetIncome.label = "Net Income"
+Taxes.label = "Taxes"
+PreTaxIncome.label = "Pre-Tax Income"
+OperatingIncome.label = "Operating Income"
+
+
+# Create statement
+stmt = Stmt(
+    Group([Total(NetIncome, [Total(PreTaxIncome, [OperatingIncome, Interest]), Taxes])]),
+    Group([Balance]),
+)
+```
+
+We can materialize all the cells in the statement, which returns structured output that we can format to a table and print to the console.
+
+```py
+periods = Period.list(start_date, relativedelta(years=1), date(2030, 12, 31))
+results = stmt.values(ctx, periods)
+formatted_table = fixed_width_table(results)
+print(formatted_table)
+
+# Start                               2025-12-31  2026-12-31  2027-12-31  2028-12-31  2029-12-31
+# End                     2025-12-31  2026-12-31  2027-12-31  2028-12-31  2029-12-31  2030-12-31
+
+#       Operating Income                  100.00      100.00      100.00      100.00      100.00
+#       Interest                            7.33        5.47        5.75        6.04        6.35
+# ----------------------------------------------------------------------------------------------
+#     Pre-Tax Income                      107.33      105.47      105.75      106.04      106.35
+#     Taxes                               -26.83      -26.37      -26.44      -26.51      -26.59
+# ----------------------------------------------------------------------------------------------
+#   Net Income                             80.49       79.10       79.31       79.53       79.76
+
+
+#   Balance                   100.00      107.33      112.79      118.54      124.58      130.92
+```
+
+The `formatters` module currently includes `fixed_width_table`. User-defined converters to other formats are easy to create from the structured statement results.
+
+## Summary
+
+This example introduces the core Orcaset concepts. Review the other examples for guides on common scenarios, or get started by asking any coding agent to build a new model!
