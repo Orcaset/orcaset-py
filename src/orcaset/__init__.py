@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from . import point, span
+from . import span
+from . import point
 from .cell import (
     Point,
     Span,
@@ -19,17 +20,17 @@ from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNo
 from .formatters import DateFormatter, ValueFormatter, fixed_width_table
 from .formula import Formula
 from .period import Period
+from .point import PointSeries
 from .series import (
     PointFamilyResult,
-    PointSeries,
     PointSeriesFamily,
     Series,
     SpanAgg,
     SpanFamilyResult,
-    SpanSeries,
     SpanSeriesFamily,
     align_spans,
 )
+from .span import SpanSeries
 from .stmt import (
     FamilyLineRow,
     FamilyRow,

@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from abc import ABCMeta
 from collections.abc import Callable, Iterable, Sequence
 from datetime import date
 from typing import TYPE_CHECKING, cast, overload
@@ -22,10 +23,64 @@ from ._value_ops import (
 from .cell import Span, SpanFormulaTransform, SpanSplit, no_split
 from .formula import Formula, Op
 from .period import Period
-from .series import SpanAgg, SpanSeries, _split_span, align_spans
+from .series import (
+    SpanAgg,
+    SpanSeriesBase,
+    _split_span,
+    align_spans,
+)
 
 if TYPE_CHECKING:
     from .context import Context
+
+
+class _SpanSeriesMeta(ABCMeta):
+    def __neg__(cls) -> type["SpanSeries"]:
+        return neg(cls)
+
+    def __add__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return add_scalar(cls, other)
+        return NotImplemented
+
+    def __radd__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return add_scalar(cls, other)
+        return NotImplemented
+
+    def __sub__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return sub_scalar(cls, other)
+        return NotImplemented
+
+    def __rsub__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return rsub_scalar(other, cls)
+        return NotImplemented
+
+    def __mul__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return scale(cls, other)
+        return NotImplemented
+
+    def __rmul__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return scale(cls, other)
+        return NotImplemented
+
+    def __truediv__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return div_scalar(cls, other)
+        return NotImplemented
+
+    def __rtruediv__(cls, other: int | float, /) -> type["SpanSeries"]:
+        if isinstance(other, int | float):
+            return rdiv_scalar(other, cls)
+        return NotImplemented
+
+
+class SpanSeries(SpanSeriesBase, metaclass=_SpanSeriesMeta):
+    """SpanSeries with operator overloading."""
 
 
 @overload

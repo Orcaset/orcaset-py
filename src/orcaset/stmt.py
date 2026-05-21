@@ -10,7 +10,9 @@ from datetime import date
 from .cell import Point
 from .context import Context
 from .period import Period
-from .series import PointSeries, PointSeriesFamily, SpanSeries, SpanSeriesFamily
+from .point import PointSeries
+from .series import PointSeriesFamily, SpanSeriesFamily
+from .span import SpanSeries
 
 
 type StmtSeries = type[SpanSeries] | type[PointSeries]

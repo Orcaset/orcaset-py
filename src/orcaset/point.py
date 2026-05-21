@@ -1,9 +1,10 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from abc import ABCMeta
 from collections.abc import Callable, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, overload
 
 from ._value_ops import (
     ValueOp,
@@ -22,10 +23,124 @@ from ._value_ops import (
 from .cell import Point, Span
 from .formula import Formula, Op
 from .period import Period
-from .series import PointSeries, SpanSeries
+from .series import PointSeriesBase
+from .span import SpanSeries
 
 if TYPE_CHECKING:
     from .context import Context
+
+
+class _PointSeriesMeta(ABCMeta):
+    def __neg__(cls) -> type["PointSeries"]:
+        return neg(cls)
+
+    @overload
+    def __add__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __add__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __add__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return sum([cls, other], name=f"Add{cls.__name__}{other.__name__}")
+        if isinstance(other, int | float):
+            return add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __radd__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __radd__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __radd__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return sum([other, cls], name=f"Add{other.__name__}{cls.__name__}")
+        if isinstance(other, int | float):
+            return add_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __sub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __sub__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __sub__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return sub(cls, other)
+        if isinstance(other, int | float):
+            return sub_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rsub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rsub__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __rsub__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return sub(other, cls)
+        if isinstance(other, int | float):
+            return rsub_scalar(other, cls)
+        return NotImplemented
+
+    @overload
+    def __mul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __mul__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __mul__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return mul([cls, other], name=f"Mul{cls.__name__}{other.__name__}")
+        if isinstance(other, int | float):
+            return scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rmul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rmul__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __rmul__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return mul([other, cls], name=f"Mul{other.__name__}{cls.__name__}")
+        if isinstance(other, int | float):
+            return scale(cls, other)
+        return NotImplemented
+
+    @overload
+    def __truediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __truediv__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __truediv__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return div(cls, other)
+        if isinstance(other, int | float):
+            return div_scalar(cls, other)
+        return NotImplemented
+
+    @overload
+    def __rtruediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+
+    @overload
+    def __rtruediv__(cls, other: int | float, /) -> type["PointSeries"]: ...
+
+    def __rtruediv__(cls, other: object, /) -> object:
+        if isinstance(other, _PointSeriesMeta):
+            return div(other, cls)
+        if isinstance(other, int | float):
+            return rdiv_scalar(other, cls)
+        return NotImplemented
+
+
+class PointSeries(PointSeriesBase, metaclass=_PointSeriesMeta):
+    """PointSeries with operator overloading."""
 
 
 def define(
