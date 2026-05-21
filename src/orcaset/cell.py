@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 type SpanFormula = Formula[float | None]
 type SpanFormulaTransform = Callable[[SpanFormula], SpanFormula]
 type SpanSplit = Callable[[Span, date], tuple[SpanFormulaTransform, SpanFormulaTransform]]
+type SpanAggFn = Callable[[list[Span]], float]
 
 
 class SpanSplitError(RuntimeError):
@@ -82,14 +83,25 @@ def split_const(_: Span, __: date) -> tuple[SpanFormulaTransform, SpanFormulaTra
     return identity, identity
 
 
-def sum_spans(fill: float) -> Callable[[list[Span]], float]:
+class SpanAggregator:
+    def __init__(self, fn: SpanAggFn):
+        self.fn = fn
+
+    def __call__(self, spans: list[Span]) -> float:
+        return self.fn(spans)
+
+    def __get__(self, instance: object, owner: type[object] | None = None) -> SpanAggFn:
+        return self.fn
+
+
+def sum_spans(fill: float) -> SpanAggregator:
     def reduce(spans: list[Span]) -> float:
         return builtins.sum(_span_value(span, fill) for span in spans)
 
-    return reduce
+    return SpanAggregator(reduce)
 
 
-def avg_spans(yf: Callable[[date, date], float], fill: float) -> Callable[[list[Span]], float]:
+def avg_spans(yf: Callable[[date, date], float], fill: float) -> SpanAggregator:
     def reduce(spans: list[Span]) -> float:
         weighted_total = 0.0
         total_weight = 0.0
@@ -99,7 +111,7 @@ def avg_spans(yf: Callable[[date, date], float], fill: float) -> Callable[[list[
             total_weight += weight
         return fill if total_weight == 0 else weighted_total / total_weight
 
-    return reduce
+    return SpanAggregator(reduce)
 
 
 def _span_value(span: Span, fill: float) -> float:
