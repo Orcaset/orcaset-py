@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from dateutil.relativedelta import relativedelta
 
@@ -28,10 +28,6 @@ model_start = date(2025, 12, 31)
 useful_life_qtrs = 4
 
 
-def qtr_label(period: Period) -> str:
-    return f"{period.end:%Y} Q{((period.end.month - 1) // 3) + 1}"
-
-
 # ------------------ CAPEX ------------------
 class CapEx(SpanSeries):
     label = "Capital Expenditures"
@@ -55,33 +51,48 @@ class DepreciationCohort(SpanSeries):
             yield Span(self.cohort.shift(quarter * index), depreciation, split_daily)
 
 
-def depreciation_cohort_type(cohort: Period) -> type[DepreciationCohort]:
-    return type(
-        f"Depreciation_{cohort.end:%Y_%m_%d}",
-        (DepreciationCohort,),
-        {"cohort": cohort, "label": f"Depreciation {qtr_label(cohort)}"},
-    )
-
-
 # --------- DEPRECIATION SERIES FAMILY ---------
 class DepreciationByCohort(SpanSeriesFamily[Period]):
     label = "Depreciation by Cohort"
 
     def key_label(self, key: Period) -> str:
-        return qtr_label(key)
+        return f"{key.end:%Y} Q{((key.end.month - 1) // 3) + 1}"
 
     def spans(self, period: Period) -> SpanFamilyResult[Period]:
+        """Return a dictionary of `{Period: list[Span]}` for the query period."""
         result: dict[Period, tuple[Span, ...]] = {}
 
-        for cohort in active_cohorts(period):
+        # Iterate over active keys for the period
+        for cohort in self.active_keys(period):
+            # Get or create the cohort series for the key
             cohort_series = self.ctx.get_or_create_family_series(
-                self,
-                cohort,
-                lambda cohort=cohort: depreciation_cohort_type(cohort),
+                family=self,
+                key=cohort,
+                factory=lambda cohort=cohort: self.create_cohort_type(cohort),
             )
+            # Query the cohort series for the period and add the spans to the result
             result[cohort] = tuple(cohort_series.query(period).eval())
 
         return result
+
+    def active_keys(self, period: Period) -> Iterable[Period]:
+        """Return periods starting before the end of the query period."""
+        for cohort_key in Period.seq(model_start, quarter):
+            if cohort_key.start < period.end:
+                yield cohort_key
+            else:
+                return
+
+    def create_cohort_type(self, cohort: Period) -> type[DepreciationCohort]:
+        """Factory method to create a new `DepreciationCohort` subclass for the given cohort."""
+        return type(
+            f"Depreciation_{cohort.end:%Y_%m_%d}",
+            (DepreciationCohort,),
+            {
+                "cohort": cohort,
+                "label": f"Depreciation {cohort.end:%Y} Q{((cohort.end.month - 1) // 3) + 1}",
+            },
+        )
 
 
 class TotalDepreciation(SpanSeries):
@@ -90,44 +101,35 @@ class TotalDepreciation(SpanSeries):
 
     def spans(self) -> Iterable[Span]:
         for period in Period.seq(model_start, quarter):
-            cohort_spans = self.ctx.get(DepreciationByCohort).query(period)
-            total = cast(
-                Formula[float | None],
-                cohort_spans.map(
-                    lambda spans_by_cohort: sum_spans(0.0)(
-                        [span for spans in spans_by_cohort.values() for span in spans]
-                    )
-                )
+            cohort_spans = self.ctx.get(DepreciationByCohort).value(period)
+            total: Formula[float | None] = cohort_spans.map(
+                lambda spans_by_cohort: sum([v or 0.0 for v in spans_by_cohort.values()]),
             )
             yield Span(period, total, split_daily)
 
 
-def capex_cohorts_through(end: date) -> Iterable[Period]:
-    cohort = Period(model_start, model_start + quarter)
-    while cohort.start < end:
-        yield cohort
-        cohort = cohort.shift(quarter)
-
-
-def active_cohorts(period: Period) -> Iterable[Period]:
-    for cohort in capex_cohorts_through(period.end):
-        schedule_end = cohort.start + quarter * useful_life_qtrs
-        if cohort.start < period.end and schedule_end > period.start:
-            yield cohort
-
-
 # ------------- STRUCTURED OUTPUT -------------
-def main() -> None:
-    ctx = Context()
-    stmt = Stmt(
-        CapEx,
-        Total(TotalDepreciation, [DepreciationByCohort]),
-    )
+ctx = Context()
+stmt = Stmt(
+    CapEx,
+    Total(TotalDepreciation, [DepreciationByCohort]),
+)
 
-    periods = Period.list(model_start, quarter, date(2027, 12, 31))
-    results = stmt.values(ctx, periods)
-    print(fixed_width_table(results, date_formatter=lambda dt: f"{dt:%Y-%m-%d}"))
+periods = Period.list(model_start, quarter, date(2027, 12, 31))
+results = stmt.values(ctx, periods)
+print(fixed_width_table(results, date_formatter=lambda dt: f"{dt:%Y-%m-%d}"))
 
-
-if __name__ == "__main__":
-    main()
+# Start                                 2025-12-31  2026-03-31  2026-06-30  2026-09-30  2026-12-31  2027-03-31  2027-06-30  2027-09-30
+# End                       2025-12-31  2026-03-31  2026-06-30  2026-09-30  2026-12-31  2027-03-31  2027-06-30  2027-09-30  2027-12-31
+# Capital Expenditures                      100.00      100.00      100.00      100.00      100.00      100.00      100.00      100.00
+#   Depreciation by Cohort
+#     2026 Q1                                25.00       25.00       25.00       25.00        0.00        0.00        0.00        0.00
+#     2026 Q2                                            25.00       25.00       25.00       25.00        0.00        0.00        0.00
+#     2026 Q3                                                        25.00       25.00       25.00       25.00        0.00        0.00
+#     2026 Q4                                                                    25.00       25.00       25.00       25.00        0.00
+#     2027 Q1                                                                                25.00       25.00       25.00       25.00
+#     2027 Q2                                                                                            25.00       25.00       25.00
+#     2027 Q3                                                                                                        25.00       25.00
+#     2027 Q4                                                                                                                    25.00
+# ------------------------------------------------------------------------------------------------------------------------------------
+# Total Depreciation                         25.00       50.00       75.00      100.00      100.00      100.00      100.00      100.00
