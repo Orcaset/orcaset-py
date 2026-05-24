@@ -65,12 +65,8 @@ class Revenue(SpanSeries):
             yield Span(period, Formula.pure(value), split_daily)
             value *= 1 + revenue_growth_rate / 12
 
-Expenses = Revenue * -0.7
-Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0))
-
-# Add human-readable labels
-Expenses.label = "Expenses"
-Income.label = "Income"
+Expenses = span.scale(Revenue, -0.7, name="Expenses")
+Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0), name="Income")
 
 # Build a statement view
 stmt = Stmt(Total(Income, [Revenue, Expenses]))
