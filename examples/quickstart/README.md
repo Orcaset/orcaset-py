@@ -197,13 +197,12 @@ There are series combinators for `neg`, `scale`, `sum`, `sub`, `mul`, and `div`.
 
 ```py
 # OperatingIncome: 100 annually
-OperatingIncome = span.define(
-    lambda _: [
+@span.define(agg=sum_spans(0.0))
+def OperatingIncome(_: SpanSeries) -> Iterable[Span]:
+    return [
         Span(p, Formula.pure(100.0), split_daily)
         for p in Period.seq(start_date, relativedelta(years=1))
-    ],
-    agg=sum_spans(0.0),
-)
+    ]
 
 # Operating income is defined with yearly periods. Orcaset automatically aligns and
 # interpolates periods when combining with Interest which is defined with quarterly periods

@@ -2,6 +2,7 @@ from datetime import date
 from typing import Any, Iterable, cast
 
 import pytest
+from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     Context,
@@ -14,6 +15,7 @@ from orcaset import (
     SpanSeriesFamily,
     align_spans,
     avg_spans,
+    last_span,
     no_split,
     point,
     span,
@@ -131,6 +133,57 @@ def test_span_aggregation_helpers_fill_none_values():
 
     assert sum_spans(5.0)(spans) == 315.0
     assert avg_spans(YF.act360, 5.0)(spans) == pytest.approx((310.0 * 31 + 5.0 * 28) / 59)
+    assert last_span(5.0)(spans) == 5.0
+
+
+def test_span_series_constant_constructor_creates_bounded_constant_series():
+    Units = span.constant(
+        120.0,
+        agg=last_span(None),
+        split=split_const,
+        start=date(2025, 6, 1),
+        end=date(2026, 1, 1),
+    )
+
+    ctx = Context()
+    units = ctx.get(Units)
+
+    assert Units.__name__ == "ConstantSpanSeries"
+    assert units.value(Period(date(2025, 1, 1), date(2025, 2, 1))).eval() is None
+    assert units.value(Period(date(2025, 5, 1), date(2025, 7, 1))).eval() == 120.0
+    assert units.value(Period(date(2026, 1, 1), date(2026, 2, 1))).eval() is None
+
+
+def test_span_series_constant_constructor_allows_custom_name():
+    Units = span.constant(
+        120.0,
+        agg=last_span(None),
+        split=split_const,
+        name="Units",
+    )
+
+    assert Units.__name__ == "Units"
+
+
+def test_span_series_periodic_constructor_creates_periodic_series():
+    Rent = span.periodic(
+        date(2025, 1, 1),
+        relativedelta(months=1),
+        310.0,
+        agg=sum_spans(0.0),
+        split=split_daily,
+        end=date(2025, 4, 1),
+    )
+
+    ctx = Context()
+    rent = ctx.get(Rent)
+
+    assert Rent.__name__ == "PeriodicSpanSeries"
+    assert rent.value(Period(date(2025, 1, 1), date(2025, 4, 1))).eval() == 930.0
+    assert rent.value(Period(date(2025, 1, 11), date(2025, 1, 21))).eval() == pytest.approx(
+        100.0
+    )
+    assert rent.value(Period(date(2025, 4, 1), date(2025, 5, 1))).eval() == 0.0
 
 
 def test_point_series_operator_constructors():

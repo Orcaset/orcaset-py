@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 type SpanFormula = Formula[float | None]
 type SpanFormulaTransform = Callable[[SpanFormula], SpanFormula]
 type SpanSplit = Callable[[Span, date], tuple[SpanFormulaTransform, SpanFormulaTransform]]
-type SpanAggFn = Callable[[list[Span]], float]
+type SpanAggFn = Callable[[list[Span]], float | None]
 
 
 class SpanSplitError(RuntimeError):
@@ -87,7 +87,7 @@ class SpanAggregator:
     def __init__(self, fn: SpanAggFn):
         self.fn = fn
 
-    def __call__(self, spans: list[Span]) -> float:
+    def __call__(self, spans: list[Span]) -> float | None:
         return self.fn(spans)
 
     def __get__(self, instance: object, owner: type[object] | None = None) -> SpanAggFn:
@@ -110,6 +110,19 @@ def avg_spans(yf: Callable[[date, date], float], fill: float) -> SpanAggregator:
             weighted_total += _span_value(span, fill) * weight
             total_weight += weight
         return fill if total_weight == 0 else weighted_total / total_weight
+
+    return SpanAggregator(reduce)
+
+
+def last_span(fill: float | None) -> SpanAggregator:
+    def reduce(spans: list[Span]) -> float | None:
+        if not spans:
+            return fill
+        span = spans[-1]
+        if span._ctx is None:
+            raise RuntimeError("Span aggregation helpers require spans returned by SpanSeries.query")
+        value = span.eval(span._ctx)
+        return fill if value is None else value
 
     return SpanAggregator(reduce)
 

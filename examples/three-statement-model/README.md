@@ -41,7 +41,7 @@ Financial model
 | **Revenue** | Starts at $1,000/month, grows 20% annually using `1 + r * Actual/360` each monthly period. |
 | **Cost of revenue** | Revenue x -0.30. |
 | **Gross profit** | Revenue + cost of revenue. |
-| **Operating expenses** | Constant -$200/month. |
+| **Operating expenses** | Periodic -$200/month via `span.periodic`. |
 | **Depreciation** | Beginning-of-period PPE net x `-10% / 12`. |
 | **EBIT** | Gross profit + operating expenses + depreciation. |
 | **Income tax** | EBIT x -0.20. |
@@ -49,7 +49,7 @@ Financial model
 | **Depreciation add back** | Depreciation x -1. |
 | **Operating cash flow** | Net income + depreciation add back. |
 | **Capital expenditures** | Revenue x -0.05. |
-| **Cash flow from financing** | Constant $0. |
+| **Cash flow from financing** | Periodic $0 via `span.periodic`. |
 | **Total cash flow** | Operating cash flow + capital expenditures + cash flow from financing. |
 | **Cash** | Starts at $1,000 and accumulates total cash flow. |
 | **PPE net** | Starts at $10,000, increases by capital expenditures, and decreases by depreciation. |

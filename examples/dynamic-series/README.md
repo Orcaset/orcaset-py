@@ -16,13 +16,14 @@ The capex series simply returns `100.0` every quarter, indefinitely.
 quarter = relativedelta(months=3, day=31)
 model_start = date(2025, 12, 31)
 
-class CapEx(SpanSeries):
-    label = "Capital Expenditures"
-    agg = sum_spans(0.0)
-
-    def spans(self) -> Iterable[Span]:
-        for period in Period.seq(model_start, quarter):
-            yield Span(period, Formula.pure(100.0), split_daily)
+CapEx = span.periodic(
+    model_start,
+    quarter,
+    100.0,
+    agg=sum_spans(0.0),
+    split=split_daily,
+    name="Capital Expenditures",
+)
 ```
 
 ## Depreciation detail by cohort

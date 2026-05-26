@@ -58,13 +58,14 @@ CostOfRevenue = span.scale(Revenue, cost_of_revenue_margin, name="Cost of revenu
 GrossProfit = span.sum([Revenue, CostOfRevenue], agg=sum_spans(0.0), name="Gross profit")
 
 
-class OperatingExpenses(SpanSeries):
-    label = "Operating expenses"
-    agg = sum_spans(0.0)
-
-    def spans(self) -> Iterable[Span]:
-        for period in Period.seq(model_start, month):
-            yield Span(period, Formula.pure(operating_expenses), split_daily)
+OperatingExpenses = span.periodic(
+    model_start,
+    month,
+    operating_expenses,
+    agg=sum_spans(0.0),
+    split=split_daily,
+    name="Operating expenses",
+)
 
 
 class Depreciation(SpanSeries):
@@ -99,13 +100,14 @@ OperatingCashFlow = span.sum(
 CapitalExpenditures = span.scale(Revenue, capex_margin, name="Capital expenditures")
 
 
-class CashFlowFromFinancing(SpanSeries):
-    label = "Cash flow from financing"
-    agg = sum_spans(0.0)
-
-    def spans(self) -> Iterable[Span]:
-        for period in Period.seq(model_start, month):
-            yield Span(period, Formula.pure(0.0), split_daily)
+CashFlowFromFinancing = span.periodic(
+    model_start,
+    month,
+    0.0,
+    agg=sum_spans(0.0),
+    split=split_daily,
+    name="Cash flow from financing",
+)
 
 
 TotalCashFlow = span.sum(

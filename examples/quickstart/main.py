@@ -113,14 +113,16 @@ print("\n")
 # Redefine Balance using the `point.accumulate` convenience constructor
 Balance2 = point.accumulate(start_date, initial_balance, Interest)
 
+
 # Demo other convenience constructors
-OperatingIncome = span.define(
-    lambda _: [
+@span.define(agg=sum_spans(0.0))
+def OperatingIncome(_: SpanSeries) -> Iterable[Span]:
+    return [
         Span(p, Formula.pure(100.0), split_daily)
         for p in Period.seq(start_date, relativedelta(years=1))
-    ],
-    agg=sum_spans(0.0),
-)
+    ]
+
+
 PreTaxIncome = span.sum([OperatingIncome, Interest], agg=sum_spans(0.0))
 Taxes = PreTaxIncome * -0.25
 NetIncome = span.sum([PreTaxIncome, Taxes], agg=sum_spans(0.0))

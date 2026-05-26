@@ -6,6 +6,8 @@ from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Seq
 from datetime import date
 from typing import TYPE_CHECKING, cast, overload
 
+from dateutil.relativedelta import relativedelta
+
 from ._value_ops import (
     ValueOp,
     add_scalar_values,
@@ -407,6 +409,40 @@ def from_list(
             yield Span(Period(start, end), Formula.pure(value), split)
 
     return _create_span_series(name, spans, agg)
+
+
+def constant(
+    value: float | None,
+    *,
+    agg: SpanAgg,
+    split: SpanSplit,
+    start: date | None = None,
+    end: date | None = None,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    period = Period(start or date.min, end or date.max)
+
+    def spans(self: SpanSeries) -> Iterable[Span]:
+        yield Span(period, Formula.pure(value), split)
+
+    return _create_span_series(name or "ConstantSpanSeries", spans, agg)
+
+
+def periodic(
+    start: date,
+    freq: relativedelta,
+    value: float | None,
+    *,
+    agg: SpanAgg,
+    split: SpanSplit,
+    end: date | None = None,
+    name: str | None = None,
+) -> type[SpanSeries]:
+    def spans(self: SpanSeries) -> Iterable[Span]:
+        for period in Period.seq(start, freq, end):
+            yield Span(period, Formula.pure(value), split)
+
+    return _create_span_series(name or "PeriodicSpanSeries", spans, agg)
 
 
 class _SpanTupleValueOp(Op[float | None]):
