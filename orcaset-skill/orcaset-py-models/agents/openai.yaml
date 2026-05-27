@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orcaset Financial Models in Python"
+  short_description: "Build financial models in Python with Orcaset"
+  default_prompt: "Use $orcaset-py-models to build a financial model in Python with Orcaset."
