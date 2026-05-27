@@ -2,21 +2,6 @@
 
 Use this reference for modeling workflow and financial-model structure that should remain mostly stable across Orcaset versions. Check the versioned API reference for exact signatures.
 
-## Model File Shape
-
-Follow this order unless the existing project has a stronger local convention:
-
-1. Imports from `datetime`, `dateutil.relativedelta`, `orcaset`, and other required libraries
-2. Assumptions: model dates, offsets, rates, margins, initial balances, data-source configuration, etc
-3. Historical/source series
-4. Model definitions
-5. Statement view definitions
-6. Formatters
-7. Output assumption (query periods and dates)
-8. Output queries and execution
-
-Keep signs consistent with the surrounding model. The Orcaset examples generally use revenue, assets, and inflows as positive, and expenses, outflows, capex, and taxes as negative.
-
 ## Code Structure
 
 Simple projects (about 20 line items or fewer) can be put in a single file. Larger projects should split code into logical groupings so that it is easier to navigate and maintain. Code should be organized into input, engine, and output groups regardless of whether it's in a single file or many files.
@@ -27,7 +12,7 @@ Simple projects (about 20 line items or fewer) can be put in a single file. Larg
 
 MAINTAIN CLEAR BOUNDARIES BETWEEN CONCERNS, ESPECIALLY AS MODEL COMPLEXITY GROWS.
 
-## Series Selection
+## Series
 
 Use span series for values over periods. The splitting and aggregation methods should be consistent with intended representation, e.g. flow or level.
 
@@ -39,6 +24,8 @@ Use point series for values at dates:
 - Generally represents balances as of a specific date (e.g. balance sheet items).
 
 When a financial concept could be either a rate or a balance over time, choose deliberately. Rates represented as spans usually need average or last-value aggregation, not sum aggregation.
+
+DO NOT add series termination dates to series. Prefer infinite series unless there's a semantic reason a series should terminate (e.g. loan balane ends becuase it matures, revenue from client stops because the contract ends).
 
 ## Forecast Relationships
 
@@ -70,7 +57,26 @@ For missing values:
 
 ## Historical Actuals and Projections
 
-Keep actuals as first-class source series. Build projection lines as continuations (e.g. using `spans.extend`) instead of mixing actuals and forecasts in a single opaque loop.
+Build projection lines as continuations (e.g. using `spans.extend`) instead of mixing actuals and forecasts in a single opaque loop.
+
+Example:
+
+```py
+HistProductSales = span.from_list(
+    historicals,
+    agg=sum_spans(0.0),
+    split=split_daily,
+    name="Product sales (historical)"
+)
+
+@span.extend(HistProductSales)
+def ProductSales(self: SpanSeries, start: date | None) -> Iterable[Span]:
+    if start is None:
+        return
+    for period in Period.seq(start, qtr_offset):
+        prior_value = self.ctx.get(ProductSales).value(prior_year_period(period))
+        yield Span(period, prior * (1 + product_sales_yoy_growth), split_daily)
+```
 
 ## Dynamic Schedules
 
@@ -93,13 +99,15 @@ Keep possible keys date-driven or configuration-driven. Generated series can dep
 
 ## External Data
 
-Fetch, parse, and normalize external data before defining or resolving model series. Avoid network calls inside `spans()` or `point()` because Orcaset may query a line repeatedly and formula evaluation should remain deterministic.
-
-Keep secrets in environment variables or local configuration, never in model code.
+- Connect to or parse data directly from the source. Do not inline data or assumptions into models.
+- Avoid network calls inside `spans()` or `point()` to keep code efficient. Prefer to load data upfront.
+- Keep secrets in environment variables or local configuration, never in model code.
 
 ## Validation and Debugging
 
 Use `Context.deps` to build a cell evaluation graph. Use one-off scripts or an interpreter for quick debugging queries.
+
+Proactively add sensible checks to confirm model correctness (e.g. balance sheet balances, cash roll-forward ties out, etc.).
 
 After creating or editing a model:
 
@@ -111,3 +119,4 @@ After creating or editing a model:
 - Add or inspect balance sheet checks and other invariant rows.
 - Inspect dependency graphs for unexpected circularity or missing dependencies when the model is linked or recursive.
 - Use model checks to confirm correctness (e.g. assets = equity + liabilities; cash roll-forward sums correctly, etc).
+- Keep signs consistent with the surrounding model. The Orcaset examples generally use revenue, assets, and inflows as positive, and expenses, outflows, capex, and taxes as negative.

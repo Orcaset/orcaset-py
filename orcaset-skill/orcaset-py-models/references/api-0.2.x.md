@@ -85,7 +85,7 @@ Month-end models usually use `relativedelta(..., day=31)` so generated periods p
 
 ## Formulas and Cells
 
-Cells hold `Formula[float | None]` values for lazy dependency resolution.
+Cells hold `Formula[float | None]` values for lazy value and dependency resolution.
 
 ```py
 span_cell = Span(period=Period(date(2026, 1, 1), date(2026, 2, 1)), fn=Formula.pure(100.0), split=split_daily)
