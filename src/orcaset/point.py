@@ -143,7 +143,10 @@ class _PointSeriesMeta(ABCMeta):
 
 
 class PointSeries(Series, metaclass=_PointSeriesMeta):
+    """Base class for a `Point` factory."""
+
     def query(self, dt: date) -> Formula[Point]:
+        """Return the point cell for `dt`, creating and caching it if needed."""
         point_cache = self.ctx.get_or_create_point_cache(self)
         if dt in point_cache:
             return Formula.pure(point_cache[dt])
@@ -153,26 +156,35 @@ class PointSeries(Series, metaclass=_PointSeriesMeta):
         return Formula.pure(point_cache[dt])
 
     def value(self, dt: date) -> Formula[float | None]:
+        """Return a formula resolving this series value at `dt`."""
         return self.query(dt).map(lambda point: point.eval(self.ctx))
 
     @abstractmethod
     def point(self, dt: date) -> Formula[float | None]:
+        """Subclasses must implement this method to return the point formula for `dt`."""
         raise NotImplementedError
 
 
 class PointSeriesFamily[K: Hashable](Series):
+    """A date-indexed collection of generated point series keyed by `K`."""
+
     def query(self, dt: date) -> Formula[PointFamilyResult[K]]:
+        """Return point cells for every family key at `dt`."""
         return Formula(PointFamilyQueryOp(self, dt))
 
     def key_label(self, key: K) -> str:
+        """Return the display label for a generated family key."""
         return str(key)
 
     @abstractmethod
     def points(self, dt: date) -> PointFamilyResult[K]:
+        """Subclasses must implement this method to return the point cells for every family key at `dt`."""
         raise NotImplementedError
 
 
 class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
+    """Formula operation that evaluates a point series family query."""
+
     def __init__(self, family: PointSeriesFamily[K], dt: date) -> None:
         self.family = family
         self.dt = dt
@@ -192,6 +204,7 @@ def define(
     fn: Callable[[PointSeries, date], Formula[float | None]],
     /,
 ) -> type[PointSeries]:
+    """Create a `PointSeries` class from a point formula function."""
     return cast(
         type[PointSeries],
         type(
@@ -213,6 +226,8 @@ def accumulate(
     changes: type[SpanSeries],
     name: str = "AccumulatedPointSeries",
 ) -> type[PointSeries]:
+    """Create a point series by accumulating span changes from a start value."""
+
     def point(self: PointSeries, dt: date) -> Formula[float | None]:
         if dt < start:
             return Formula.pure(None)
@@ -238,6 +253,7 @@ def accumulate(
 
 
 def neg(series: type[PointSeries], *, name: str | None = None) -> type[PointSeries]:
+    """Create a point series that negates another point series."""
     return _operator(name or f"Neg{series.__name__}", [series], neg_values)
 
 
@@ -247,6 +263,7 @@ def scale(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series scaled by `factor`."""
     return _operator(name or f"Scale{series.__name__}", [series], scale_values(factor))
 
 
@@ -256,6 +273,7 @@ def add_scalar(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series with `value` added to each point."""
     return _operator(name or f"Add{series.__name__}Scalar", [series], add_scalar_values(value))
 
 
@@ -264,6 +282,7 @@ def sum(
     *,
     name: str = "SumPointSeries",
 ) -> type[PointSeries]:
+    """Create a point series by summing multiple point series."""
     return _operator(name, series, sum_values)
 
 
@@ -273,6 +292,7 @@ def sub(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series that subtracts `right` from `left`."""
     return _operator(name or f"Sub{left.__name__}{right.__name__}", [left, right], sub_values)
 
 
@@ -282,6 +302,7 @@ def sub_scalar(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series with `value` subtracted from each point."""
     return _operator(name or f"Sub{series.__name__}Scalar", [series], sub_scalar_values(value))
 
 
@@ -291,6 +312,7 @@ def rsub_scalar(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series by subtracting each point from `value`."""
     return _operator(name or f"RSubScalar{series.__name__}", [series], rsub_scalar_values(value))
 
 
@@ -299,6 +321,7 @@ def mul(
     *,
     name: str = "MulPointSeries",
 ) -> type[PointSeries]:
+    """Create a point series by multiplying multiple point series."""
     return _operator(name, series, mul_values)
 
 
@@ -308,6 +331,7 @@ def div(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series that divides `left` by `right`."""
     return _operator(name or f"Div{left.__name__}{right.__name__}", [left, right], div_values)
 
 
@@ -317,6 +341,7 @@ def div_scalar(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series that divides each point by `value`."""
     return _operator(name or f"Div{series.__name__}Scalar", [series], div_scalar_values(value))
 
 
@@ -326,6 +351,7 @@ def rdiv_scalar(
     *,
     name: str | None = None,
 ) -> type[PointSeries]:
+    """Create a point series by dividing `value` by each point."""
     return _operator(name or f"RDivScalar{series.__name__}", [series], rdiv_scalar_values(value))
 
 
