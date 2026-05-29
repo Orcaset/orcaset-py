@@ -17,8 +17,7 @@ Warn the user if there is a major or minor version difference between the instal
 
 ## Reference Map
 
-- `references/api-0.2.0.md`: Orcaset 0.2.0 public API, constructors, querying, statement output, examples, and pitfalls.
-- `references/modeling-patterns.md`: Stable modeling workflow, financial statement structure, validation habits, and design rules.
+- `references/api-0.2.x.md`: Orcaset 0.2.x public API, constructors, querying, statement output, examples, and pitfalls.
 - `references/version-policy.md`: How to handle version mismatches and update the skill safely.
 
 ## Core Workflow
