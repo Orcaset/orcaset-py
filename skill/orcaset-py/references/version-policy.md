@@ -2,7 +2,7 @@
 
 Check the Orcaset version used by the user's project against the available reference versions in `references/api-<version>.md`.
 
-Ignore patch-version differences. For example, use `api-0.2.0.md` for `0.2.1` if `api-0.2.1.md` is not available.
+Ignore patch-version differences. For example, use `api-0.2.x.md` for `0.2.1` if `api-0.2.1.md` is not available.
 
 If there is a minor or major version difference:
 

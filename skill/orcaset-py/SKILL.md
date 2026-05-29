@@ -4,6 +4,8 @@ description: Build, modify, explain, debug, or validate financial models using t
 license: SSPL-1.0. LICENSE.txt has complete terms.
 ---
 
+This skill requires the `orcaset` Python library. If the library is not already available, you can install it from `https://github.com/Orcaset/orcaset-py.git`.
+
 # Build Orcaset Financial Models
 
 Use Orcaset as a typed financial-model graph, not as a spreadsheet-cell generator. Define reusable line-item series, then materialize the model only at the requested dates or periods.
@@ -31,7 +33,7 @@ Use Orcaset models as typed line-item graphs rather than spreadsheet cell grids.
 5. Present output with `Stmt.span_total`, `Stmt.point_total`, `Stmt.group`, `Stmt.eval_periods`, and `Stmt.fixed_width`.
 6. Do a final review to check mistakes or issues that should be fixed.
 
-Read `references/api-overview.md` when exact signatures, docstring details, or examples are needed.
+Read `references/api-0.2.x.md` when exact signatures, docstring details, or examples are needed.
 
 ## Model Organization
 

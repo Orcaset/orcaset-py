@@ -1,4 +1,4 @@
-# Orcaset Python API Reference: 0.2.0
+# Orcaset Python API Reference: 0.2.x
 
 Use this reference only when the detected Orcaset version is `0.2.x`, or when local source inspection confirms these signatures still match.
 

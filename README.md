@@ -23,6 +23,12 @@ pip install git+https://github.com/orcaset/orcaset-py
 
 Requires Python 3.14 or later.
 
+Add the `orcaset-py` skill to your coding agent by pasting in the following command:
+
+```txt
+Install the skill from https://github.com/Orcaset/orcaset-py/tree/main/skill/orcaset-py
+```
+
 ## Orcaset at a glance
 
 Orcaset models are built by defining and combining line item classes. Values are materialized by querying over dates, with caching and circular references handled by the evaluation context.
