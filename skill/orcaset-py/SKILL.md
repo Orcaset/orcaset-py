@@ -30,6 +30,7 @@ Use Orcaset models as typed line-item graphs rather than spreadsheet cell grids.
 3. Use `Series.Spans.t` for flows over periods: revenue, expense, cash flow, capex, depreciation, interest, taxes.
 4. Use `Series.Points.t` for point-in-time balances: cash, debt, PPE, equity, retained earnings, shares.
 5. Present output with `Stmt.span_total`, `Stmt.point_total`, `Stmt.group`, `Stmt.eval_periods`, and `Stmt.fixed_width`.
+6. Do a final review to check mistakes or issues that should be fixed.
 
 Read `references/api-overview.md` when exact signatures, docstring details, or examples are needed.
 
@@ -47,6 +48,7 @@ Example:
 - Preserve the user's existing model organization and sign convention unless it is clearly wrong. Add abstractions only when the model repeats a real pattern, such as a schedule family, roll-forward, historical-plus-projection line, or statement subtotal.
 - For linked forecasts, prefer formulas that query other model lines through `self.ctx`. Use loop-carried Python values only for exogenous assumptions or simple scaffolding where no model dependency is being hidden.
 - For external data, fetch and normalize source data outside formula evaluation. Formula resolution should stay deterministic and should not trigger network calls.
+- DO NOT inline external data into model files unless explicitly directed. Instead, build parsing/loading functions to retrieve data from sources dynamically.
 - Group code with short section comments like `(* ----- Assumptions ----- *)`, `(* ----- Model ----- *)`, and `(* ----- Output ----- *)`. For larger projects (greater than ~20 line items), break logical sections into different files.
 - Python is installed. You can use the interpreter for resolving one-off queries, validating values or code, and other checks. Run it with `uv ...`.
 - Run `ruff` over any modified python files.

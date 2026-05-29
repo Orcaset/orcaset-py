@@ -528,3 +528,4 @@ Resolve the cell first when practical. For statement debugging, materialize a na
 - Do not pass a positive offset to `Period.from_start` unless you want a period starting at `periods.start`.
 - `Context.get` is invariant by series type; it does not return subclass instances. Query contexts for the exact type.
 - Do not ignore `CellConvergenceError` errors.
+- Do not inline external data into model files unless explicitly directed. Instead, build parsing/loading functions to retrieve data from sources dynamically.
