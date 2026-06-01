@@ -22,7 +22,13 @@ from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNo
 from .formatters import DateFormatter, ValueFormatter, csv_table, fixed_width_table, markdown_table
 from .formula import Formula
 from .period import Period
-from .point import PointSeriesDef, PointSeriesFn
+from .point import (
+    KeyedPointSeries,
+    PointSeriesDef,
+    PointSeriesFactory,
+    PointSeriesFn,
+    PointSeriesKeyFn,
+)
 from .span import (
     KeyedSpanSeries,
     SpanAgg,
@@ -74,9 +80,12 @@ __all__ = [
     "fixed_width_table",
     "markdown_table",
     "SpanAgg",
+    "KeyedPointSeries",
     "KeyedSpanSeries",
+    "PointSeriesFactory",
     "PointSeriesDef",
     "PointSeriesFn",
+    "PointSeriesKeyFn",
     "SpanSeriesDef",
     "SpanSeriesFactory",
     "SpanSeriesFn",

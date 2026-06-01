@@ -12,7 +12,7 @@ from .cell import Cell, Point, Span
 from .period import Period
 
 if TYPE_CHECKING:
-    from .point import PointSeriesDef
+    from .point import KeyedPointSeries, PointSeriesDef
     from .span import KeyedSpanSeries, SpanSeriesDef
 
 
@@ -132,6 +132,7 @@ class Context:
         self._span_cache: dict[int, _SpanCache] = {}
         self._point_cache: dict[int, dict[date, Point]] = {}
         self._keyed_span_cache: dict[int, dict[Hashable, SpanSeriesDef]] = {}
+        self._keyed_point_cache: dict[int, dict[Hashable, PointSeriesDef]] = {}
         self._series_refs: dict[int, object] = {}
         self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
         self._solving_cells: list[Cell] = []
@@ -167,6 +168,24 @@ class Context:
             self._series_refs[series_id] = keyed_series
             series_by_key = {}
             self._keyed_span_cache[series_id] = series_by_key
+
+        series = series_by_key.get(key)
+        if series is None:
+            series = keyed_series.series_factory(key)
+            series_by_key[key] = series
+        return series
+
+    def get_or_create_keyed_point_series[K: Hashable](
+        self,
+        keyed_series: "KeyedPointSeries[K]",
+        key: K,
+    ) -> "PointSeriesDef":
+        series_id = id(keyed_series)
+        series_by_key = self._keyed_point_cache.get(series_id)
+        if series_by_key is None:
+            self._series_refs[series_id] = keyed_series
+            series_by_key = {}
+            self._keyed_point_cache[series_id] = series_by_key
 
         series = series_by_key.get(key)
         if series is None:

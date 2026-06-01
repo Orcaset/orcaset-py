@@ -11,8 +11,8 @@ change between minor releases.
 
 ### Added
 
-- Added keyed span series collections for report-period-dependent dynamic rows,
-  including statement expansion for period queries.
+- Added keyed span and point series collections for query-dependent dynamic rows,
+  including statement expansion for period and date queries.
 
 ### Changed
 

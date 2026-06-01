@@ -183,6 +183,85 @@ def test_keyed_span_series_rejects_date_queries():
         Stmt(cohorts).values_for_dates(Context(), [date(2025, 1, 1)])
 
 
+def test_stmt_expands_keyed_point_series_for_period_queries():
+    created: list[int] = []
+    seen_dates: list[tuple[date, ...]] = []
+
+    def keys(_: Context, dates: Sequence[date]) -> Iterable[int]:
+        seen_dates.append(tuple(dates))
+        return [1, 2]
+
+    def series_for(key: int):
+        created.append(key)
+
+        @point.define(label=f"Tranche {key}")
+        def tranche(_: Context, dt: date) -> Formula[float | None]:
+            return Formula.pure(float(key * 100 + dt.month))
+
+        return tranche
+
+    tranches = point.keyed(keys, series_for, label="Tranches")
+    periods = [
+        Period(date(2025, 1, 1), date(2025, 4, 1)),
+        Period(date(2025, 4, 1), date(2025, 7, 1)),
+    ]
+
+    ctx = Context()
+    result = Stmt(tranches).values(ctx, periods)
+    result_rows = rows(result)
+
+    assert seen_dates == [(date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1))]
+    assert created == [1, 2]
+    assert tranches.get(ctx, 1) is tranches.get(ctx, 1)
+
+    other_ctx = Context()
+    assert tranches.get(ctx, 1) is not tranches.get(other_ctx, 1)
+    assert created == [1, 2, 1]
+
+    assert len(result_rows) == 1
+    assert isinstance(result_rows[0], GroupRow)
+    child_rows = result_rows[0].children
+    assert [row.name for row in child_rows if isinstance(row, LineRow)] == [
+        "Tranche 1",
+        "Tranche 2",
+    ]
+    assert [row_values(row) for row in child_rows if isinstance(row, LineRow)] == [
+        (101.0, 104.0, 107.0),
+        (201.0, 204.0, 207.0),
+    ]
+
+
+def test_stmt_expands_keyed_point_series_for_date_queries():
+    seen_dates: list[tuple[date, ...]] = []
+
+    def keys(_: Context, dates: Sequence[date]) -> Iterable[str]:
+        seen_dates.append(tuple(dates))
+        return ["cash", "debt"]
+
+    def series_for(key: str):
+        @point.define(label=key.title())
+        def balance(_: Context, dt: date) -> Formula[float | None]:
+            sign = 1.0 if key == "cash" else -1.0
+            return Formula.pure(sign * dt.month)
+
+        return balance
+
+    balances = point.keyed(keys, series_for, label="Balances")
+    dates = [date(2025, 1, 1), date(2025, 4, 1)]
+
+    result_rows = rows(Stmt(balances).values_for_dates(Context(), dates))
+
+    assert seen_dates == [tuple(dates)]
+    assert len(result_rows) == 1
+    assert isinstance(result_rows[0], GroupRow)
+    child_rows = result_rows[0].children
+    assert [row.name for row in child_rows if isinstance(row, LineRow)] == ["Cash", "Debt"]
+    assert [row_values(row) for row in child_rows if isinstance(row, LineRow)] == [
+        (1.0, 4.0),
+        (-1.0, -4.0),
+    ]
+
+
 def test_stmt_period_query_evaluates_point_series_at_period_boundaries():
     cash = span.from_list([], agg=sum_spans(0.0), label="Cash Flow")
 

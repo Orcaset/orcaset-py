@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, NamedTuple, overload
 
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 
 
 type PointSeriesFn = Callable[["Context", date], Formula[float | None]]
+type PointSeriesKeyFn[K: Hashable] = Callable[["Context", Sequence[date]], Iterable[K]]
+type PointSeriesFactory[K: Hashable] = Callable[[K], "PointSeriesDef"]
 
 
 class PointSeriesDef(NamedTuple):
@@ -49,6 +52,27 @@ class PointSeriesDef(NamedTuple):
     def value(self, ctx: "Context", dt: date) -> Formula[float | None]:
         """Return a formula resolving this series value at `dt`."""
         return Formula(_PointValueOp(ctx, self.query(ctx, dt)))
+
+
+@dataclass(slots=True)
+class KeyedPointSeries[K: Hashable]:
+    """A keyed collection of point series definitions."""
+
+    key_fn: PointSeriesKeyFn[K]
+    series_factory: PointSeriesFactory[K]
+    label: str
+
+    def keys(self, ctx: "Context", dates: Sequence[date]) -> tuple[K, ...]:
+        """Return stable, de-duplicated keys for the requested dates."""
+        return tuple(dict.fromkeys(self.key_fn(ctx, dates)))
+
+    def get(self, ctx: "Context", key: K) -> PointSeriesDef:
+        """Return the context-cached series definition for `key`."""
+        return ctx.get_or_create_keyed_point_series(self, key)
+
+    def items(self, ctx: "Context", dates: Sequence[date]) -> tuple[tuple[K, PointSeriesDef], ...]:
+        """Return `(key, series)` pairs for the requested dates."""
+        return tuple((key, self.get(ctx, key)) for key in self.keys(ctx, dates))
 
 
 class _PointValueOp(Op[float | None]):
@@ -94,6 +118,16 @@ def define(
         return create
 
     return create(fn)
+
+
+def keyed[K: Hashable](
+    keys: PointSeriesKeyFn[K],
+    series: PointSeriesFactory[K],
+    *,
+    label: str = "KeyedPointSeries",
+) -> KeyedPointSeries[K]:
+    """Create a keyed collection of point series definitions."""
+    return KeyedPointSeries(key_fn=keys, series_factory=series, label=label)
 
 
 def accumulate(
