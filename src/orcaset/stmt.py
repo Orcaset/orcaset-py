@@ -10,11 +10,11 @@ from datetime import date
 from .context import Context
 from .period import Period
 from .point import PointSeriesDef
-from .span import SpanSeriesDef
+from .span import KeyedSpanSeries, SpanSeriesDef
 
 
 type StmtSeries = SpanSeriesDef | PointSeriesDef
-type StmtItem = StmtSeries | Total | Group
+type StmtItem = StmtSeries | KeyedSpanSeries | Total | Group
 type StmtValue = PeriodValue | DateValue
 
 
@@ -117,6 +117,13 @@ def _period_row(
     periods: Sequence[Period],
     dates: Sequence[date],
 ) -> StmtRow:
+    if isinstance(item, KeyedSpanSeries):
+        return GroupRow(
+            children=tuple(
+                _period_row(ctx, series, periods, dates) for _, series in item.items(ctx, periods)
+            )
+        )
+
     if isinstance(item, Total):
         return TotalRow(
             name=item.series.label,
@@ -142,6 +149,9 @@ def _date_row(
     item: StmtItem,
     dates: Sequence[date],
 ) -> StmtRow:
+    if isinstance(item, KeyedSpanSeries):
+        raise TypeError("Keyed span series can only be rendered for period queries")
+
     if isinstance(item, Total):
         return TotalRow(
             name=item.series.label,

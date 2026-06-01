@@ -23,7 +23,15 @@ from .formatters import DateFormatter, ValueFormatter, csv_table, fixed_width_ta
 from .formula import Formula
 from .period import Period
 from .point import PointSeriesDef, PointSeriesFn
-from .span import SpanAgg, SpanSeriesDef, SpanSeriesFn, align_spans
+from .span import (
+    KeyedSpanSeries,
+    SpanAgg,
+    SpanSeriesDef,
+    SpanSeriesFactory,
+    SpanSeriesFn,
+    SpanSeriesKeyFn,
+    align_spans,
+)
 from .stmt import (
     DateValue,
     Group,
@@ -66,10 +74,13 @@ __all__ = [
     "fixed_width_table",
     "markdown_table",
     "SpanAgg",
+    "KeyedSpanSeries",
     "PointSeriesDef",
     "PointSeriesFn",
     "SpanSeriesDef",
+    "SpanSeriesFactory",
     "SpanSeriesFn",
+    "SpanSeriesKeyFn",
     "align_spans",
     "DateValue",
     "Group",

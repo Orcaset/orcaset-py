@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, NamedTuple, overload
 
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 
 type SpanAgg = Callable[[list[Span]], float | None]
 type SpanSeriesFn = Callable[["Context"], Iterable[Span]]
+type SpanSeriesKeyFn[K: Hashable] = Callable[["Context", Sequence[Period]], Iterable[K]]
+type SpanSeriesFactory[K: Hashable] = Callable[[K], "SpanSeriesDef"]
 
 
 class SpanSeriesDef(NamedTuple):
@@ -49,6 +52,27 @@ class SpanSeriesDef(NamedTuple):
     def value(self, ctx: "Context", period: Period) -> Formula[float | None]:
         """Return a formula resolving this series value over `period`."""
         return self.query(ctx, period).map(self.agg)
+
+
+@dataclass(slots=True)
+class KeyedSpanSeries[K: Hashable]:
+    """A keyed collection of span series definitions."""
+
+    key_fn: SpanSeriesKeyFn[K]
+    series_factory: SpanSeriesFactory[K]
+    label: str
+
+    def keys(self, ctx: "Context", periods: Sequence[Period]) -> tuple[K, ...]:
+        """Return stable, de-duplicated keys for the requested periods."""
+        return tuple(dict.fromkeys(self.key_fn(ctx, periods)))
+
+    def get(self, ctx: "Context", key: K) -> SpanSeriesDef:
+        """Return the context-cached series definition for `key`."""
+        return ctx.get_or_create_keyed_span_series(self, key)
+
+    def items(self, ctx: "Context", periods: Sequence[Period]) -> tuple[tuple[K, SpanSeriesDef], ...]:
+        """Return `(key, series)` pairs for the requested periods."""
+        return tuple((key, self.get(ctx, key)) for key in self.keys(ctx, periods))
 
 
 class SpanQueryOp(Op[list[Span]]):
@@ -273,6 +297,16 @@ def _create_span_series(
     agg: SpanAgg,
 ) -> SpanSeriesDef:
     return SpanSeriesDef(fn=spans, agg=agg, label=label)
+
+
+def keyed[K: Hashable](
+    keys: SpanSeriesKeyFn[K],
+    series: SpanSeriesFactory[K],
+    *,
+    label: str = "KeyedSpanSeries",
+) -> KeyedSpanSeries[K]:
+    """Create a keyed collection of span series definitions."""
+    return KeyedSpanSeries(key_fn=keys, series_factory=series, label=label)
 
 
 def from_list(

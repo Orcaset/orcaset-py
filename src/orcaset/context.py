@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Hashable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING
@@ -13,7 +13,7 @@ from .period import Period
 
 if TYPE_CHECKING:
     from .point import PointSeriesDef
-    from .span import SpanSeriesDef
+    from .span import KeyedSpanSeries, SpanSeriesDef
 
 
 class _SpanCache:
@@ -131,6 +131,7 @@ class Context:
     def __init__(self) -> None:
         self._span_cache: dict[int, _SpanCache] = {}
         self._point_cache: dict[int, dict[date, Point]] = {}
+        self._keyed_span_cache: dict[int, dict[Hashable, SpanSeriesDef]] = {}
         self._series_refs: dict[int, object] = {}
         self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
         self._solving_cells: list[Cell] = []
@@ -154,6 +155,24 @@ class Context:
         self._series_refs[series_id] = series
         self._point_cache[series_id] = {}
         return self._point_cache[series_id]
+
+    def get_or_create_keyed_span_series[K: Hashable](
+        self,
+        keyed_series: "KeyedSpanSeries[K]",
+        key: K,
+    ) -> "SpanSeriesDef":
+        series_id = id(keyed_series)
+        series_by_key = self._keyed_span_cache.get(series_id)
+        if series_by_key is None:
+            self._series_refs[series_id] = keyed_series
+            series_by_key = {}
+            self._keyed_span_cache[series_id] = series_by_key
+
+        series = series_by_key.get(key)
+        if series is None:
+            series = keyed_series.series_factory(key)
+            series_by_key[key] = series
+        return series
 
     def eval_cell(self, cell: Cell) -> float | None:
         if self._active_cell is not None:

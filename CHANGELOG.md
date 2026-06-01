@@ -9,6 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added keyed span series collections for report-period-dependent dynamic rows,
+  including statement expansion for period queries.
+
 ### Changed
 
 - Replaced class-based `SpanSeries` and `PointSeries` APIs with immutable

@@ -1,4 +1,7 @@
 from datetime import date
+from typing import Iterable, Sequence
+
+import pytest
 
 from orcaset import (
     Context,
@@ -123,6 +126,61 @@ def test_stmt_group_wraps_rows_with_group_row():
         "Revenue",
         "Costs",
     ]
+
+
+def test_stmt_expands_keyed_span_series_for_period_queries():
+    created: list[Period] = []
+    seen_periods: list[tuple[Period, ...]] = []
+
+    def keys(_: Context, periods: Sequence[Period]) -> Iterable[Period]:
+        seen_periods.append(tuple(periods))
+        return periods
+
+    def series_for(period: Period):
+        created.append(period)
+        return span.from_list(
+            [((period.start, period.end), 10.0)],
+            agg=sum_spans(0.0),
+            label=f"Cohort {period.start:%Y-%m-%d}",
+        )
+
+    cohorts = span.keyed(keys, series_for, label="Cohorts")
+    periods = [
+        Period(date(2025, 1, 1), date(2025, 2, 1)),
+        Period(date(2025, 2, 1), date(2025, 3, 1)),
+    ]
+
+    ctx = Context()
+    result_rows = rows(Stmt(cohorts).values(ctx, periods))
+
+    assert seen_periods == [tuple(periods)]
+    assert created == periods
+    assert cohorts.get(ctx, periods[0]) is cohorts.get(ctx, periods[0])
+
+    other_ctx = Context()
+    assert cohorts.get(ctx, periods[0]) is not cohorts.get(other_ctx, periods[0])
+    assert created == periods + [periods[0]]
+
+    assert len(result_rows) == 1
+    assert isinstance(result_rows[0], GroupRow)
+    assert [row.name for row in result_rows[0].children if isinstance(row, LineRow)] == [
+        "Cohort 2025-01-01",
+        "Cohort 2025-02-01",
+    ]
+
+
+def test_keyed_span_series_rejects_date_queries():
+    def series_for(period: Period):
+        return span.from_list(
+            [((period.start, period.end), 10.0)],
+            agg=sum_spans(0.0),
+            label="Unused",
+        )
+
+    cohorts = span.keyed(lambda _ctx, _periods: (), series_for, label="Cohorts")
+
+    with pytest.raises(TypeError, match="period queries"):
+        Stmt(cohorts).values_for_dates(Context(), [date(2025, 1, 1)])
 
 
 def test_stmt_period_query_evaluates_point_series_at_period_boundaries():
