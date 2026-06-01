@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 type SpanAgg = Callable[[list[Span]], float | None]
 type SpanSeriesFn = Callable[["Context"], Iterable[Span]]
-type SpanSeriesKeyFn[K: Hashable] = Callable[["Context", Sequence[Period]], Iterable[K]]
+type SpanSeriesKeyFn[K: Hashable] = Callable[["Context", Period], Iterable[K]]
 type SpanSeriesFactory[K: Hashable] = Callable[[K], "SpanSeriesDef"]
 
 
@@ -62,17 +62,17 @@ class KeyedSpanSeries[K: Hashable]:
     series_factory: SpanSeriesFactory[K]
     label: str
 
-    def keys(self, ctx: "Context", periods: Sequence[Period]) -> tuple[K, ...]:
-        """Return stable, de-duplicated keys for the requested periods."""
-        return tuple(dict.fromkeys(self.key_fn(ctx, periods)))
+    def keys(self, ctx: "Context", period: Period) -> tuple[K, ...]:
+        """Return stable, de-duplicated keys for the requested period."""
+        return tuple(dict.fromkeys(self.key_fn(ctx, period)))
 
     def get(self, ctx: "Context", key: K) -> SpanSeriesDef:
         """Return the context-cached series definition for `key`."""
         return ctx.get_or_create_keyed_span_series(self, key)
 
-    def items(self, ctx: "Context", periods: Sequence[Period]) -> tuple[tuple[K, SpanSeriesDef], ...]:
-        """Return `(key, series)` pairs for the requested periods."""
-        return tuple((key, self.get(ctx, key)) for key in self.keys(ctx, periods))
+    def items(self, ctx: "Context", period: Period) -> tuple[tuple[K, SpanSeriesDef], ...]:
+        """Return `(key, series)` pairs for the requested period."""
+        return tuple((key, self.get(ctx, key)) for key in self.keys(ctx, period))
 
 
 class SpanQueryOp(Op[list[Span]]):

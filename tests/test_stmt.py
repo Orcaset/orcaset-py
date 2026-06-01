@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import pytest
 
@@ -130,11 +130,11 @@ def test_stmt_group_wraps_rows_with_group_row():
 
 def test_stmt_expands_keyed_span_series_for_period_queries():
     created: list[Period] = []
-    seen_periods: list[tuple[Period, ...]] = []
+    seen_periods: list[Period] = []
 
-    def keys(_: Context, periods: Sequence[Period]) -> Iterable[Period]:
-        seen_periods.append(tuple(periods))
-        return periods
+    def keys(_: Context, period: Period) -> Iterable[Period]:
+        seen_periods.append(period)
+        return [period]
 
     def series_for(period: Period):
         created.append(period)
@@ -153,7 +153,7 @@ def test_stmt_expands_keyed_span_series_for_period_queries():
     ctx = Context()
     result_rows = rows(Stmt(cohorts).values(ctx, periods))
 
-    assert seen_periods == [tuple(periods)]
+    assert seen_periods == periods
     assert created == periods
     assert cohorts.get(ctx, periods[0]) is cohorts.get(ctx, periods[0])
 
@@ -177,7 +177,7 @@ def test_keyed_span_series_rejects_date_queries():
             label="Unused",
         )
 
-    cohorts = span.keyed(lambda _ctx, _periods: (), series_for, label="Cohorts")
+    cohorts = span.keyed(lambda _ctx, _period: (), series_for, label="Cohorts")
 
     with pytest.raises(TypeError, match="period queries"):
         Stmt(cohorts).values_for_dates(Context(), [date(2025, 1, 1)])
@@ -185,10 +185,10 @@ def test_keyed_span_series_rejects_date_queries():
 
 def test_stmt_expands_keyed_point_series_for_period_queries():
     created: list[int] = []
-    seen_dates: list[tuple[date, ...]] = []
+    seen_dates: list[date] = []
 
-    def keys(_: Context, dates: Sequence[date]) -> Iterable[int]:
-        seen_dates.append(tuple(dates))
+    def keys(_: Context, dt: date) -> Iterable[int]:
+        seen_dates.append(dt)
         return [1, 2]
 
     def series_for(key: int):
@@ -210,7 +210,7 @@ def test_stmt_expands_keyed_point_series_for_period_queries():
     result = Stmt(tranches).values(ctx, periods)
     result_rows = rows(result)
 
-    assert seen_dates == [(date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1))]
+    assert seen_dates == [date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1)]
     assert created == [1, 2]
     assert tranches.get(ctx, 1) is tranches.get(ctx, 1)
 
@@ -232,10 +232,10 @@ def test_stmt_expands_keyed_point_series_for_period_queries():
 
 
 def test_stmt_expands_keyed_point_series_for_date_queries():
-    seen_dates: list[tuple[date, ...]] = []
+    seen_dates: list[date] = []
 
-    def keys(_: Context, dates: Sequence[date]) -> Iterable[str]:
-        seen_dates.append(tuple(dates))
+    def keys(_: Context, dt: date) -> Iterable[str]:
+        seen_dates.append(dt)
         return ["cash", "debt"]
 
     def series_for(key: str):
@@ -251,7 +251,7 @@ def test_stmt_expands_keyed_point_series_for_date_queries():
 
     result_rows = rows(Stmt(balances).values_for_dates(Context(), dates))
 
-    assert seen_dates == [tuple(dates)]
+    assert seen_dates == dates
     assert len(result_rows) == 1
     assert isinstance(result_rows[0], GroupRow)
     child_rows = result_rows[0].children

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -120,14 +120,16 @@ def _period_row(
     if isinstance(item, KeyedSpanSeries):
         return GroupRow(
             children=tuple(
-                _period_row(ctx, series, periods, dates) for _, series in item.items(ctx, periods)
+                _period_row(ctx, series, periods, dates)
+                for _, series in _keyed_span_items(ctx, item, periods)
             )
         )
 
     if isinstance(item, KeyedPointSeries):
         return GroupRow(
             children=tuple(
-                _period_row(ctx, series, periods, dates) for _, series in item.items(ctx, dates)
+                _period_row(ctx, series, periods, dates)
+                for _, series in _keyed_point_items(ctx, item, dates)
             )
         )
 
@@ -161,7 +163,9 @@ def _date_row(
 
     if isinstance(item, KeyedPointSeries):
         return GroupRow(
-            children=tuple(_date_row(ctx, series, dates) for _, series in item.items(ctx, dates))
+            children=tuple(
+                _date_row(ctx, series, dates) for _, series in _keyed_point_items(ctx, item, dates)
+            )
         )
 
     if isinstance(item, Total):
@@ -221,3 +225,21 @@ def _point_values(
 
 def _period_boundaries(periods: Sequence[Period]) -> tuple[date, ...]:
     return tuple(sorted({dt for period in periods for dt in (period.start, period.end)}))
+
+
+def _keyed_span_items[K: Hashable](
+    ctx: Context,
+    item: KeyedSpanSeries[K],
+    periods: Sequence[Period],
+) -> tuple[tuple[K, SpanSeriesDef], ...]:
+    keys = tuple(dict.fromkeys(key for period in periods for key in item.keys(ctx, period)))
+    return tuple((key, item.get(ctx, key)) for key in keys)
+
+
+def _keyed_point_items[K: Hashable](
+    ctx: Context,
+    item: KeyedPointSeries[K],
+    dates: Sequence[date],
+) -> tuple[tuple[K, PointSeriesDef], ...]:
+    keys = tuple(dict.fromkeys(key for dt in dates for key in item.keys(ctx, dt)))
+    return tuple((key, item.get(ctx, key)) for key in keys)
