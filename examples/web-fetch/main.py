@@ -11,11 +11,10 @@ from orcaset import (
     Context,
     Formula,
     Period,
-    PointSeries,
     Span,
-    SpanSeries,
     Stmt,
     fixed_width_table,
+    point,
     split_daily,
     sum_spans,
     span,
@@ -58,31 +57,27 @@ historical_revenue_values = [
 # --------------- MODEL ---------------
 revenue_growth_rate = (historical_revenue_values[1][1] / historical_revenue_values[0][1]) - 1
 
-HistoricalRevenue = span.from_list(historical_revenue_values, agg=sum_spans(0.0))
+HistoricalRevenue = span.from_list(historical_revenue_values, agg=sum_spans(0.0), label="Revenue")
 
 
 @span.extend(HistoricalRevenue)
-def Revenue(self: SpanSeries, start: date | None) -> Iterable[Span]:
+def Revenue(ctx: Context, start: date | None) -> Iterable[Span]:
     if start is None:
         return
     for period in Period.seq(start, relativedelta(years=1)):
         lookback_period = period.from_start(relativedelta(years=-1))
-        prior_value = self.ctx.get(Revenue).value(lookback_period)
+        prior_value = Revenue.value(ctx, lookback_period)
         yield Span(period, prior_value * (1 + revenue_growth_rate), split_daily)
 
 
-class RevenueGrowth(PointSeries):
-    label = "YoY Growth Rate"
-
-    def point(self, dt: date) -> Formula[float | None]:
-        current = self.ctx.get(Revenue).value(Period(dt - relativedelta(years=1), dt))
-        prior = self.ctx.get(Revenue).value(
-            Period(dt - relativedelta(years=2), dt - relativedelta(years=1))
-        )
-        return current.map2(
-            prior,
-            lambda c, p: None if c is None or p in (None, 0) else (c / p) - 1,
-        )
+@point.define(label="YoY Growth Rate")
+def RevenueGrowth(ctx: Context, dt: date) -> Formula[float | None]:
+    current = Revenue.value(ctx, Period(dt - relativedelta(years=1), dt))
+    prior = Revenue.value(ctx, Period(dt - relativedelta(years=2), dt - relativedelta(years=1)))
+    return current.map2(
+        prior,
+        lambda c, p: None if c is None or p in (None, 0) else (c / p) - 1,
+    )
 
 
 # --------------- OUTPUT ---------------

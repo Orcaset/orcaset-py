@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Sequence
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, NamedTuple, overload
 
 from dateutil.relativedelta import relativedelta
 
@@ -25,160 +26,46 @@ from ._value_ops import (
 from .cell import Span, SpanFormulaTransform, SpanSplit, no_split
 from .formula import Formula, Op
 from .period import Period
-from .series import Series
 
 if TYPE_CHECKING:
     from .context import Context
 
 
 type SpanAgg = Callable[[list[Span]], float | None]
-type SpanFamilyResult[K: Hashable] = Mapping[K, Sequence[Span]]
+type SpanSeriesFn = Callable[["Context"], Iterable[Span]]
 
 
-class _SpanSeriesMeta(ABCMeta):
-    def __neg__(cls) -> type["SpanSeries"]:
-        return neg(cls)
+class SpanSeriesDef(NamedTuple):
+    """A period-indexed flow or level series definition."""
 
-    def __add__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return add_scalar(cls, other)
-        return NotImplemented
+    fn: SpanSeriesFn
+    agg: SpanAgg
+    label: str
 
-    def __radd__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return add_scalar(cls, other)
-        return NotImplemented
-
-    def __sub__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return sub_scalar(cls, other)
-        return NotImplemented
-
-    def __rsub__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return rsub_scalar(other, cls)
-        return NotImplemented
-
-    def __mul__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return scale(cls, other)
-        return NotImplemented
-
-    def __rmul__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return scale(cls, other)
-        return NotImplemented
-
-    def __truediv__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return div_scalar(cls, other)
-        return NotImplemented
-
-    def __rtruediv__(cls, other: int | float, /) -> type["SpanSeries"]:
-        if isinstance(other, int | float):
-            return rdiv_scalar(other, cls)
-        return NotImplemented
-
-
-class SpanSeries(Series, metaclass=_SpanSeriesMeta):
-    """A period-indexed flow or level series made of spans."""
-
-    def query(self, period: Period) -> Formula[list[Span]]:
+    def query(self, ctx: "Context", period: Period) -> Formula[list[Span]]:
         """Return spans covering `period`, clipping and filling gaps as needed."""
-        return Formula(SpanQueryOp(self, period))
+        return Formula(SpanQueryOp(ctx, self, period))
 
-    def value(self, period: Period) -> Formula[float | None]:
+    def value(self, ctx: "Context", period: Period) -> Formula[float | None]:
         """Return a formula resolving this series value over `period`."""
-        return self.query(period).map(type(self).agg)
-
-    @staticmethod
-    @abstractmethod
-    def agg(spans: list[Span]) -> float | None:
-        """Reduce queried spans into a single value."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def spans(self) -> Iterable[Span]:
-        """Yield the source spans for this series."""
-        raise NotImplementedError
-
-
-class SpanSeriesFamily[K: Hashable](Series):
-    """A period-indexed collection of generated span series keyed by `K`."""
-
-    def query(self, period: Period) -> Formula[SpanFamilyResult[K]]:
-        """Return spans for every family key over `period`."""
-        return Formula(SpanFamilyQueryOp(self, period))
-
-    def value(self, period: Period) -> Formula[Mapping[K, float | None]]:
-        """Return reduced values for every family key over `period`."""
-        return self.query(period).map(self._value_result)
-
-    def key_label(self, key: K) -> str:
-        """Return the display label for a generated family key."""
-        return str(key)
-
-    @abstractmethod
-    def spans(self, period: Period) -> SpanFamilyResult[K]:
-        """Build spans for every family key over `period`."""
-        raise NotImplementedError
-
-    def _value_result(self, result: SpanFamilyResult[K]) -> Mapping[K, float | None]:
-        values: dict[K, float | None] = {}
-        for key, spans in result.items():
-            series = self.ctx.family_series_by_key(self, key)
-            if series is None:
-                raise ValueError(
-                    f"{type(self).__name__}.value expected a generated SpanSeries "
-                    f"registered for key {key!r}"
-                )
-            if not isinstance(series, SpanSeries):
-                raise ValueError(
-                    f"{type(self).__name__}.value expected key {key!r} to be backed by a SpanSeries"
-                )
-            series_type = cast(type[SpanSeries], type(series))
-            values[key] = series_type.agg(list(spans))
-        return values
-
-
-class SpanFamilyQueryOp[K: Hashable](Op[SpanFamilyResult[K]]):
-    """Formula operation that evaluates a span series family query."""
-
-    def __init__(self, family: SpanSeriesFamily[K], period: Period) -> None:
-        self.family = family
-        self.period = period
-
-    def eval(self) -> SpanFamilyResult[K]:
-        result = self.family.spans(self.period)
-        return {
-            key: tuple(_bind_family_span(self.family, span) for span in spans)
-            for key, spans in result.items()
-        }
-
-    def __repr__(self) -> str:
-        return f"SpanFamilyQueryOp(family={self.family!r}, period={self.period!r})"
-
-
-def _bind_family_span(family: SpanSeriesFamily, span: Span) -> Span:
-    if span.source is None:
-        span.source = family
-    return _bind_span(family.ctx, span)
+        return self.query(ctx, period).map(self.agg)
 
 
 class SpanQueryOp(Op[list[Span]]):
     """Formula operation that evaluates a span series query."""
 
-    def __init__(self, series: SpanSeries, period: Period) -> None:
+    def __init__(self, ctx: "Context", series: SpanSeriesDef, period: Period) -> None:
+        self.ctx = ctx
         self.series = series
         self.period = period
 
     def eval(self) -> list[Span]:
-        span_cache = self.series.ctx.get_or_create_span_cache(self.series)
+        span_cache = self.ctx.get_or_create_span_cache(self.series)
 
         # If the period is already cached, return the stable source or derived span.
         cached_span = span_cache.get_span(self.period)
         if cached_span is not None:
-            return [_bind_span(self.series.ctx, cached_span)]
+            return [_bind_span(self.ctx, cached_span)]
 
         span_cache.ensure_materialized_through(self.period.end)
         spans = [
@@ -190,9 +77,7 @@ class SpanQueryOp(Op[list[Span]]):
         result: list[Span] = []
         cursor = self.period.start
         for span in spans:
-            clipped = span_cache.get_or_add_derived_span(
-                _clip_span(self.series.ctx, span, self.period)
-            )
+            clipped = span_cache.get_or_add_derived_span(_clip_span(self.ctx, span, self.period))
             if cursor < clipped.period.start:
                 result.append(
                     span_cache.get_or_add_derived_span(
@@ -209,7 +94,7 @@ class SpanQueryOp(Op[list[Span]]):
                 )
             )
 
-        return [_bind_span(self.series.ctx, span) for span in result]
+        return [_bind_span(self.ctx, span) for span in result]
 
     def __repr__(self) -> str:
         return f"SpanQueryOp(series={self.series!r}, period={self.period!r})"
@@ -275,18 +160,14 @@ def _clip_span(ctx: "Context", span: Span, period: Period) -> Span:
     return left
 
 
-def _none_span(period: Period, source: Series | None = None) -> Span:
+def _none_span(period: Period, source: object | None = None) -> Span:
     return Span(period, Formula.pure(None), _none_split, source)
 
 
-def align_spans(series: Sequence[SpanSeries]) -> Iterator[tuple[Span, ...]]:
+def align_spans(ctx: "Context", series: Sequence[SpanSeriesDef]) -> Iterator[tuple[Span, ...]]:
     """Yield aligned span tuples across series over their source boundaries."""
     if not series:
         return
-
-    ctx = series[0].ctx
-    if any(s.ctx is not ctx for s in series):
-        raise ValueError("align_spans requires all series to belong to the same Context")
 
     caches = [ctx.get_or_create_span_cache(s) for s in series]
     for cache in caches:
@@ -348,43 +229,33 @@ def _copy_split_metadata(transform: SpanFormulaTransform, span: Span) -> None:
 
 @overload
 def define(
-    fn: Callable[[SpanSeries], Iterable[Span]],
+    fn: SpanSeriesFn,
     /,
     *,
     agg: SpanAgg,
-) -> type[SpanSeries]: ...
+    label: str | None = None,
+) -> SpanSeriesDef: ...
 
 
 @overload
 def define(
     *,
     agg: SpanAgg,
-) -> Callable[[Callable[[SpanSeries], Iterable[Span]]], type[SpanSeries]]: ...
+    label: str | None = None,
+) -> Callable[[SpanSeriesFn], SpanSeriesDef]: ...
 
 
 def define(
-    fn: Callable[[SpanSeries], Iterable[Span]] | None = None,
+    fn: SpanSeriesFn | None = None,
     /,
     *,
     agg: SpanAgg,
-) -> type[SpanSeries] | Callable[[Callable[[SpanSeries], Iterable[Span]]], type[SpanSeries]]:
-    """Create a `SpanSeries` class from a span iterator function."""
+    label: str | None = None,
+) -> SpanSeriesDef | Callable[[SpanSeriesFn], SpanSeriesDef]:
+    """Create a span series definition from a span iterator function."""
 
-    def create(fn: Callable[[SpanSeries], Iterable[Span]]) -> type[SpanSeries]:
-        return cast(
-            type[SpanSeries],
-            type(
-                fn.__name__,
-                (SpanSeries,),
-                {
-                    "__module__": fn.__module__,
-                    "__qualname__": fn.__qualname__,
-                    "__doc__": fn.__doc__,
-                    "agg": staticmethod(agg),
-                    "spans": fn,
-                },
-            ),
-        )
+    def create(fn: SpanSeriesFn) -> SpanSeriesDef:
+        return SpanSeriesDef(fn=fn, agg=agg, label=label or fn.__name__)
 
     if fn is None:
         return create
@@ -392,26 +263,16 @@ def define(
     return create(fn)
 
 
-def _inherit_agg(series: type[SpanSeries]) -> SpanAgg:
+def _inherit_agg(series: SpanSeriesDef) -> SpanAgg:
     return series.agg
 
 
 def _create_span_series(
-    name: str,
-    spans: Callable[[SpanSeries], Iterable[Span]],
+    label: str,
+    spans: SpanSeriesFn,
     agg: SpanAgg,
-) -> type[SpanSeries]:
-    return cast(
-        type[SpanSeries],
-        type(
-            name,
-            (SpanSeries,),
-            {
-                "agg": staticmethod(agg),
-                "spans": spans,
-            },
-        ),
-    )
+) -> SpanSeriesDef:
+    return SpanSeriesDef(fn=spans, agg=agg, label=label)
 
 
 def from_list(
@@ -419,16 +280,16 @@ def from_list(
     *,
     agg: SpanAgg,
     split: SpanSplit = no_split,
-    name: str = "ListSpanSeries",
-) -> type[SpanSeries]:
+    label: str = "ListSpanSeries",
+) -> SpanSeriesDef:
     """Create a span series from explicit date-range value records."""
     records = tuple(values)
 
-    def spans(self: SpanSeries) -> Iterable[Span]:
+    def spans(_: "Context") -> Iterable[Span]:
         for (start, end), value in records:
             yield Span(Period(start, end), Formula.pure(value), split)
 
-    return _create_span_series(name, spans, agg)
+    return _create_span_series(label, spans, agg)
 
 
 def constant(
@@ -438,15 +299,15 @@ def constant(
     split: SpanSplit,
     start: date | None = None,
     end: date | None = None,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series with one constant span over an optional range."""
     period = Period(start or date.min, end or date.max)
 
-    def spans(self: SpanSeries) -> Iterable[Span]:
+    def spans(_: "Context") -> Iterable[Span]:
         yield Span(period, Formula.pure(value), split)
 
-    return _create_span_series(name or "ConstantSpanSeries", spans, agg)
+    return _create_span_series(label or "ConstantSpanSeries", spans, agg)
 
 
 def periodic(
@@ -457,15 +318,15 @@ def periodic(
     agg: SpanAgg,
     split: SpanSplit,
     end: date | None = None,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series with repeated constant spans."""
 
-    def spans(self: SpanSeries) -> Iterable[Span]:
+    def spans(_: "Context") -> Iterable[Span]:
         for period in Period.seq(start, freq, end):
             yield Span(period, Formula.pure(value), split)
 
-    return _create_span_series(name or "PeriodicSpanSeries", spans, agg)
+    return _create_span_series(label or "PeriodicSpanSeries", spans, agg)
 
 
 class _SpanTupleValueOp(Op[float | None]):
@@ -514,22 +375,20 @@ def _span_tuple_split(
     return split
 
 
-def neg(series: type[SpanSeries], *, name: str | None = None) -> type[SpanSeries]:
+def neg(series: SpanSeriesDef, *, label: str | None = None) -> SpanSeriesDef:
     """Create a span series that negates another span series."""
-    return _operator(
-        name or f"Neg{series.__name__}", [series], neg_values, agg=_inherit_agg(series)
-    )
+    return _operator(label or f"Neg{series.label}", [series], neg_values, agg=_inherit_agg(series))
 
 
 def scale(
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     factor: float,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series scaled by `factor`."""
     return _operator(
-        name or f"Scale{series.__name__}",
+        label or f"Scale{series.label}",
         [series],
         scale_values(factor),
         agg=_inherit_agg(series),
@@ -537,14 +396,14 @@ def scale(
 
 
 def add_scalar(
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series with `value` added to each span."""
     return _operator(
-        name or f"Add{series.__name__}Scalar",
+        label or f"Add{series.label}Scalar",
         [series],
         add_scalar_values(value),
         agg=_inherit_agg(series),
@@ -552,37 +411,35 @@ def add_scalar(
 
 
 def sum(
-    series: Sequence[type[SpanSeries]],
+    series: Sequence[SpanSeriesDef],
     *,
     agg: SpanAgg,
-    name: str = "SumSpanSeries",
-) -> type[SpanSeries]:
+    label: str = "SumSpanSeries",
+) -> SpanSeriesDef:
     """Create a span series by summing aligned spans across series."""
-    return _operator(name, series, sum_values, agg=agg)
+    return _operator(label, series, sum_values, agg=agg)
 
 
 def sub(
-    left: type[SpanSeries],
-    right: type[SpanSeries],
+    left: SpanSeriesDef,
+    right: SpanSeriesDef,
     *,
     agg: SpanAgg,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series that subtracts `right` from `left`."""
-    return _operator(
-        name or f"Sub{left.__name__}{right.__name__}", [left, right], sub_values, agg=agg
-    )
+    return _operator(label or f"Sub{left.label}{right.label}", [left, right], sub_values, agg=agg)
 
 
 def sub_scalar(
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series with `value` subtracted from each span."""
     return _operator(
-        name or f"Sub{series.__name__}Scalar",
+        label or f"Sub{series.label}Scalar",
         [series],
         sub_scalar_values(value),
         agg=_inherit_agg(series),
@@ -591,13 +448,13 @@ def sub_scalar(
 
 def rsub_scalar(
     value: int | float,
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series by subtracting each span from `value`."""
     return _operator(
-        name or f"RSubScalar{series.__name__}",
+        label or f"RSubScalar{series.label}",
         [series],
         rsub_scalar_values(value),
         agg=_inherit_agg(series),
@@ -605,37 +462,35 @@ def rsub_scalar(
 
 
 def mul(
-    series: Sequence[type[SpanSeries]],
+    series: Sequence[SpanSeriesDef],
     *,
     agg: SpanAgg,
-    name: str = "MulSpanSeries",
-) -> type[SpanSeries]:
+    label: str = "MulSpanSeries",
+) -> SpanSeriesDef:
     """Create a span series by multiplying aligned spans across series."""
-    return _operator(name, series, mul_values, agg=agg)
+    return _operator(label, series, mul_values, agg=agg)
 
 
 def div(
-    left: type[SpanSeries],
-    right: type[SpanSeries],
+    left: SpanSeriesDef,
+    right: SpanSeriesDef,
     *,
     agg: SpanAgg,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series that divides `left` by `right`."""
-    return _operator(
-        name or f"Div{left.__name__}{right.__name__}", [left, right], div_values, agg=agg
-    )
+    return _operator(label or f"Div{left.label}{right.label}", [left, right], div_values, agg=agg)
 
 
 def div_scalar(
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series that divides each span by `value`."""
     return _operator(
-        name or f"Div{series.__name__}Scalar",
+        label or f"Div{series.label}Scalar",
         [series],
         div_scalar_values(value),
         agg=_inherit_agg(series),
@@ -644,13 +499,13 @@ def div_scalar(
 
 def rdiv_scalar(
     value: int | float,
-    series: type[SpanSeries],
+    series: SpanSeriesDef,
     *,
-    name: str | None = None,
-) -> type[SpanSeries]:
+    label: str | None = None,
+) -> SpanSeriesDef:
     """Create a span series by dividing `value` by each span."""
     return _operator(
-        name or f"RDivScalar{series.__name__}",
+        label or f"RDivScalar{series.label}",
         [series],
         rdiv_scalar_values(value),
         agg=_inherit_agg(series),
@@ -658,55 +513,39 @@ def rdiv_scalar(
 
 
 def extend(
-    base: type[SpanSeries],
-) -> Callable[[Callable[[SpanSeries, date | None], Iterable[Span]]], type[SpanSeries]]:
+    base: SpanSeriesDef,
+) -> Callable[[Callable[["Context", date | None], Iterable[Span]]], SpanSeriesDef]:
     """Create a decorator that extends `base` with continuation spans."""
 
-    def decorator(
-        continuation: Callable[[SpanSeries, date | None], Iterable[Span]],
-    ) -> type[SpanSeries]:
-        def spans(self: SpanSeries) -> Iterable[Span]:
+    def decorator(continuation: Callable[["Context", date | None], Iterable[Span]]) -> SpanSeriesDef:
+        def spans(ctx: "Context") -> Iterable[Span]:
             last_end: date | None = None
 
-            for span in self.ctx.get(base).spans():
+            for span in base.fn(ctx):
                 last_end = span.period.end
                 yield span
 
-            yield from continuation(self, last_end)
+            yield from continuation(ctx, last_end)
 
-        return cast(
-            type[SpanSeries],
-            type(
-                continuation.__name__,
-                (SpanSeries,),
-                {
-                    "__module__": continuation.__module__,
-                    "__qualname__": continuation.__qualname__,
-                    "__doc__": continuation.__doc__,
-                    "agg": staticmethod(base.agg),
-                    "spans": spans,
-                },
-            ),
-        )
+        return SpanSeriesDef(fn=spans, agg=base.agg, label=continuation.__name__)
 
     return decorator
 
 
 def _operator(
-    name: str,
-    series_types: Sequence[type[SpanSeries]],
+    label: str,
+    series_defs: Sequence[SpanSeriesDef],
     op: ValueOp,
     *,
     agg: SpanAgg,
-) -> type[SpanSeries]:
-    def spans(self: SpanSeries) -> Iterable[Span]:
-        sources = [self.ctx.get(series_type) for series_type in series_types]
-        for aligned in align_spans(sources):
+) -> SpanSeriesDef:
+    def spans(ctx: "Context") -> Iterable[Span]:
+        for aligned in align_spans(ctx, series_defs):
             period = aligned[0].period
             yield Span(
                 period,
-                _span_tuple_formula(self.ctx, aligned, op),
-                _span_tuple_split(self.ctx, aligned, op),
+                _span_tuple_formula(ctx, aligned, op),
+                _span_tuple_split(ctx, aligned, op),
             )
 
-    return _create_span_series(name, spans, agg)
+    return _create_span_series(label, spans, agg)

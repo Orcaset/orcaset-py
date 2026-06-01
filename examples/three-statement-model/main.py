@@ -10,9 +10,7 @@ from orcaset import (
     Formula,
     Group,
     Period,
-    PointSeries,
     Span,
-    SpanSeries,
     Stmt,
     Total,
     fixed_width_table,
@@ -41,21 +39,19 @@ initial_retained_earnings = initial_cash + initial_ppe_net - common_stock_value
 
 
 # ------------- INCOME STATEMENT -------------
-class Revenue(SpanSeries):
-    agg = sum_spans(0.0)
+@span.define(agg=sum_spans(0.0), label="Revenue")
+def Revenue(ctx: Context) -> Iterable[Span]:
+    value = initial_revenue
+    periods = Period.seq(model_start, month)
 
-    def spans(self) -> Iterable[Span]:
-        value = initial_revenue
-        periods = Period.seq(model_start, month)
-
-        yield Span(next(periods), Formula.pure(value), split_daily)
-        for period in periods:
-            value *= 1 + revenue_growth_rate * (period.end - period.start).days / 360
-            yield Span(period, Formula.pure(value), split_daily)
+    yield Span(next(periods), Formula.pure(value), split_daily)
+    for period in periods:
+        value *= 1 + revenue_growth_rate * (period.end - period.start).days / 360
+        yield Span(period, Formula.pure(value), split_daily)
 
 
-CostOfRevenue = span.scale(Revenue, cost_of_revenue_margin, name="Cost of revenue")
-GrossProfit = span.sum([Revenue, CostOfRevenue], agg=sum_spans(0.0), name="Gross profit")
+CostOfRevenue = span.scale(Revenue, cost_of_revenue_margin, label="Cost of revenue")
+GrossProfit = span.sum([Revenue, CostOfRevenue], agg=sum_spans(0.0), label="Gross profit")
 
 
 OperatingExpenses = span.periodic(
@@ -64,40 +60,38 @@ OperatingExpenses = span.periodic(
     operating_expenses,
     agg=sum_spans(0.0),
     split=split_daily,
-    name="Operating expenses",
+    label="Operating expenses",
 )
 
 
-class Depreciation(SpanSeries):
-    agg = sum_spans(0.0)
-
-    def spans(self) -> Iterable[Span]:
-        for period in Period.seq(model_start, month):
-            beginning_ppe = self.ctx.get(PpeNet).value(period.start)
-            yield Span(period, beginning_ppe * depreciation_rate, split_daily)
+@span.define(agg=sum_spans(0.0), label="Depreciation")
+def Depreciation(ctx: Context) -> Iterable[Span]:
+    for period in Period.seq(model_start, month):
+        beginning_ppe = PpeNet.value(ctx, period.start)
+        yield Span(period, beginning_ppe * depreciation_rate, split_daily)
 
 
 EBIT = span.sum(
     [GrossProfit, OperatingExpenses, Depreciation],
     agg=sum_spans(0.0),
-    name="EBIT",
+    label="EBIT",
 )
 
-IncomeTax = span.scale(EBIT, income_tax_rate, name="Income tax")
+IncomeTax = span.scale(EBIT, income_tax_rate, label="Income tax")
 
-NetIncome = span.sum([EBIT, IncomeTax], agg=sum_spans(0.0), name="Net income")
+NetIncome = span.sum([EBIT, IncomeTax], agg=sum_spans(0.0), label="Net income")
 
 
 # ---------- CASH FLOW STATEMENT ----------
-DepreciationAddBack = span.scale(Depreciation, -1, name="Depreciation add back")
+DepreciationAddBack = span.scale(Depreciation, -1, label="Depreciation add back")
 
 OperatingCashFlow = span.sum(
     [NetIncome, DepreciationAddBack],
     agg=sum_spans(0.0),
-    name="Operating cash flow",
+    label="Operating cash flow",
 )
 
-CapitalExpenditures = span.scale(Revenue, capex_margin, name="Capital expenditures")
+CapitalExpenditures = span.scale(Revenue, capex_margin, label="Capital expenditures")
 
 
 CashFlowFromFinancing = span.periodic(
@@ -106,57 +100,55 @@ CashFlowFromFinancing = span.periodic(
     0.0,
     agg=sum_spans(0.0),
     split=split_daily,
-    name="Cash flow from financing",
+    label="Cash flow from financing",
 )
 
 
 TotalCashFlow = span.sum(
     [OperatingCashFlow, CapitalExpenditures, CashFlowFromFinancing],
     agg=sum_spans(0.0),
-    name="Total cash flow",
+    label="Total cash flow",
 )
 
 
 # --------------- BALANCE SHEET ---------------
-Cash = point.accumulate(model_start, initial_cash, TotalCashFlow, name="Cash")
+Cash = point.accumulate(model_start, initial_cash, TotalCashFlow, label="Cash")
 
-PpeAdditions = span.scale(CapitalExpenditures, -1, name="PPE additions")
+PpeAdditions = span.scale(CapitalExpenditures, -1, label="PPE additions")
 PpeNetChange = span.sum(
     [PpeAdditions, Depreciation],
     agg=sum_spans(0.0),
-    name="PPE net change",
+    label="PPE net change",
 )
 
-PpeNet = point.accumulate(model_start, initial_ppe_net, PpeNetChange, name="PPE net")
+PpeNet = point.accumulate(model_start, initial_ppe_net, PpeNetChange, label="PPE net")
 
-TotalAssets = point.sum([Cash, PpeNet], name="Total assets")
+TotalAssets = point.sum([Cash, PpeNet], label="Total assets")
 
 
-class CommonStock(PointSeries):
-    label = "Common stock"
-
-    def point(self, dt: date) -> Formula[float | None]:
-        if dt < model_start:
-            return Formula.pure(None)
-        return Formula.pure(common_stock_value)
+@point.define(label="Common stock")
+def CommonStock(ctx: Context, dt: date) -> Formula[float | None]:
+    if dt < model_start:
+        return Formula.pure(None)
+    return Formula.pure(common_stock_value)
 
 
 RetainedEarnings = point.accumulate(
     model_start,
     initial_retained_earnings,
     NetIncome,
-    name="Retained earnings",
+    label="Retained earnings",
 )
 
 TotalEquityAndLiabilities = point.sum(
     [CommonStock, RetainedEarnings],
-    name="Total equity and liabilities",
+    label="Total equity and liabilities",
 )
 
 BalanceSheetCheck = point.sub(
     TotalAssets,
     TotalEquityAndLiabilities,
-    name="Balance sheet check",
+    label="Balance sheet check",
 )
 
 

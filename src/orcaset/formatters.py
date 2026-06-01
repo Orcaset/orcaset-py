@@ -12,8 +12,6 @@ from io import StringIO
 from .period import Period
 from .stmt import (
     DateValue,
-    FamilyLineRow,
-    FamilyRow,
     GroupRow,
     LineRow,
     PeriodValue,
@@ -234,7 +232,7 @@ def _render_rows(
 ) -> list[_RenderedRow]:
     rendered: list[_RenderedRow] = []
     for row in rows:
-        if isinstance(row, LineRow | FamilyLineRow):
+        if isinstance(row, LineRow):
             rendered.append(
                 _value_row(row.name, row.values, columns, value_formatter, indent, level)
             )
@@ -244,9 +242,6 @@ def _render_rows(
             rendered.append(
                 _value_row(row.name, row.values, columns, value_formatter, indent, level)
             )
-        elif isinstance(row, FamilyRow):
-            rendered.append((_label(row.name, indent, level),))
-            rendered.extend(_render_rows(row.children, columns, value_formatter, indent, level + 1))
         elif isinstance(row, GroupRow):
             rendered.append(_Spacer())
             rendered.extend(_render_rows(row.children, columns, value_formatter, indent, level + 1))

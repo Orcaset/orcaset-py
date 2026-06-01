@@ -8,9 +8,7 @@ from orcaset import (
     Formula,
     Group,
     Period,
-    PointSeries,
     Span,
-    SpanSeries,
     Stmt,
     Total,
     fixed_width_table,
@@ -37,51 +35,40 @@ historical_spans = [Span(Period(*c[0]), Formula.pure(c[1]), split_daily) for c i
 
 
 # ---------- INTEREST (SPAN SERIES) ----------
-class Interest(SpanSeries):
-    agg = sum_spans(0.0)
+@span.define(agg=sum_spans(0.0), label="Interest")
+def Interest(ctx: Context) -> Iterable[Span]:
+    s: Span | None = None
+    # Yield historical interest accruals
+    for s in historical_spans:
+        yield s
 
-    def spans(self) -> Iterable[Span]:
-        s: Span | None = None
-        # Yield historical interest accruals
-        for s in historical_spans:
-            yield s
+    # Yield projected interest accruals
+    if s is None:
+        return
 
-        # Yield projected interest accruals
-        if s is None:
-            return
-
-        # Initial example: grow at 5% compounding quarterly
-        # for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
-        #     s = Span(
-        #         period=period,
-        #         fn=s.fn * (1 + interest_rate / 4),
-        #         split=split_daily,
-        #     )
-        #     yield s
-
-        # Linked example: interest is based on the beginning period balance
-        for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
-            yield Span(
-                period=period,
-                fn=self.ctx.get(Balance).value(period.start) * interest_rate / 4,
-                split=split_daily,
-            )
+    # Linked example: interest is based on the beginning period balance
+    for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
+        yield Span(
+            period=period,
+            fn=Balance.value(ctx, period.start) * interest_rate / 4,
+            split=split_daily,
+        )
 
 
 # ----------- BALANCE (POINT SERIES) -----------
-class Balance(PointSeries):
-    def point(self, dt: date) -> Formula[float | None]:
-        # Return None for dates before the start date
-        if dt < start_date:
-            return Formula.pure(None)
+@point.define(label="Balance")
+def Balance(ctx: Context, dt: date) -> Formula[float | None]:
+    # Return None for dates before the start date
+    if dt < start_date:
+        return Formula.pure(None)
 
-        # Return the initial balance for the start date
-        if dt == start_date:
-            return Formula.pure(initial_balance)
+    # Return the initial balance for the start date
+    if dt == start_date:
+        return Formula.pure(initial_balance)
 
-        # Return the initial balance plus the interest accrued to `dt`
-        interest = self.ctx.get(Interest).value(Period(start_date, dt))
-        return initial_balance + interest
+    # Return the initial balance plus the interest accrued to `dt`
+    interest = Interest.value(ctx, Period(start_date, dt))
+    return initial_balance + interest
 
 
 # ------------- RESOLVING VALUES -------------
@@ -91,14 +78,12 @@ cell = historical_spans[0]
 print("\nInitial interest cell value: ", cell.eval(ctx))
 # Initial interest cell value:  1.0
 
-interest = ctx.get(Interest)
-balance = ctx.get(Balance)
 monthly_period = relativedelta(months=1, day=31)
 
 print("\nEnd Date\tBalance\tInterest")
 for period in Period.seq(start_date, monthly_period, end=date(2026, 12, 31)):
-    int_acc = interest.value(period).eval()
-    bal = balance.value(period.end).eval()
+    int_acc = Interest.value(ctx, period).eval()
+    bal = Balance.value(ctx, period.end).eval()
     print(f"{period.end:%m/%d/%Y}\t{bal:,.2f}\t{int_acc:,.2f}")
 
 # End Date        Balance Interest
@@ -111,29 +96,21 @@ print("\n")
 
 # ----------- SIMPLIFYING THE MODEL -----------
 # Redefine Balance using the `point.accumulate` convenience constructor
-Balance2 = point.accumulate(start_date, initial_balance, Interest)
+Balance2 = point.accumulate(start_date, initial_balance, Interest, label="Balance 2")
 
 
 # Demo other convenience constructors
-@span.define(agg=sum_spans(0.0))
-def OperatingIncome(_: SpanSeries) -> Iterable[Span]:
+@span.define(agg=sum_spans(0.0), label="Operating Income")
+def OperatingIncome(ctx: Context) -> Iterable[Span]:
     return [
         Span(p, Formula.pure(100.0), split_daily)
         for p in Period.seq(start_date, relativedelta(years=1))
     ]
 
 
-PreTaxIncome = span.sum([OperatingIncome, Interest], agg=sum_spans(0.0))
-Taxes = PreTaxIncome * -0.25
-NetIncome = span.sum([PreTaxIncome, Taxes], agg=sum_spans(0.0))
-
-
-# ------------- STRUCTURED OUTPUT -------------
-# Add better labels to the series
-NetIncome.label = "Net Income"
-Taxes.label = "Taxes"
-PreTaxIncome.label = "Pre-Tax Income"
-OperatingIncome.label = "Operating Income"
+PreTaxIncome = span.sum([OperatingIncome, Interest], agg=sum_spans(0.0), label="Pre-Tax Income")
+Taxes = span.scale(PreTaxIncome, -0.25, label="Taxes")
+NetIncome = span.sum([PreTaxIncome, Taxes], agg=sum_spans(0.0), label="Net Income")
 
 
 # Create statement

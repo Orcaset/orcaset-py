@@ -3,16 +3,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Hashable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date
-from typing import cast
+from typing import TYPE_CHECKING
 
 from .cell import Cell, Point, Span
 from .period import Period
-from .point import PointSeries
-from .series import Series
-from .span import SpanSeries
+
+if TYPE_CHECKING:
+    from .point import PointSeriesDef
+    from .span import SpanSeriesDef
 
 
 class _SpanCache:
@@ -27,7 +28,7 @@ class _SpanCache:
 
     def __init__(
         self,
-        series: SpanSeries,
+        series: "SpanSeriesDef",
         iterator: Iterator[Span],
         source_spans: dict[Period, Span],
     ) -> None:
@@ -128,65 +129,31 @@ class Context:
     """`Context` manages all state for cell and value evaluation."""
 
     def __init__(self) -> None:
-        self._values: dict[type[Series], Series] = {}
         self._span_cache: dict[int, _SpanCache] = {}
         self._point_cache: dict[int, dict[date, Point]] = {}
-        self._family_series_types: dict[tuple[int, Hashable], type[Series]] = {}
+        self._series_refs: dict[int, object] = {}
         self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
         self._solving_cells: list[Cell] = []
         self._solving_cell_ids: set[int] = set()
         self._active_cell: Cell | None = None
         self._cell_dependencies: dict[int, set[int]] = {}
 
-    def get[T: Series](self, series_type: type[T]) -> T:
-        """
-        Get a series instance of type `T`.
-
-        If an instance of type `T` already exists, return it. Otherwise,
-        create a new instance and store it.
-
-        Member series are keyed by their type hashes which makes lookups
-        invariant to the series type. In other words, getting `MySeries`
-        will not match against any subclass of `MySeries`.
-        """
-
-        if series_type in self._values:
-            return cast(T, self._values[series_type])
-        instance = series_type(self)
-        self._values[series_type] = instance
-        return instance
-
-    def get_or_create_span_cache(self, series: SpanSeries) -> _SpanCache:
-        if series._id in self._span_cache:
-            return self._span_cache[series._id]
-        cache = _SpanCache(series, iter(series.spans()), {})
-        self._span_cache[series._id] = cache
+    def get_or_create_span_cache(self, series: "SpanSeriesDef") -> _SpanCache:
+        series_id = id(series)
+        if series_id in self._span_cache:
+            return self._span_cache[series_id]
+        self._series_refs[series_id] = series
+        cache = _SpanCache(series, iter(series.fn(self)), {})
+        self._span_cache[series_id] = cache
         return cache
 
-    def get_or_create_point_cache(self, series: PointSeries) -> dict[date, Point]:
-        if series._id in self._point_cache:
-            return self._point_cache[series._id]
-        self._point_cache[series._id] = {}
-        return self._point_cache[series._id]
-
-    def family_series_by_key[T: Series](self, family: Series, key: Hashable) -> T | None:
-        series_type = self._family_series_types.get((family._id, key))
-        if series_type is None:
-            return None
-        return self.get(cast(type[T], series_type))
-
-    def get_or_create_family_series[T: Series](
-        self,
-        family: Series,
-        key: Hashable,
-        factory: Callable[[], type[T]],
-    ) -> T:
-        cache_key = (family._id, key)
-        series_type = self._family_series_types.get(cache_key)
-        if series_type is None:
-            series_type = factory()
-            self._family_series_types[cache_key] = series_type
-        return self.get(cast(type[T], series_type))
+    def get_or_create_point_cache(self, series: "PointSeriesDef") -> dict[date, Point]:
+        series_id = id(series)
+        if series_id in self._point_cache:
+            return self._point_cache[series_id]
+        self._series_refs[series_id] = series
+        self._point_cache[series_id] = {}
+        return self._point_cache[series_id]
 
     def eval_cell(self, cell: Cell) -> float | None:
         if self._active_cell is not None:
@@ -307,11 +274,7 @@ def _dot_escape(value: str) -> str:
 def _cell_dot_label(cell_id: int, node: CellDependencyNode) -> str:
     parts = [f"cell {cell_id}"]
     if node.cell.source is not None:
-        source_type = type(node.cell.source)
-        source_name = source_type.display_name()
-        if source_type.label is not None and source_name != source_type.__name__:
-            parts.append(f"source: {source_name} ({source_type.__name__})")
-        else:
-            parts.append(f"source: {source_name}")
+        source_name = getattr(node.cell.source, "label", type(node.cell.source).__name__)
+        parts.append(f"source: {source_name}")
     parts.append(f"value: {repr(node.value)}")
     return "\\n".join(_dot_escape(part) for part in parts)

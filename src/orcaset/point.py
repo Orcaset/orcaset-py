@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Hashable, Mapping, Sequence
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
 from datetime import date
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, NamedTuple, overload
 
 from ._value_ops import (
     ValueOp,
@@ -23,218 +24,93 @@ from ._value_ops import (
 from .cell import Point, Span
 from .formula import Formula, Op
 from .period import Period
-from .series import Series
-from .span import SpanSeries
+from .span import SpanSeriesDef
 
 if TYPE_CHECKING:
     from .context import Context
 
 
-type PointFamilyResult[K: Hashable] = Mapping[K, Point]
+type PointSeriesFn = Callable[["Context", date], Formula[float | None]]
 
 
-class _PointSeriesMeta(ABCMeta):
-    def __neg__(cls) -> type["PointSeries"]:
-        return neg(cls)
+class PointSeriesDef(NamedTuple):
+    """A date-indexed point series definition."""
 
-    @overload
-    def __add__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
+    fn: PointSeriesFn
+    label: str
 
-    @overload
-    def __add__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __add__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return sum([cls, other], name=f"Add{cls.__name__}{other.__name__}")
-        if isinstance(other, int | float):
-            return add_scalar(cls, other)
-        return NotImplemented
-
-    @overload
-    def __radd__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __radd__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __radd__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return sum([other, cls], name=f"Add{other.__name__}{cls.__name__}")
-        if isinstance(other, int | float):
-            return add_scalar(cls, other)
-        return NotImplemented
-
-    @overload
-    def __sub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __sub__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __sub__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return sub(cls, other)
-        if isinstance(other, int | float):
-            return sub_scalar(cls, other)
-        return NotImplemented
-
-    @overload
-    def __rsub__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __rsub__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __rsub__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return sub(other, cls)
-        if isinstance(other, int | float):
-            return rsub_scalar(other, cls)
-        return NotImplemented
-
-    @overload
-    def __mul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __mul__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __mul__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return mul([cls, other], name=f"Mul{cls.__name__}{other.__name__}")
-        if isinstance(other, int | float):
-            return scale(cls, other)
-        return NotImplemented
-
-    @overload
-    def __rmul__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __rmul__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __rmul__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return mul([other, cls], name=f"Mul{other.__name__}{cls.__name__}")
-        if isinstance(other, int | float):
-            return scale(cls, other)
-        return NotImplemented
-
-    @overload
-    def __truediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __truediv__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __truediv__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return div(cls, other)
-        if isinstance(other, int | float):
-            return div_scalar(cls, other)
-        return NotImplemented
-
-    @overload
-    def __rtruediv__(cls, other: type["PointSeries"], /) -> type["PointSeries"]: ...
-
-    @overload
-    def __rtruediv__(cls, other: int | float, /) -> type["PointSeries"]: ...
-
-    def __rtruediv__(cls, other: object, /) -> object:
-        if isinstance(other, _PointSeriesMeta):
-            return div(other, cls)
-        if isinstance(other, int | float):
-            return rdiv_scalar(other, cls)
-        return NotImplemented
-
-
-class PointSeries(Series, metaclass=_PointSeriesMeta):
-    """Base class for a `Point` factory."""
-
-    def query(self, dt: date) -> Formula[Point]:
+    def query(self, ctx: "Context", dt: date) -> Point:
         """Return the point cell for `dt`, creating and caching it if needed."""
-        point_cache = self.ctx.get_or_create_point_cache(self)
-        if dt in point_cache:
-            return Formula.pure(point_cache[dt])
+        point_cache = ctx.get_or_create_point_cache(self)
+        if dt not in point_cache:
+            point_cache[dt] = Point(dt, self.fn(ctx, dt), self)
+        return point_cache[dt]
 
-        point = self.point(dt)
-        point_cache[dt] = Point(dt, point, self)
-        return Formula.pure(point_cache[dt])
-
-    def value(self, dt: date) -> Formula[float | None]:
+    def value(self, ctx: "Context", dt: date) -> Formula[float | None]:
         """Return a formula resolving this series value at `dt`."""
-        return self.query(dt).map(lambda point: point.eval(self.ctx))
-
-    @abstractmethod
-    def point(self, dt: date) -> Formula[float | None]:
-        """Subclasses must implement this method to return the point formula for `dt`."""
-        raise NotImplementedError
+        return Formula(_PointValueOp(ctx, self.query(ctx, dt)))
 
 
-class PointSeriesFamily[K: Hashable](Series):
-    """A date-indexed collection of generated point series keyed by `K`."""
+class _PointValueOp(Op[float | None]):
+    def __init__(self, ctx: "Context", point: Point) -> None:
+        self.ctx = ctx
+        self.point = point
 
-    def query(self, dt: date) -> Formula[PointFamilyResult[K]]:
-        """Return point cells for every family key at `dt`."""
-        return Formula(PointFamilyQueryOp(self, dt))
-
-    def key_label(self, key: K) -> str:
-        """Return the display label for a generated family key."""
-        return str(key)
-
-    @abstractmethod
-    def points(self, dt: date) -> PointFamilyResult[K]:
-        """Subclasses must implement this method to return the point cells for every family key at `dt`."""
-        raise NotImplementedError
-
-
-class PointFamilyQueryOp[K: Hashable](Op[PointFamilyResult[K]]):
-    """Formula operation that evaluates a point series family query."""
-
-    def __init__(self, family: PointSeriesFamily[K], dt: date) -> None:
-        self.family = family
-        self.dt = dt
-
-    def eval(self) -> PointFamilyResult[K]:
-        result = dict(self.family.points(self.dt))
-        for point in result.values():
-            if point.source is None:
-                point.source = self.family
-        return result
+    def eval(self) -> float | None:
+        return self.point.eval(self.ctx)
 
     def __repr__(self) -> str:
-        return f"PointFamilyQueryOp(family={self.family!r}, dt={self.dt!r})"
+        return f"PointValueOp(point={self.point!r})"
+
+
+@overload
+def define(
+    fn: PointSeriesFn,
+    /,
+    *,
+    label: str | None = None,
+) -> PointSeriesDef: ...
+
+
+@overload
+def define(
+    *,
+    label: str | None = None,
+) -> Callable[[PointSeriesFn], PointSeriesDef]: ...
 
 
 def define(
-    fn: Callable[[PointSeries, date], Formula[float | None]],
+    fn: PointSeriesFn | None = None,
     /,
-) -> type[PointSeries]:
-    """Create a `PointSeries` class from a point formula function."""
-    return cast(
-        type[PointSeries],
-        type(
-            fn.__name__,
-            (PointSeries,),
-            {
-                "__module__": fn.__module__,
-                "__qualname__": fn.__qualname__,
-                "__doc__": fn.__doc__,
-                "point": fn,
-            },
-        ),
-    )
+    *,
+    label: str | None = None,
+) -> PointSeriesDef | Callable[[PointSeriesFn], PointSeriesDef]:
+    """Create a point series definition from a point formula function."""
+
+    def create(fn: PointSeriesFn) -> PointSeriesDef:
+        return PointSeriesDef(fn=fn, label=label or fn.__name__)
+
+    if fn is None:
+        return create
+
+    return create(fn)
 
 
 def accumulate(
     start: date,
     value: float | None,
-    changes: type[SpanSeries],
-    name: str = "AccumulatedPointSeries",
-) -> type[PointSeries]:
+    changes: SpanSeriesDef,
+    label: str = "AccumulatedPointSeries",
+) -> PointSeriesDef:
     """Create a point series by accumulating span changes from a start value."""
 
-    def point(self: PointSeries, dt: date) -> Formula[float | None]:
+    def point(ctx: "Context", dt: date) -> Formula[float | None]:
         if dt < start:
             return Formula.pure(None)
         if dt == start:
             return Formula.pure(value)
 
-        spans = self.ctx.get(changes).query(Period(start, dt))
+        spans = changes.query(ctx, Period(start, dt))
 
         def add_changes(spans: list[Span]) -> float | None:
             if value is None:
@@ -242,131 +118,129 @@ def accumulate(
 
             total = 0.0
             for span in spans:
-                span_value = span.fn.eval()
+                span_value = span.eval(ctx)
                 if span_value is not None:
                     total += span_value
             return value + total
 
         return spans.map(add_changes)
 
-    return type(name, (PointSeries,), {"point": point})
+    return PointSeriesDef(fn=point, label=label)
 
 
-def neg(series: type[PointSeries], *, name: str | None = None) -> type[PointSeries]:
+def neg(series: PointSeriesDef, *, label: str | None = None) -> PointSeriesDef:
     """Create a point series that negates another point series."""
-    return _operator(name or f"Neg{series.__name__}", [series], neg_values)
+    return _operator(label or f"Neg{series.label}", [series], neg_values)
 
 
 def scale(
-    series: type[PointSeries],
+    series: PointSeriesDef,
     factor: float,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series scaled by `factor`."""
-    return _operator(name or f"Scale{series.__name__}", [series], scale_values(factor))
+    return _operator(label or f"Scale{series.label}", [series], scale_values(factor))
 
 
 def add_scalar(
-    series: type[PointSeries],
+    series: PointSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series with `value` added to each point."""
-    return _operator(name or f"Add{series.__name__}Scalar", [series], add_scalar_values(value))
+    return _operator(label or f"Add{series.label}Scalar", [series], add_scalar_values(value))
 
 
 def sum(
-    series: Sequence[type[PointSeries]],
+    series: Sequence[PointSeriesDef],
     *,
-    name: str = "SumPointSeries",
-) -> type[PointSeries]:
+    label: str = "SumPointSeries",
+) -> PointSeriesDef:
     """Create a point series by summing multiple point series."""
-    return _operator(name, series, sum_values)
+    return _operator(label, series, sum_values)
 
 
 def sub(
-    left: type[PointSeries],
-    right: type[PointSeries],
+    left: PointSeriesDef,
+    right: PointSeriesDef,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series that subtracts `right` from `left`."""
-    return _operator(name or f"Sub{left.__name__}{right.__name__}", [left, right], sub_values)
+    return _operator(label or f"Sub{left.label}{right.label}", [left, right], sub_values)
 
 
 def sub_scalar(
-    series: type[PointSeries],
+    series: PointSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series with `value` subtracted from each point."""
-    return _operator(name or f"Sub{series.__name__}Scalar", [series], sub_scalar_values(value))
+    return _operator(label or f"Sub{series.label}Scalar", [series], sub_scalar_values(value))
 
 
 def rsub_scalar(
     value: int | float,
-    series: type[PointSeries],
+    series: PointSeriesDef,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series by subtracting each point from `value`."""
-    return _operator(name or f"RSubScalar{series.__name__}", [series], rsub_scalar_values(value))
+    return _operator(label or f"RSubScalar{series.label}", [series], rsub_scalar_values(value))
 
 
 def mul(
-    series: Sequence[type[PointSeries]],
+    series: Sequence[PointSeriesDef],
     *,
-    name: str = "MulPointSeries",
-) -> type[PointSeries]:
+    label: str = "MulPointSeries",
+) -> PointSeriesDef:
     """Create a point series by multiplying multiple point series."""
-    return _operator(name, series, mul_values)
+    return _operator(label, series, mul_values)
 
 
 def div(
-    left: type[PointSeries],
-    right: type[PointSeries],
+    left: PointSeriesDef,
+    right: PointSeriesDef,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series that divides `left` by `right`."""
-    return _operator(name or f"Div{left.__name__}{right.__name__}", [left, right], div_values)
+    return _operator(label or f"Div{left.label}{right.label}", [left, right], div_values)
 
 
 def div_scalar(
-    series: type[PointSeries],
+    series: PointSeriesDef,
     value: int | float,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series that divides each point by `value`."""
-    return _operator(name or f"Div{series.__name__}Scalar", [series], div_scalar_values(value))
+    return _operator(label or f"Div{series.label}Scalar", [series], div_scalar_values(value))
 
 
 def rdiv_scalar(
     value: int | float,
-    series: type[PointSeries],
+    series: PointSeriesDef,
     *,
-    name: str | None = None,
-) -> type[PointSeries]:
+    label: str | None = None,
+) -> PointSeriesDef:
     """Create a point series by dividing `value` by each point."""
-    return _operator(name or f"RDivScalar{series.__name__}", [series], rdiv_scalar_values(value))
+    return _operator(label or f"RDivScalar{series.label}", [series], rdiv_scalar_values(value))
 
 
 def _operator(
-    name: str,
-    series_types: Sequence[type[PointSeries]],
+    label: str,
+    series_defs: Sequence[PointSeriesDef],
     op: ValueOp,
-) -> type[PointSeries]:
-    def point(self: PointSeries, dt: date) -> Formula[float | None]:
-        points: list[Point] = [
-            self.ctx.get(series_type).query(dt).eval() for series_type in series_types
-        ]
-        return Formula(_PointTupleValueOp(self.ctx, points, op))
+) -> PointSeriesDef:
+    def point(ctx: "Context", dt: date) -> Formula[float | None]:
+        points = [series.query(ctx, dt) for series in series_defs]
+        return Formula(_PointTupleValueOp(ctx, points, op))
 
-    return type(name, (PointSeries,), {"point": point})
+    return PointSeriesDef(fn=point, label=label)
 
 
 class _PointTupleValueOp(Op[float | None]):

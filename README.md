@@ -31,7 +31,7 @@ Install the skill from https://github.com/Orcaset/orcaset-py/tree/main/skill/orc
 
 ## Orcaset at a glance
 
-Orcaset models are built by defining and combining line item classes. Values are materialized by querying over dates, with caching and circular references handled by the evaluation context.
+Orcaset models are built by defining and combining line item objects. Values are materialized by querying over dates, with caching and circular references handled by the evaluation context.
 
 The snippet below defines a simple model with revenue, expenses, and income, then queries quarterly values through 2026.
 
@@ -46,7 +46,6 @@ from orcaset import (
     Formula,
     Period,
     Span,
-    SpanSeries,
     Stmt,
     Total,
     fixed_width_table,
@@ -61,18 +60,15 @@ initial_revenue = 100.0
 revenue_growth_rate = 0.05
 
 
-# Model
-class Revenue(SpanSeries):
-    agg = sum_spans(0.0)
+@span.define(agg=sum_spans(0.0), label="Revenue")
+def Revenue(ctx: Context) -> Iterable[Span]:
+    value = initial_revenue
+    for period in Period.seq(start_date, relativedelta(months=1, day=31)):
+        yield Span(period, Formula.pure(value), split_daily)
+        value *= 1 + revenue_growth_rate / 12
 
-    def spans(self) -> Iterable[Span]:
-        value = initial_revenue
-        for period in Period.seq(start_date, relativedelta(months=1, day=31)):
-            yield Span(period, Formula.pure(value), split_daily)
-            value *= 1 + revenue_growth_rate / 12
-
-Expenses = span.scale(Revenue, -0.7, name="Expenses")
-Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0), name="Income")
+Expenses = span.scale(Revenue, -0.7, label="Expenses")
+Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0), label="Income")
 
 # Build a statement view
 stmt = Stmt(Total(Income, [Revenue, Expenses]))

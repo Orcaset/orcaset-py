@@ -22,12 +22,9 @@ from .context import CellConvergenceError, CellDependencyGraph, CellDependencyNo
 from .formatters import DateFormatter, ValueFormatter, csv_table, fixed_width_table, markdown_table
 from .formula import Formula
 from .period import Period
-from .point import PointFamilyResult, PointSeries, PointSeriesFamily
-from .series import Series
-from .span import SpanAgg, SpanFamilyResult, SpanSeries, SpanSeriesFamily, align_spans
+from .point import PointSeriesDef, PointSeriesFn
+from .span import SpanAgg, SpanSeriesDef, SpanSeriesFn, align_spans
 from .stmt import (
-    FamilyLineRow,
-    FamilyRow,
     DateValue,
     Group,
     GroupRow,
@@ -68,17 +65,12 @@ __all__ = [
     "csv_table",
     "fixed_width_table",
     "markdown_table",
-    "Series",
     "SpanAgg",
-    "PointSeries",
-    "PointSeriesFamily",
-    "PointFamilyResult",
-    "SpanSeries",
-    "SpanSeriesFamily",
-    "SpanFamilyResult",
+    "PointSeriesDef",
+    "PointSeriesFn",
+    "SpanSeriesDef",
+    "SpanSeriesFn",
     "align_spans",
-    "FamilyLineRow",
-    "FamilyRow",
     "DateValue",
     "Group",
     "GroupRow",

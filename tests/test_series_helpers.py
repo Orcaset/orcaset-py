@@ -1,597 +1,97 @@
 from datetime import date
-from typing import Any, Iterable, cast
 
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from orcaset import (
-    Context,
-    Formula,
-    Period,
-    PointSeries,
-    Span,
-    SpanFamilyResult,
-    SpanSeries,
-    SpanSeriesFamily,
-    align_spans,
-    avg_spans,
-    last_span,
-    no_split,
-    point,
-    span,
-    split_const,
-    split_daily,
-    sum_spans,
-)
-from orcaset.yf import YF
+from orcaset import Context, Formula, Period, point, span, split_daily, sum_spans
 
 
-def eval_spans(ctx: Context, spans: list[Span]) -> list[float | None]:
-    return [span.eval(ctx) for span in spans]
-
-
-class _TestSpanSeries(SpanSeries):
-    @staticmethod
-    def agg(spans: list[Span]) -> float | None:
-        return sum_spans(0.0)(spans)
-
-    def spans(self) -> Iterable[Span]:
-        raise NotImplementedError
-
-
-def test_span_series_from_list_creates_queryable_series():
-    Revenue = span.from_list(
-        [
-            ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
-            ((date(2025, 2, 1), date(2025, 3, 1)), None),
-        ],
-        agg=sum_spans(0.0),
-        name="Revenue",
-    )
-
-    ctx = Context()
-    spans = ctx.get(Revenue).query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 2, 1)),
-        Period(date(2025, 2, 1), date(2025, 3, 1)),
-    ]
-    assert eval_spans(ctx, spans) == [310.0, None]
-
-
-def test_span_series_value_uses_series_agg():
-    Revenue = span.from_list(
-        [
-            ((date(2025, 1, 1), date(2025, 2, 1)), 100.0),
-            ((date(2025, 2, 1), date(2025, 3, 1)), 200.0),
-        ],
-        agg=sum_spans(0.0),
-        name="Revenue",
-    )
-
-    ctx = Context()
-
-    assert ctx.get(Revenue).value(Period(date(2025, 1, 1), date(2025, 3, 1))).eval() == 300.0
-
-
-def test_span_series_family_value_uses_generated_series_agg_by_key():
-    q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
-
-    def revenue_series() -> type[SpanSeries]:
-        return span.from_list(
-            [
-                ((date(2025, 1, 1), date(2025, 2, 1)), 100.0),
-                ((date(2025, 2, 1), date(2025, 4, 1)), 200.0),
-            ],
-            agg=sum_spans(0.0),
-            name="AlphaRevenue",
-        )
-
-    class RevenueByCustomer(SpanSeriesFamily[str]):
-        def spans(self, period: Period) -> SpanFamilyResult[str]:
-            revenue = self.ctx.get_or_create_family_series(self, "alpha", revenue_series)
-            return {"alpha": tuple(revenue.query(period).eval())}
-
-    ctx = Context()
-
-    assert ctx.get(RevenueByCustomer).value(q1).eval() == {"alpha": 300.0}
-
-
-def test_span_series_from_list_uses_split_function():
-    Revenue = span.from_list(
-        [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
+def test_span_constant_and_periodic_constructors_create_series_defs():
+    units = span.constant(
+        10.0,
         agg=sum_spans(0.0),
         split=split_daily,
-        name="Revenue",
+        start=date(2025, 1, 1),
+        end=date(2025, 2, 1),
+        label="Units",
     )
-
-    ctx = Context()
-    spans = ctx.get(Revenue).query(Period(date(2025, 1, 11), date(2025, 1, 21))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 11), date(2025, 1, 21)),
-    ]
-    assert eval_spans(ctx, spans) == pytest.approx([100.0])
-
-
-def test_span_aggregation_helpers_fill_none_values():
-    class Revenue(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(310.0),
-                no_split,
-            )
-            yield Span(
-                Period(date(2025, 2, 1), date(2025, 3, 1)),
-                Formula.pure(None),
-                no_split,
-            )
-
-    ctx = Context()
-    spans = ctx.get(Revenue).query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
-
-    assert sum_spans(5.0)(spans) == 315.0
-    assert avg_spans(YF.act360, 5.0)(spans) == pytest.approx((310.0 * 31 + 5.0 * 28) / 59)
-    assert last_span(5.0)(spans) == 5.0
-
-
-def test_span_series_constant_constructor_creates_bounded_constant_series():
-    Units = span.constant(
-        120.0,
-        agg=last_span(None),
-        split=split_const,
-        start=date(2025, 6, 1),
-        end=date(2026, 1, 1),
-    )
-
-    ctx = Context()
-    units = ctx.get(Units)
-
-    assert Units.__name__ == "ConstantSpanSeries"
-    assert units.value(Period(date(2025, 1, 1), date(2025, 2, 1))).eval() is None
-    assert units.value(Period(date(2025, 5, 1), date(2025, 7, 1))).eval() == 120.0
-    assert units.value(Period(date(2026, 1, 1), date(2026, 2, 1))).eval() is None
-
-
-def test_span_series_constant_constructor_allows_custom_name():
-    Units = span.constant(
-        120.0,
-        agg=last_span(None),
-        split=split_const,
-        name="Units",
-    )
-
-    assert Units.__name__ == "Units"
-
-
-def test_span_series_periodic_constructor_creates_periodic_series():
-    Rent = span.periodic(
+    rent = span.periodic(
         date(2025, 1, 1),
         relativedelta(months=1),
-        310.0,
+        100.0,
         agg=sum_spans(0.0),
         split=split_daily,
         end=date(2025, 4, 1),
+        label="Rent",
     )
 
     ctx = Context()
-    rent = ctx.get(Rent)
 
-    assert Rent.__name__ == "PeriodicSpanSeries"
-    assert rent.value(Period(date(2025, 1, 1), date(2025, 4, 1))).eval() == 930.0
-    assert rent.value(Period(date(2025, 1, 11), date(2025, 1, 21))).eval() == pytest.approx(
-        100.0
-    )
-    assert rent.value(Period(date(2025, 4, 1), date(2025, 5, 1))).eval() == 0.0
+    assert units.label == "Units"
+    assert units.value(ctx, Period(date(2025, 1, 1), date(2025, 2, 1))).eval() == 10.0
+    assert rent.value(ctx, Period(date(2025, 1, 1), date(2025, 4, 1))).eval() == 300.0
 
 
-def test_point_series_operator_constructors():
-    class A(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(10.0)
+def test_point_operators_evaluate_dependencies():
+    @point.define(label="A")
+    def a(ctx: Context, dt: date) -> Formula[float | None]:
+        return Formula.pure(10.0)
 
-    class B(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(2.0 if dt == date(2025, 1, 1) else None)
+    @point.define(label="B")
+    def b(ctx: Context, dt: date) -> Formula[float | None]:
+        return Formula.pure(2.0)
 
     ctx = Context()
     dt = date(2025, 1, 1)
 
-    assert ctx.get(point.neg(A)).query(dt).eval().eval(ctx) == -10.0
-    assert ctx.get(point.scale(A, -0.5)).query(dt).eval().eval(ctx) == -5.0
-    assert ctx.get(point.sum([A, B])).query(dt).eval().eval(ctx) == 12.0
-    assert ctx.get(point.sub(A, B)).query(dt).eval().eval(ctx) == 8.0
-    assert ctx.get(point.mul([A, B])).query(dt).eval().eval(ctx) == 20.0
-    assert ctx.get(point.div(A, B)).query(dt).eval().eval(ctx) == 5.0
+    assert point.neg(a).value(ctx, dt).eval() == -10.0
+    assert point.sum([a, b]).value(ctx, dt).eval() == 12.0
+    assert point.add_scalar(a, 2).value(ctx, dt).eval() == 12.0
+    assert point.sub(a, b).value(ctx, dt).eval() == 8.0
+    assert point.sub_scalar(a, 2).value(ctx, dt).eval() == 8.0
+    assert point.rsub_scalar(12, a).value(ctx, dt).eval() == 2.0
+    assert point.mul([a, b]).value(ctx, dt).eval() == 20.0
+    assert point.div(a, b).value(ctx, dt).eval() == 5.0
+    assert point.rdiv_scalar(20, a).value(ctx, dt).eval() == 2.0
+    assert point.sum([a, b], label="Total").value(ctx, dt).eval() == 12.0
 
 
-def test_point_series_dunder_operators():
-    class A(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(10.0)
-
-    class B(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(2.0)
-
-    ctx = Context()
-    dt = date(2025, 1, 1)
-
-    assert ctx.get(-cast(Any, A)).value(dt).eval() == -10.0
-    assert ctx.get(A + B).value(dt).eval() == 12.0
-    assert ctx.get(A + 2).value(dt).eval() == 12.0
-    assert ctx.get(2 + A).value(dt).eval() == 12.0
-    assert ctx.get(A - B).value(dt).eval() == 8.0
-    assert ctx.get(A - 2).value(dt).eval() == 8.0
-    assert ctx.get(12 - A).value(dt).eval() == 2.0
-    assert ctx.get(A * B).value(dt).eval() == 20.0
-    assert ctx.get(A * 2).value(dt).eval() == 20.0
-    assert ctx.get(2 * A).value(dt).eval() == 20.0
-    assert ctx.get(A / B).value(dt).eval() == 5.0
-    assert ctx.get(A / 2).value(dt).eval() == 5.0
-    assert ctx.get(20 / A).value(dt).eval() == 2.0
-    assert ctx.get((A + B) * -0.25).value(dt).eval() == -3.0
-
-
-def test_point_series_value_returns_formula_for_point_value():
-    class Price(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(42.0 if dt == date(2025, 1, 1) else None)
-
-    ctx = Context()
-    price = ctx.get(Price)
-
-    assert price.value(date(2025, 1, 1)).eval() == 42.0
-    assert price.value(date(2025, 1, 2)).eval() is None
-
-
-def test_point_series_accumulate_sums_span_changes():
-    Changes = span.from_list(
+def test_point_accumulate_sums_span_changes():
+    changes = span.from_list(
         [
-            ((date(2025, 1, 1), date(2025, 2, 1)), 310.0),
-            ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
+            ((date(2025, 1, 1), date(2025, 1, 11)), 100.0),
+            ((date(2025, 1, 11), date(2025, 2, 1)), None),
+            ((date(2025, 2, 1), date(2025, 3, 1)), 200.0),
         ],
         agg=sum_spans(0.0),
-        split=split_daily,
-        name="Changes",
+        label="Changes",
     )
-    Balance = point.accumulate(
-        start=date(2025, 1, 1),
-        value=1000.0,
-        changes=Changes,
-        name="Balance",
-    )
+    balance = point.accumulate(date(2025, 1, 1), 1000.0, changes, label="Balance")
 
     ctx = Context()
-    balance = ctx.get(Balance)
 
-    assert balance.query(date(2024, 12, 31)).eval().eval(ctx) is None
-    assert balance.query(date(2025, 1, 1)).eval().eval(ctx) == 1000.0
-    assert balance.query(date(2025, 1, 11)).eval().eval(ctx) == pytest.approx(1100.0)
-    assert balance.query(date(2025, 2, 1)).eval().eval(ctx) == pytest.approx(1310.0)
-    assert balance.query(date(2025, 3, 1)).eval().eval(ctx) == pytest.approx(1590.0)
+    assert balance.value(ctx, date(2024, 12, 31)).eval() is None
+    assert balance.value(ctx, date(2025, 1, 1)).eval() == 1000.0
+    assert balance.value(ctx, date(2025, 1, 11)).eval() == pytest.approx(1100.0)
+    assert balance.value(ctx, date(2025, 3, 1)).eval() == pytest.approx(1300.0)
 
 
-def test_point_series_accumulate_treats_none_changes_as_zero():
-    Changes = span.from_list(
-        [
-            ((date(2025, 1, 1), date(2025, 2, 1)), None),
-            ((date(2025, 2, 1), date(2025, 3, 1)), 280.0),
-        ],
-        agg=sum_spans(0.0),
-        name="Changes",
-    )
-    Balance = point.accumulate(
-        start=date(2025, 1, 1),
-        value=1000.0,
-        changes=Changes,
-        name="Balance",
-    )
+def test_structurally_equal_defs_have_distinct_context_caches():
+    calls: list[str] = []
 
-    ctx = Context()
-    balance = ctx.get(Balance)
+    def spans(ctx: Context):
+        calls.append("called")
+        yield from ()
 
-    assert balance.query(date(2025, 3, 1)).eval().eval(ctx) == pytest.approx(1280.0)
-
-
-def test_point_series_accumulate_none_start_value_stays_none():
-    Changes = span.from_list(
-        [((date(2025, 1, 1), date(2025, 2, 1)), 310.0)],
-        agg=sum_spans(0.0),
-        name="Changes",
-    )
-    Balance = point.accumulate(
-        start=date(2025, 1, 1),
-        value=None,
-        changes=Changes,
-        name="Balance",
-    )
-
-    ctx = Context()
-    balance = ctx.get(Balance)
-
-    assert balance.query(date(2025, 1, 1)).eval().eval(ctx) is None
-    assert balance.query(date(2025, 2, 1)).eval().eval(ctx) is None
-
-
-def test_span_series_sum_aligns_by_dates_not_index():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 3, 1)),
-                Formula.pure(590.0),
-                split_daily,
-            )
-
-    class B(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 15), date(2025, 2, 15)),
-                Formula.pure(310.0),
-                split_daily,
-            )
-
-    ctx = Context()
-    summed = ctx.get(span.sum([A, B], agg=sum_spans(0.0)))
-    spans = summed.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 1, 15)),
-        Period(date(2025, 1, 15), date(2025, 2, 15)),
-        Period(date(2025, 2, 15), date(2025, 3, 1)),
-    ]
-    assert eval_spans(ctx, spans) == [None, 620.0, None]
-
-    partial = summed.query(Period(date(2025, 1, 20), date(2025, 1, 25))).eval()
-    assert [span.period for span in partial] == [Period(date(2025, 1, 20), date(2025, 1, 25))]
-    assert eval_spans(ctx, partial) == pytest.approx([100.0])
-
-
-def test_span_series_operator_constructors():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(10.0),
-                split_daily,
-            )
-
-    class B(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(2.0),
-                split_daily,
-            )
+    agg = sum_spans(0.0)
+    left = span.SpanSeriesDef(fn=spans, agg=agg, label="Same")
+    right = span.SpanSeriesDef(fn=spans, agg=agg, label="Same")
 
     ctx = Context()
     period = Period(date(2025, 1, 1), date(2025, 2, 1))
+    left.query(ctx, period).eval()
+    right.query(ctx, period).eval()
 
-    assert eval_spans(ctx, ctx.get(span.neg(A)).query(period).eval()) == [-10.0]
-    assert eval_spans(ctx, ctx.get(span.scale(A, -0.5)).query(period).eval()) == [-5.0]
-    assert eval_spans(ctx, ctx.get(span.sub(A, B, agg=sum_spans(0.0))).query(period).eval()) == [
-        8.0
-    ]
-    assert eval_spans(ctx, ctx.get(span.mul([A, B], agg=sum_spans(0.0))).query(period).eval()) == [
-        20.0
-    ]
-    assert eval_spans(ctx, ctx.get(span.div(A, B, agg=sum_spans(0.0))).query(period).eval()) == [
-        5.0
-    ]
-
-
-def test_span_series_multi_series_combinators_require_explicit_agg():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield from ()
-
-    class B(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield from ()
-
-    with pytest.raises(TypeError):
-        span.sum([A, B])  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        span.sub(A, B)  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        span.mul([A, B])  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        span.div(A, B)  # type: ignore[call-arg]
-
-
-def test_span_series_dunder_operators():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(10.0),
-                split_daily,
-            )
-
-    class B(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(2.0),
-                split_daily,
-            )
-
-    ctx = Context()
-    period = Period(date(2025, 1, 1), date(2025, 2, 1))
-    adjusted = A + 2
-
-    assert eval_spans(ctx, ctx.get(-cast(Any, A)).query(period).eval()) == [-10.0]
-    assert adjusted.agg is A.agg
-    assert eval_spans(ctx, ctx.get(adjusted).query(period).eval()) == [12.0]
-    assert eval_spans(ctx, ctx.get(2 + A).query(period).eval()) == [12.0]
-    assert eval_spans(ctx, ctx.get(A - 2).query(period).eval()) == [8.0]
-    assert eval_spans(ctx, ctx.get(12 - A).query(period).eval()) == [2.0]
-    assert eval_spans(ctx, ctx.get(A * 2).query(period).eval()) == [20.0]
-    assert eval_spans(ctx, ctx.get(2 * A).query(period).eval()) == [20.0]
-    assert eval_spans(ctx, ctx.get(A / 2).query(period).eval()) == [5.0]
-    assert eval_spans(ctx, ctx.get(20 / A).query(period).eval()) == [2.0]
-
-    with pytest.raises(TypeError):
-        _ = cast(Any, A) + B
-    with pytest.raises(TypeError):
-        _ = cast(Any, A) - B
-    with pytest.raises(TypeError):
-        _ = cast(Any, A) * B
-    with pytest.raises(TypeError):
-        _ = cast(Any, A) / B
-
-
-def test_series_dunder_operators_reject_mixed_series_types():
-    class Spans(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield from ()
-
-    class Points(PointSeries):
-        def point(self, dt: date) -> Formula[float | None]:
-            return Formula.pure(None)
-
-    with pytest.raises(TypeError):
-        _ = cast(Any, Spans) + Points
-
-
-def test_split_const_preserves_source_value_on_both_sides():
-    class Rate(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(7.5),
-                split_const,
-            )
-
-    ctx = Context()
-    spans = ctx.get(Rate).query(Period(date(2025, 1, 11), date(2025, 1, 21))).eval()
-
-    assert [span.period for span in spans] == [Period(date(2025, 1, 11), date(2025, 1, 21))]
-    assert eval_spans(ctx, spans) == [7.5]
-
-
-def test_align_spans_returns_none_spans_for_missing_inputs():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 1, 11)),
-                Formula.pure(10.0),
-                split_daily,
-            )
-
-    class B(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 6), date(2025, 1, 11)),
-                Formula.pure(20.0),
-                split_daily,
-            )
-
-    ctx = Context()
-    aligned = list(align_spans([ctx.get(A), ctx.get(B)]))
-
-    assert [[span.period for span in row] for row in aligned] == [
-        [Period(date(2025, 1, 1), date(2025, 1, 6))] * 2,
-        [Period(date(2025, 1, 6), date(2025, 1, 11))] * 2,
-    ]
-    assert [[span.eval(ctx) for span in row] for row in aligned] == [
-        [5.0, None],
-        [5.0, 20.0],
-    ]
-
-
-def test_align_spans_requires_series_from_same_context():
-    class A(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 1, 11)),
-                Formula.pure(10.0),
-                no_split,
-            )
-
-    with pytest.raises(ValueError, match="same Context"):
-        list(align_spans([Context().get(A), Context().get(A)]))
-
-
-def test_span_series_extend_continues_after_base_end():
-    class Base(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 3, 1)),
-                Formula.pure(590.0),
-                split_daily,
-            )
-
-    @span.extend(Base)
-    def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
-        assert start == date(2025, 3, 1)
-        yield Span(
-            Period(date(2025, 3, 1), date(2025, 4, 1)),
-            Formula.pure(620.0),
-            no_split,
-        )
-
-    ctx = Context()
-    extended = ctx.get(Extended)
-    spans = extended.query(Period(date(2025, 1, 1), date(2025, 4, 1))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 3, 1)),
-        Period(date(2025, 3, 1), date(2025, 4, 1)),
-    ]
-    assert eval_spans(ctx, spans) == pytest.approx([590.0, 620.0])
-
-
-def test_span_series_extend_passes_none_to_continuation_for_empty_base():
-    class Base(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield from ()
-
-    @span.extend(Base)
-    def Extended(_: SpanSeries, start: date | None) -> Iterable[Span]:
-        assert start is None
-        yield Span(
-            Period(date(2025, 1, 1), date(2025, 2, 1)),
-            Formula.pure(620.0),
-            no_split,
-        )
-
-    ctx = Context()
-    extended = ctx.get(Extended)
-    spans = extended.query(Period(date(2025, 1, 1), date(2025, 2, 1))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 2, 1)),
-    ]
-    assert eval_spans(ctx, spans) == pytest.approx([620.0])
-
-
-def test_span_series_extend_continuation_can_query_base_spans_on_self():
-    class Base(_TestSpanSeries):
-        def spans(self) -> Iterable[Span]:
-            yield Span(
-                Period(date(2025, 1, 1), date(2025, 2, 1)),
-                Formula.pure(100.0),
-                no_split,
-            )
-
-    @span.extend(Base)
-    def Extended(series: SpanSeries, start: date | None) -> Iterable[Span]:
-        assert start == date(2025, 2, 1)
-        prior = series.query(Period(date(2025, 1, 1), date(2025, 2, 1)))
-        yield Span(
-            Period(date(2025, 2, 1), date(2025, 3, 1)),
-            prior.map(lambda spans: sum(span.eval(series.ctx) or 0.0 for span in spans) + 10.0),
-            no_split,
-        )
-
-    ctx = Context()
-    extended = ctx.get(Extended)
-    spans = extended.query(Period(date(2025, 1, 1), date(2025, 3, 1))).eval()
-
-    assert [span.period for span in spans] == [
-        Period(date(2025, 1, 1), date(2025, 2, 1)),
-        Period(date(2025, 2, 1), date(2025, 3, 1)),
-    ]
-    assert eval_spans(ctx, spans) == pytest.approx([100.0, 110.0])
+    assert left == right
+    assert left is not right
+    assert calls == ["called", "called"]

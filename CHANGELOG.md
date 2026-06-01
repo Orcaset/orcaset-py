@@ -9,6 +9,21 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced class-based `SpanSeries` and `PointSeries` APIs with immutable
+  `SpanSeriesDef` and `PointSeriesDef` named tuple definitions. Series are now
+  queried directly with explicit contexts, e.g. `revenue.value(ctx, period)` and
+  `cash.query(ctx, dt)`.
+- Renamed public series helper metadata from `name=` to `label=`.
+- Updated examples and documentation to use def-object series.
+
+### Removed
+
+- Removed context-managed series instantiation via `Context.get(...)`.
+- Removed `SpanSeriesFamily` and `PointSeriesFamily`; dynamic lines are now
+  represented by creating ordinary series definition objects.
+
 ## [0.2.0] - 2026-05-21
 
 ### Added

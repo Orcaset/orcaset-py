@@ -2,7 +2,7 @@
 
 *Run from the repo root: `uv run python examples/three-statement-model/main.py`. Code: [main.py](./main.py).*
 
-This example builds a simple financial model with connected income, cash flow, and balance sheet statements. Income and cash flow line items are modeled as monthly `SpanSeries`. Balance sheet accounts are modeled as `PointSeries`.
+This example builds a simple financial model with connected income, cash flow, and balance sheet statements. Income and cash flow line items are modeled as monthly `SpanSeriesDef` objects. Balance sheet accounts are modeled as `PointSeriesDef` objects.
 
 ## Statement structure
 

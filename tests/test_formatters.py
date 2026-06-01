@@ -1,59 +1,28 @@
-from collections.abc import Iterable
 from datetime import date
 
 import pytest
 
 from orcaset import (
     DateValue,
-    FamilyLineRow,
-    FamilyRow,
     GroupRow,
     LineRow,
     Period,
     PeriodValue,
-    Span,
-    SpanFamilyResult,
-    SpanSeries,
-    SpanSeriesFamily,
     StatementResult,
     TotalRow,
     csv_table,
     fixed_width_table,
     markdown_table,
+    span,
     sum_spans,
 )
 
 P1 = Period(date(2026, 1, 1), date(2026, 4, 1))
 P2 = Period(date(2026, 4, 1), date(2026, 7, 1))
 
-
-class _TestSpanSeries(SpanSeries):
-    @staticmethod
-    def agg(spans: list[Span]) -> float | None:
-        return sum_spans(0.0)(spans)
-
-    def spans(self) -> Iterable[Span]:
-        raise NotImplementedError
-
-
-class A(_TestSpanSeries):
-    def spans(self) -> Iterable[Span]:
-        raise NotImplementedError
-
-
-class B(_TestSpanSeries):
-    def spans(self) -> Iterable[Span]:
-        raise NotImplementedError
-
-
-class C(_TestSpanSeries):
-    def spans(self) -> Iterable[Span]:
-        raise NotImplementedError
-
-
-class Family(SpanSeriesFamily[str]):
-    def spans(self, period: Period) -> SpanFamilyResult[str]:
-        return {}
+A = span.from_list([], agg=sum_spans(0.0), label="A")
+B = span.from_list([], agg=sum_spans(0.0), label="B")
+C = span.from_list([], agg=sum_spans(0.0), label="C")
 
 
 def test_fixed_width_table_formats_period_and_point_values():
@@ -94,18 +63,6 @@ def test_fixed_width_table_formats_totals_groups_and_indentation():
                 (PeriodValue(P1, 3.0), PeriodValue(P2, 4.0)),
                 (
                     LineRow("B", B, (PeriodValue(P1, 5.0), PeriodValue(P2, None))),
-                    FamilyRow(
-                        "Family",
-                        Family,
-                        (
-                            FamilyLineRow(
-                                "Key",
-                                Family,
-                                "key",
-                                (PeriodValue(P1, 6.0), PeriodValue(P2, 7.0)),
-                            ),
-                        ),
-                    ),
                 ),
             ),
             GroupRow((LineRow("C", C, (PeriodValue(P1, 8.0), PeriodValue(P2, 9.0))),)),
@@ -116,16 +73,14 @@ def test_fixed_width_table_formats_totals_groups_and_indentation():
 
     assert fixed_width_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "\n".join(
         [
-            "Start            01/01  04/01",
-            "End       01/01  04/01  07/01",
-            "A                 1.00   2.00",
-            "  B               5.00",
-            "  Family",
-            "    Key           6.00   7.00",
-            "-----------------------------",
-            "Total             3.00   4.00",
+            "Start         01/01  04/01",
+            "End    01/01  04/01  07/01",
+            "A              1.00   2.00",
+            "  B            5.00",
+            "--------------------------",
+            "Total          3.00   4.00",
             "",
-            "  C               8.00   9.00",
+            "  C            8.00   9.00",
             "",
         ]
     )
@@ -161,18 +116,6 @@ def test_csv_table_formats_totals_groups_and_escapes_values_without_indentation(
                 (PeriodValue(P1, 3.0), PeriodValue(P2, 4.0)),
                 (
                     LineRow("B", B, (PeriodValue(P1, 1234.0), PeriodValue(P2, None))),
-                    FamilyRow(
-                        'Family, "Quoted"',
-                        Family,
-                        (
-                            FamilyLineRow(
-                                "Key",
-                                Family,
-                                "key",
-                                (PeriodValue(P1, 6.0), PeriodValue(P2, 7.0)),
-                            ),
-                        ),
-                    ),
                 ),
             ),
             GroupRow((LineRow("C", C, (PeriodValue(P1, 8.0), PeriodValue(P2, 9.0))),)),
@@ -190,8 +133,6 @@ def test_csv_table_formats_totals_groups_and_escapes_values_without_indentation(
             'End,"Jan 01, 2026","Apr 01, 2026","Jul 01, 2026"',
             "A,,1.00,2.00",
             'B,,"1,234.00",',
-            '"Family, ""Quoted"""',
-            "Key,,6.00,7.00",
             "Total,,3.00,4.00",
             "",
             "C,,8.00,9.00",
@@ -230,18 +171,6 @@ def test_markdown_table_formats_totals_groups_indentation_and_escapes_cells():
                 (PeriodValue(P1, 3.0), PeriodValue(P2, 4.0)),
                 (
                     LineRow("B", B, (PeriodValue(P1, 5.0), PeriodValue(P2, None))),
-                    FamilyRow(
-                        "Fam|ily *Name*",
-                        Family,
-                        (
-                            FamilyLineRow(
-                                "Key",
-                                Family,
-                                "key",
-                                (PeriodValue(P1, 6.0), PeriodValue(P2, 7.0)),
-                            ),
-                        ),
-                    ),
                 ),
             ),
             GroupRow((LineRow("C", C, (PeriodValue(P1, 8.0), PeriodValue(P2, 9.0))),)),
@@ -257,8 +186,6 @@ def test_markdown_table_formats_totals_groups_indentation_and_escapes_cells():
             "| End | 01/01 | 04/01 | 07/01 |",
             "| A |  | 1.00 | 2.00 |",
             "| &nbsp;&nbsp;B |  | 5.00 |  |",
-            "| &nbsp;&nbsp;Fam\\|ily \\*Name\\* |  |  |  |",
-            "| &nbsp;&nbsp;&nbsp;&nbsp;Key |  | 6.00 | 7.00 |",
             "| **Total** |  | **3.00** | **4.00** |",
             "|  |  |  |  |",
             "| &nbsp;&nbsp;C |  | 8.00 | 9.00 |",

@@ -14,7 +14,6 @@ from .period import Period
 
 if TYPE_CHECKING:
     from .context import Context
-    from .series import Series
 
 
 type SpanFormula = Formula[float | None]
@@ -31,7 +30,7 @@ class Cell:
     _ids = itertools.count()
     fn: Formula[float | None]
 
-    def __init__(self, source: Series | None):
+    def __init__(self, source: object | None):
         self._id = next(Cell._ids)
         self.source = source
 
@@ -48,7 +47,7 @@ class Span(Cell):
         period: Period,
         fn: Formula[float | None],
         split: SpanSplit,
-        source: Series | None = None,
+        source: object | None = None,
     ):
         super().__init__(source)
         self.period = period
@@ -120,7 +119,9 @@ def last_span(fill: float | None) -> SpanAggregator:
             return fill
         span = spans[-1]
         if span._ctx is None:
-            raise RuntimeError("Span aggregation helpers require spans returned by SpanSeries.query")
+            raise RuntimeError(
+                "Span aggregation helpers require spans returned by SpanSeriesDef.query"
+            )
         value = span.eval(span._ctx)
         return fill if value is None else value
 
@@ -129,7 +130,9 @@ def last_span(fill: float | None) -> SpanAggregator:
 
 def _span_value(span: Span, fill: float) -> float:
     if span._ctx is None:
-        raise RuntimeError("Span aggregation helpers require spans returned by SpanSeries.query")
+        raise RuntimeError(
+            "Span aggregation helpers require spans returned by SpanSeriesDef.query"
+        )
     value = span.eval(span._ctx)
     return fill if value is None else value
 
@@ -139,7 +142,7 @@ class Point(Cell):
         self,
         dt: date,
         fn: Formula[float | None],
-        source: Series | None = None,
+        source: object | None = None,
     ):
         super().__init__(source)
         self.dt = dt
