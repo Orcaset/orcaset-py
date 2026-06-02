@@ -9,6 +9,8 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-01
+
 ### Added
 
 - Added `Formula.sequence(...)` for collecting dynamic formula iterables into
@@ -83,5 +85,5 @@ change between minor releases.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/orcaset/orcaset-py/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/orcaset/orcaset-py/compare/v0.2.0...v0.3.0
