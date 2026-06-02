@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 type PointSeriesFn = Callable[["Context", date], Formula[float | None]]
-type PointSeriesKeyFn[K: Hashable] = Callable[["Context", date], Iterable[K]]
+type PointSeriesKeyFn[K: Hashable] = Callable[[date], Iterable[K]]
 type PointSeriesFactory[K: Hashable] = Callable[[K], "PointSeriesDef"]
 
 
@@ -62,9 +62,9 @@ class KeyedPointSeries[K: Hashable]:
     series_factory: PointSeriesFactory[K]
     label: str
 
-    def keys(self, ctx: "Context", dt: date) -> tuple[K, ...]:
+    def keys(self, dt: date) -> tuple[K, ...]:
         """Return stable, de-duplicated keys for the requested date."""
-        return tuple(dict.fromkeys(self.key_fn(ctx, dt)))
+        return tuple(dict.fromkeys(self.key_fn(dt)))
 
     def get(self, ctx: "Context", key: K) -> PointSeriesDef:
         """Return the context-cached series definition for `key`."""
@@ -72,7 +72,7 @@ class KeyedPointSeries[K: Hashable]:
 
     def items(self, ctx: "Context", dt: date) -> tuple[tuple[K, PointSeriesDef], ...]:
         """Return `(key, series)` pairs for the requested date."""
-        return tuple((key, self.get(ctx, key)) for key in self.keys(ctx, dt))
+        return tuple((key, self.get(ctx, key)) for key in self.keys(dt))
 
 
 class _PointValueOp(Op[float | None]):

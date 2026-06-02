@@ -11,6 +11,8 @@ change between minor releases.
 
 ### Added
 
+- Added `Formula.sequence(...)` for collecting dynamic formula iterables into
+  one formula.
 - Added keyed span and point series collections for query-dependent dynamic rows,
   including statement expansion for period and date queries.
 

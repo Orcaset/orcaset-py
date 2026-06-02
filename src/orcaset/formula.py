@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from collections.abc import Iterable
 from typing import Protocol, Callable, cast
 
 
@@ -46,6 +47,17 @@ class ApplyOp[T, U](Op[U]):
         return f"ApplyOp(fn_op={self.fn_op!r}, arg_op={self.arg_op!r})"
 
 
+class SequenceOp[T](Op[tuple[T, ...]]):
+    def __init__(self, formulas: tuple[Formula[T], ...]) -> None:
+        self.formulas = formulas
+
+    def eval(self) -> tuple[T, ...]:
+        return tuple(formula.eval() for formula in self.formulas)
+
+    def __repr__(self) -> str:
+        return f"SequenceOp(formulas={self.formulas!r})"
+
+
 class Formula[T]:
     def __init__(self, op: Op[T]) -> None:
         self.op = op
@@ -56,6 +68,10 @@ class Formula[T]:
     @staticmethod
     def pure(value: T) -> Formula[T]:
         return Formula(ConstOp(value))
+
+    @staticmethod
+    def sequence[U](formulas: Iterable[Formula[U]]) -> Formula[tuple[U, ...]]:
+        return Formula(SequenceOp(tuple(formulas)))
 
     def map[U](self, fn: Callable[[T], U]) -> Formula[U]:
         return Formula(MapOp(self.op, fn))

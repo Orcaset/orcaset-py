@@ -232,7 +232,7 @@ def _keyed_span_items[K: Hashable](
     item: KeyedSpanSeries[K],
     periods: Sequence[Period],
 ) -> tuple[tuple[K, SpanSeriesDef], ...]:
-    keys = tuple(dict.fromkeys(key for period in periods for key in item.keys(ctx, period)))
+    keys = tuple(dict.fromkeys(key for period in periods for key in item.keys(period)))
     return tuple((key, item.get(ctx, key)) for key in keys)
 
 
@@ -241,5 +241,5 @@ def _keyed_point_items[K: Hashable](
     item: KeyedPointSeries[K],
     dates: Sequence[date],
 ) -> tuple[tuple[K, PointSeriesDef], ...]:
-    keys = tuple(dict.fromkeys(key for dt in dates for key in item.keys(ctx, dt)))
+    keys = tuple(dict.fromkeys(key for dt in dates for key in item.keys(dt)))
     return tuple((key, item.get(ctx, key)) for key in keys)

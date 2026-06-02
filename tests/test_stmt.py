@@ -132,7 +132,7 @@ def test_stmt_expands_keyed_span_series_for_period_queries():
     created: list[Period] = []
     seen_periods: list[Period] = []
 
-    def keys(_: Context, period: Period) -> Iterable[Period]:
+    def keys(period: Period) -> Iterable[Period]:
         seen_periods.append(period)
         return [period]
 
@@ -177,7 +177,7 @@ def test_keyed_span_series_rejects_date_queries():
             label="Unused",
         )
 
-    cohorts = span.keyed(lambda _ctx, _period: (), series_for, label="Cohorts")
+    cohorts = span.keyed(lambda _period: (), series_for, label="Cohorts")
 
     with pytest.raises(TypeError, match="period queries"):
         Stmt(cohorts).values_for_dates(Context(), [date(2025, 1, 1)])
@@ -187,7 +187,7 @@ def test_stmt_expands_keyed_point_series_for_period_queries():
     created: list[int] = []
     seen_dates: list[date] = []
 
-    def keys(_: Context, dt: date) -> Iterable[int]:
+    def keys(dt: date) -> Iterable[int]:
         seen_dates.append(dt)
         return [1, 2]
 
@@ -234,7 +234,7 @@ def test_stmt_expands_keyed_point_series_for_period_queries():
 def test_stmt_expands_keyed_point_series_for_date_queries():
     seen_dates: list[date] = []
 
-    def keys(_: Context, dt: date) -> Iterable[str]:
+    def keys(dt: date) -> Iterable[str]:
         seen_dates.append(dt)
         return ["cash", "debt"]
 
