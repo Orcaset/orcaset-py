@@ -61,17 +61,17 @@ revenue_growth_rate = 0.05
 
 
 @span.define(agg=sum_spans(0.0), label="Revenue")
-def Revenue(ctx: Context) -> Iterable[Span]:
+def revenue(ctx: Context) -> Iterable[Span]:
     value = initial_revenue
     for period in Period.seq(start_date, relativedelta(months=1, day=31)):
         yield Span(period, Formula.pure(value), split_daily)
         value *= 1 + revenue_growth_rate / 12
 
-Expenses = span.scale(Revenue, -0.7, label="Expenses")
-Income = span.sum([Revenue, Expenses], agg=sum_spans(0.0), label="Income")
+expenses = span.scale(revenue, -0.7, label="Expenses")
+income = span.sum([revenue, expenses], agg=sum_spans(0.0), label="Income")
 
 # Build a statement view
-stmt = Stmt(Total(Income, [Revenue, Expenses]))
+stmt = Stmt(Total(income, [revenue, expenses]))
 
 # Resolve and print formatted values
 ctx = Context()
@@ -86,9 +86,9 @@ print(fixed_width_table(stmt.values(ctx, qtrly_periods)))
 # Income                       90.38       91.51       92.66       93.82
 ```
 
-Note that `Revenue` is defined on a monthly basis but queried quarterly. Orcaset automatically aligns, interpolates, and aggregates over partial periods.
+Note that `revenue` is defined on a monthly basis but queried quarterly. Orcaset automatically aligns, interpolates, and aggregates over partial periods.
 
-See the [quickstart example](./examples/quickstart/README.md) for a step-by-step guide covering cells, series, context, and structured output.
+See the [quickstart example](./examples/quickstart/README.md) for a step-by-step guide covering cells, series, context, and structured output. Review other examples in the [examples](./examples/) folder.
 
 ## License
 

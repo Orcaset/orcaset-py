@@ -27,7 +27,7 @@ month = relativedelta(months=1, day=31)
 initial_revenue = 1_000.0
 revenue_growth_rate = 0.20
 cost_of_revenue_margin = -0.30
-operating_expenses = -200.0
+operating_expenses_amount = -200.0
 depreciation_rate = -0.10 / 12
 income_tax_rate = -0.20
 capex_margin = -0.05
@@ -40,7 +40,7 @@ initial_retained_earnings = initial_cash + initial_ppe_net - common_stock_value
 
 # ------------- INCOME STATEMENT -------------
 @span.define(agg=sum_spans(0.0), label="Revenue")
-def Revenue(ctx: Context) -> Iterable[Span]:
+def revenue(ctx: Context) -> Iterable[Span]:
     value = initial_revenue
     periods = Period.seq(model_start, month)
 
@@ -50,14 +50,14 @@ def Revenue(ctx: Context) -> Iterable[Span]:
         yield Span(period, Formula.pure(value), split_daily)
 
 
-CostOfRevenue = span.scale(Revenue, cost_of_revenue_margin, label="Cost of revenue")
-GrossProfit = span.sum([Revenue, CostOfRevenue], agg=sum_spans(0.0), label="Gross profit")
+cost_of_revenue = span.scale(revenue, cost_of_revenue_margin, label="Cost of revenue")
+gross_profit = span.sum([revenue, cost_of_revenue], agg=sum_spans(0.0), label="Gross profit")
 
 
-OperatingExpenses = span.periodic(
+operating_expenses = span.periodic(
     model_start,
     month,
-    operating_expenses,
+    operating_expenses_amount,
     agg=sum_spans(0.0),
     split=split_daily,
     label="Operating expenses",
@@ -65,36 +65,36 @@ OperatingExpenses = span.periodic(
 
 
 @span.define(agg=sum_spans(0.0), label="Depreciation")
-def Depreciation(ctx: Context) -> Iterable[Span]:
+def depreciation(ctx: Context) -> Iterable[Span]:
     for period in Period.seq(model_start, month):
-        beginning_ppe = PpeNet.value(ctx, period.start)
+        beginning_ppe = ppe_net.value(ctx, period.start)
         yield Span(period, beginning_ppe * depreciation_rate, split_daily)
 
 
-EBIT = span.sum(
-    [GrossProfit, OperatingExpenses, Depreciation],
+ebit = span.sum(
+    [gross_profit, operating_expenses, depreciation],
     agg=sum_spans(0.0),
     label="EBIT",
 )
 
-IncomeTax = span.scale(EBIT, income_tax_rate, label="Income tax")
+income_tax = span.scale(ebit, income_tax_rate, label="Income tax")
 
-NetIncome = span.sum([EBIT, IncomeTax], agg=sum_spans(0.0), label="Net income")
+net_income = span.sum([ebit, income_tax], agg=sum_spans(0.0), label="Net income")
 
 
 # ---------- CASH FLOW STATEMENT ----------
-DepreciationAddBack = span.scale(Depreciation, -1, label="Depreciation add back")
+depreciation_add_back = span.scale(depreciation, -1, label="Depreciation add back")
 
-OperatingCashFlow = span.sum(
-    [NetIncome, DepreciationAddBack],
+operating_cash_flow = span.sum(
+    [net_income, depreciation_add_back],
     agg=sum_spans(0.0),
     label="Operating cash flow",
 )
 
-CapitalExpenditures = span.scale(Revenue, capex_margin, label="Capital expenditures")
+capital_expenditures = span.scale(revenue, capex_margin, label="Capital expenditures")
 
 
-CashFlowFromFinancing = span.periodic(
+cash_flow_from_financing = span.periodic(
     model_start,
     month,
     0.0,
@@ -104,50 +104,50 @@ CashFlowFromFinancing = span.periodic(
 )
 
 
-TotalCashFlow = span.sum(
-    [OperatingCashFlow, CapitalExpenditures, CashFlowFromFinancing],
+total_cash_flow = span.sum(
+    [operating_cash_flow, capital_expenditures, cash_flow_from_financing],
     agg=sum_spans(0.0),
     label="Total cash flow",
 )
 
 
 # --------------- BALANCE SHEET ---------------
-Cash = point.accumulate(model_start, initial_cash, TotalCashFlow, label="Cash")
+cash = point.accumulate(model_start, initial_cash, total_cash_flow, label="Cash")
 
-PpeAdditions = span.scale(CapitalExpenditures, -1, label="PPE additions")
-PpeNetChange = span.sum(
-    [PpeAdditions, Depreciation],
+ppe_additions = span.scale(capital_expenditures, -1, label="PPE additions")
+ppe_net_change = span.sum(
+    [ppe_additions, depreciation],
     agg=sum_spans(0.0),
     label="PPE net change",
 )
 
-PpeNet = point.accumulate(model_start, initial_ppe_net, PpeNetChange, label="PPE net")
+ppe_net = point.accumulate(model_start, initial_ppe_net, ppe_net_change, label="PPE net")
 
-TotalAssets = point.sum([Cash, PpeNet], label="Total assets")
+total_assets = point.sum([cash, ppe_net], label="Total assets")
 
 
 @point.define(label="Common stock")
-def CommonStock(ctx: Context, dt: date) -> Formula[float | None]:
+def common_stock(ctx: Context, dt: date) -> Formula[float | None]:
     if dt < model_start:
         return Formula.pure(None)
     return Formula.pure(common_stock_value)
 
 
-RetainedEarnings = point.accumulate(
+retained_earnings = point.accumulate(
     model_start,
     initial_retained_earnings,
-    NetIncome,
+    net_income,
     label="Retained earnings",
 )
 
-TotalEquityAndLiabilities = point.sum(
-    [CommonStock, RetainedEarnings],
+total_equity_and_liabilities = point.sum(
+    [common_stock, retained_earnings],
     label="Total equity and liabilities",
 )
 
-BalanceSheetCheck = point.sub(
-    TotalAssets,
-    TotalEquityAndLiabilities,
+balance_sheet_check = point.sub(
+    total_assets,
+    total_equity_and_liabilities,
     label="Balance sheet check",
 )
 
@@ -156,17 +156,17 @@ BalanceSheetCheck = point.sub(
 income_stmt = Group(
     [
         Total(
-            NetIncome,
+            net_income,
             [
                 Total(
-                    EBIT,
+                    ebit,
                     [
-                        Total(GrossProfit, [Revenue, CostOfRevenue]),
-                        OperatingExpenses,
-                        Depreciation,
+                        Total(gross_profit, [revenue, cost_of_revenue]),
+                        operating_expenses,
+                        depreciation,
                     ],
                 ),
-                IncomeTax,
+                income_tax,
             ],
         )
     ]
@@ -175,11 +175,11 @@ income_stmt = Group(
 cash_flow_stmt = Group(
     [
         Total(
-            TotalCashFlow,
+            total_cash_flow,
             [
-                Total(OperatingCashFlow, [NetIncome, DepreciationAddBack]),
-                CapitalExpenditures,
-                CashFlowFromFinancing,
+                Total(operating_cash_flow, [net_income, depreciation_add_back]),
+                capital_expenditures,
+                cash_flow_from_financing,
             ],
         )
     ]
@@ -187,9 +187,9 @@ cash_flow_stmt = Group(
 
 balance_sheet_stmt = Group(
     [
-        Total(TotalAssets, [Cash, PpeNet]),
-        Total(TotalEquityAndLiabilities, [CommonStock, RetainedEarnings]),
-        BalanceSheetCheck,
+        Total(total_assets, [cash, ppe_net]),
+        Total(total_equity_and_liabilities, [common_stock, retained_earnings]),
+        balance_sheet_check,
     ]
 )
 

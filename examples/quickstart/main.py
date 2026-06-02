@@ -36,7 +36,7 @@ historical_spans = [Span(Period(*c[0]), Formula.pure(c[1]), split_daily) for c i
 
 # ---------- INTEREST (SPAN SERIES) ----------
 @span.define(agg=sum_spans(0.0), label="Interest")
-def Interest(ctx: Context) -> Iterable[Span]:
+def interest(ctx: Context) -> Iterable[Span]:
     s: Span | None = None
     # Yield historical interest accruals
     for s in historical_spans:
@@ -50,14 +50,14 @@ def Interest(ctx: Context) -> Iterable[Span]:
     for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
         yield Span(
             period=period,
-            fn=Balance.value(ctx, period.start) * interest_rate / 4,
+            fn=balance.value(ctx, period.start) * interest_rate / 4,
             split=split_daily,
         )
 
 
 # ----------- BALANCE (POINT SERIES) -----------
 @point.define(label="Balance")
-def Balance(ctx: Context, dt: date) -> Formula[float | None]:
+def balance(ctx: Context, dt: date) -> Formula[float | None]:
     # Return None for dates before the start date
     if dt < start_date:
         return Formula.pure(None)
@@ -67,8 +67,8 @@ def Balance(ctx: Context, dt: date) -> Formula[float | None]:
         return Formula.pure(initial_balance)
 
     # Return the initial balance plus the interest accrued to `dt`
-    interest = Interest.value(ctx, Period(start_date, dt))
-    return initial_balance + interest
+    interest_value = interest.value(ctx, Period(start_date, dt))
+    return initial_balance + interest_value
 
 
 # ------------- RESOLVING VALUES -------------
@@ -82,8 +82,8 @@ monthly_period = relativedelta(months=1, day=31)
 
 print("\nEnd Date\tBalance\tInterest")
 for period in Period.seq(start_date, monthly_period, end=date(2026, 12, 31)):
-    int_acc = Interest.value(ctx, period).eval()
-    bal = Balance.value(ctx, period.end).eval()
+    int_acc = interest.value(ctx, period).eval()
+    bal = balance.value(ctx, period.end).eval()
     print(f"{period.end:%m/%d/%Y}\t{bal:,.2f}\t{int_acc:,.2f}")
 
 # End Date        Balance Interest
@@ -96,27 +96,27 @@ print("\n")
 
 # ----------- SIMPLIFYING THE MODEL -----------
 # Redefine Balance using the `point.accumulate` convenience constructor
-Balance2 = point.accumulate(start_date, initial_balance, Interest, label="Balance 2")
+balance_2 = point.accumulate(start_date, initial_balance, interest, label="Balance 2")
 
 
 # Demo other convenience constructors
 @span.define(agg=sum_spans(0.0), label="Operating Income")
-def OperatingIncome(ctx: Context) -> Iterable[Span]:
+def operating_income(ctx: Context) -> Iterable[Span]:
     return [
         Span(p, Formula.pure(100.0), split_daily)
         for p in Period.seq(start_date, relativedelta(years=1))
     ]
 
 
-PreTaxIncome = span.sum([OperatingIncome, Interest], agg=sum_spans(0.0), label="Pre-Tax Income")
-Taxes = span.scale(PreTaxIncome, -0.25, label="Taxes")
-NetIncome = span.sum([PreTaxIncome, Taxes], agg=sum_spans(0.0), label="Net Income")
+pre_tax_income = span.sum([operating_income, interest], agg=sum_spans(0.0), label="Pre-Tax Income")
+taxes = span.scale(pre_tax_income, -0.25, label="Taxes")
+net_income = span.sum([pre_tax_income, taxes], agg=sum_spans(0.0), label="Net Income")
 
 
 # Create statement
 stmt = Stmt(
-    Group([Total(NetIncome, [Total(PreTaxIncome, [OperatingIncome, Interest]), Taxes])]),
-    Group([Balance]),
+    Group([Total(net_income, [Total(pre_tax_income, [operating_income, interest]), taxes])]),
+    Group([balance]),
 )
 
 # Materialize values and print as a constant-width table
