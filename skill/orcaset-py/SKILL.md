@@ -28,10 +28,11 @@ Use Orcaset models as typed line-item graphs rather than spreadsheet cell grids.
 
 1. Start by planning out the line items needed for the model and which line items are co-dependent on each other.
 2. Start every model with calendar assumptions: `date`, `relativedelta`, the first `Period`, and output periods from `Period.list` or `Period.seq`.
-3. Use `@span.define(...)` and `SpanSeriesDef` for flows over periods: revenue, expense, cash flow, capex, depreciation, interest, taxes.
-4. Use `@point.define(...)` and `PointSeriesDef` for point-in-time balances: cash, debt, PPE, equity, retained earnings, shares.
-5. Present output with `Stmt`, `Group`, `Total`, `Stmt.values(...)`, and formatters such as `fixed_width_table`.
-6. Do a final review to check mistakes or issues that should be fixed.
+3. Use `@span.define(...)` and `SpanSeriesDef` values for flows over periods: revenue, expense, cash flow, capex, depreciation, interest, taxes.
+4. Use `@point.define(...)` and `PointSeriesDef` values for point-in-time balances: cash, debt, PPE, equity, retained earnings, shares.
+5. Use `span.keyed(...)` or `point.keyed(...)` for query-dependent dynamic rows such as cohorts, tranches, customers, facilities, or schedules.
+6. Present output with `Stmt`, `Group`, `Total`, `Stmt.values(...)`, `Stmt.values_for_periods(...)`, `Stmt.values_for_dates(...)`, and formatters such as `fixed_width_table`.
+7. Do a final review to check mistakes or issues that should be fixed.
 
 Read `references/api-0.2.x.md` when exact signatures, docstring details, or examples are needed.
 
@@ -47,10 +48,13 @@ Example:
 ## Code Style & Validation
 
 - Preserve the user's existing model organization and sign convention unless it is clearly wrong. Add abstractions only when the model repeats a real pattern, such as a schedule family, roll-forward, historical-plus-projection line, or statement subtotal.
-- For linked forecasts, prefer formulas that query other model lines through explicit `ctx`, e.g. `revenue.value(ctx, period)`. Use loop-carried Python values only for exogenous assumptions or simple scaffolding where no model dependency is being hidden.
+- Treat series as immutable definition values. Query series directly with explicit contexts, e.g. `revenue.value(ctx, period)` or `cash.query(ctx, dt)`.
+- For linked forecasts, prefer formulas that query values through explicit query or value calls rather than carrying value state internally. Use loop-carried Python values only for exogenous assumptions or simple scaffolding where no model dependency is being hidden.
+- For dynamic formula lists, use `Formula.sequence(formulas).map(...)` so dependent values remain inside the formula graph.
+- To inspect dependencies, first get a concrete cell with `.query(...)`, evaluate or solve it, then call `ctx.deps(cell)`.
 - For external data, fetch and normalize source data outside formula evaluation. Formula resolution should stay deterministic and should not trigger network calls.
 - DO NOT inline external data into model files unless explicitly directed. Instead, build parsing/loading functions to retrieve data from sources dynamically.
-- Group code with short section comments like `(* ----- Assumptions ----- *)`, `(* ----- Model ----- *)`, and `(* ----- Output ----- *)`. For larger projects (greater than ~20 line items), break logical sections into different files.
+- Group code with short section comments like `# ----- Assumptions -----`, `# ----- Model -----`, and `# ----- Output -----`. For larger projects (greater than ~20 line items), break logical sections into different files.
 - Python is installed. You can use the interpreter for resolving one-off queries, validating values or code, and other checks. Run it with `uv ...`.
 - Run `ruff` over any modified python files.
 - All Python files MUST pass type checking. Use `pyrefly check ...`. Continue update code until type checking passes. NEVER use `typing.cast`, `typing.Any`, or any `# type: ignore` or other configurations to supress typing errors.
