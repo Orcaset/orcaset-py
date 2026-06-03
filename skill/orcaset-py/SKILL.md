@@ -38,12 +38,34 @@ Read `references/api-0.2.x.md` when exact signatures, docstring details, or exam
 
 ## Model Organization
 
-Make labels legible but concise. Use common financial abbreviations.
+Use a single script for simple one-off models with fewer than roughly 12 line items. For larger models, organize the model as a Python package split by logical model area: for example, revenue, debt, fixed assets, working capital, equity, statement presentation, etc.
 
-Example:
+Keep model packages focused on definitions:
 
-- `ebit` instead of `earnings_before_interest_and_tax`
-- `qtr_...` instead of `quarter_...` 
+- Define assumptions, `SpanSeriesDef` / `PointSeriesDef` line items and `Stmt` / `Group` / `Total` statement structure.
+- Put querying, value inspection, printing, exports, notebooks, and CLI behavior in a top-level script, notebook, test, or CLI entrypoint. Do not put user queries into the model package.
+- Define series at module scope so other modules can import stable definition objects. Do not use model or series builder functions, define series as module-level values.
+- Use top-level imports for acyclic model dependencies.
+- For cross-file circular model dependencies, use local imports inside the smallest series function that needs the dependency, outside inner loops when possible. Orcaset series are lazy, so function bodies run when a `Context` queries the series, after modules have finished defining their series objects.
+- Keep imports one-way: entrypoints may import model modules, but model modules should not import entrypoint scripts, notebooks, or CLI code.
+
+Example multi-file model layout:
+
+```txt
+my_model/
+  __init__.py
+  assumptions.py          # dates, periods, rates, starting balances
+  revenue.py              # revenue and related operating line items
+  debt.py                 # debt balances, borrowings, repayments
+  interest.py             # interest expense/income
+  statements.py           # Stmt, Group, and Total presentation structure
+
+scripts/
+  print_model.py          # creates Context, defines query periods, prints or saves results
+  inspect_model.py        # optional ad hoc value/dependency inspection
+```
+
+Make labels legible but concise. Use common financial abbreviations such as `ebit` instead of `earnings_before_interest_and_tax` and `qtr_...` instead of `quarter_...`.
 
 ## Code Style & Validation
 
@@ -54,7 +76,7 @@ Example:
 - To inspect dependencies, first get a concrete cell with `.query(...)`, evaluate or solve it, then call `ctx.deps(cell)`.
 - For external data, fetch and normalize source data outside formula evaluation. Formula resolution should stay deterministic and should not trigger network calls.
 - DO NOT inline external data into model files unless explicitly directed. Instead, build parsing/loading functions to retrieve data from sources dynamically.
-- Group code with short section comments like `# ----- Assumptions -----`, `# ----- Model -----`, and `# ----- Output -----`. For larger projects (greater than ~20 line items), break logical sections into different files.
+- Group single-file models with short section comments like `# ----- Assumptions -----`, `# ----- Model -----`, and `# ----- Output -----`.
 - Python is installed. You can use the interpreter for resolving one-off queries, validating values or code, and other checks. Run it with `uv ...`.
 - Run `ruff` over any modified python files.
 - All Python files MUST pass type checking. Use `pyrefly check ...`. Continue update code until type checking passes. NEVER use `typing.cast`, `typing.Any`, or any `# type: ignore` or other configurations to supress typing errors.
