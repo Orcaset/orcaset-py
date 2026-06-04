@@ -28,6 +28,7 @@ from .point import (
     PointSeriesFactory,
     PointSeriesFn,
     PointSeriesKeyFn,
+    PointSeriesRef,
 )
 from .span import (
     KeyedSpanSeries,
@@ -36,6 +37,7 @@ from .span import (
     SpanSeriesFactory,
     SpanSeriesFn,
     SpanSeriesKeyFn,
+    SpanSeriesRef,
     align_spans,
 )
 from .stmt import (
@@ -86,10 +88,12 @@ __all__ = [
     "PointSeriesDef",
     "PointSeriesFn",
     "PointSeriesKeyFn",
+    "PointSeriesRef",
     "SpanSeriesDef",
     "SpanSeriesFactory",
     "SpanSeriesFn",
     "SpanSeriesKeyFn",
+    "SpanSeriesRef",
     "align_spans",
     "DateValue",
     "Group",

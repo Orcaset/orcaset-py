@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 type SpanAgg = Callable[[list[Span]], float | None]
 type SpanSeriesFn = Callable[["Context"], Iterable[Span]]
+type SpanSeriesRef = SpanSeriesDef | Callable[[], SpanSeriesDef]
 type SpanSeriesKeyFn[K: Hashable] = Callable[[Period], Iterable[K]]
 type SpanSeriesFactory[K: Hashable] = Callable[[K], "SpanSeriesDef"]
 
@@ -287,8 +288,35 @@ def define(
     return create(fn)
 
 
-def _inherit_agg(series: SpanSeriesDef) -> SpanAgg:
-    return series.agg
+@dataclass(slots=True)
+class _SeriesRef[T]:
+    ref: T | Callable[[], T]
+    _values: list[T]
+
+    def __init__(self, ref: T | Callable[[], T]) -> None:
+        self.ref = ref
+        self._values = []
+
+    def get(self) -> T:
+        if not self._values:
+            if callable(self.ref):
+                self._values.append(self.ref())
+            else:
+                self._values.append(self.ref)
+        return self._values[0]
+
+
+def _ref_label(ref: SpanSeriesRef, fallback: str) -> str:
+    if isinstance(ref, SpanSeriesDef):
+        return ref.label
+    return fallback
+
+
+def _inherit_agg(series_ref: _SeriesRef[SpanSeriesDef]) -> SpanAgg:
+    def agg(spans: list[Span]) -> float | None:
+        return series_ref.get().agg(spans)
+
+    return agg
 
 
 def _create_span_series(
@@ -409,43 +437,51 @@ def _span_tuple_split(
     return split
 
 
-def neg(series: SpanSeriesDef, *, label: str | None = None) -> SpanSeriesDef:
+def neg(series: SpanSeriesRef, *, label: str | None = None) -> SpanSeriesDef:
     """Create a span series that negates another span series."""
-    return _operator(label or f"Neg{series.label}", [series], neg_values, agg=_inherit_agg(series))
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"Neg{_ref_label(series, 'SpanSeries')}",
+        [series_ref],
+        neg_values,
+        agg=_inherit_agg(series_ref),
+    )
 
 
 def scale(
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     factor: float,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series scaled by `factor`."""
-    return _operator(
-        label or f"Scale{series.label}",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"Scale{_ref_label(series, 'SpanSeries')}",
+        [series_ref],
         scale_values(factor),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
 def add_scalar(
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series with `value` added to each span."""
-    return _operator(
-        label or f"Add{series.label}Scalar",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"Add{_ref_label(series, 'SpanSeries')}Scalar",
+        [series_ref],
         add_scalar_values(value),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
 def sum(
-    series: Sequence[SpanSeriesDef],
+    series: Sequence[SpanSeriesRef],
     *,
     agg: SpanAgg,
     label: str = "SumSpanSeries",
@@ -455,48 +491,55 @@ def sum(
 
 
 def sub(
-    left: SpanSeriesDef,
-    right: SpanSeriesDef,
+    left: SpanSeriesRef,
+    right: SpanSeriesRef,
     *,
     agg: SpanAgg,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series that subtracts `right` from `left`."""
-    return _operator(label or f"Sub{left.label}{right.label}", [left, right], sub_values, agg=agg)
+    return _operator(
+        label or f"Sub{_ref_label(left, 'LeftSpanSeries')}{_ref_label(right, 'RightSpanSeries')}",
+        [left, right],
+        sub_values,
+        agg=agg,
+    )
 
 
 def sub_scalar(
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series with `value` subtracted from each span."""
-    return _operator(
-        label or f"Sub{series.label}Scalar",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"Sub{_ref_label(series, 'SpanSeries')}Scalar",
+        [series_ref],
         sub_scalar_values(value),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
 def rsub_scalar(
     value: int | float,
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series by subtracting each span from `value`."""
-    return _operator(
-        label or f"RSubScalar{series.label}",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"RSubScalar{_ref_label(series, 'SpanSeries')}",
+        [series_ref],
         rsub_scalar_values(value),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
 def mul(
-    series: Sequence[SpanSeriesDef],
+    series: Sequence[SpanSeriesRef],
     *,
     agg: SpanAgg,
     label: str = "MulSpanSeries",
@@ -506,43 +549,50 @@ def mul(
 
 
 def div(
-    left: SpanSeriesDef,
-    right: SpanSeriesDef,
+    left: SpanSeriesRef,
+    right: SpanSeriesRef,
     *,
     agg: SpanAgg,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series that divides `left` by `right`."""
-    return _operator(label or f"Div{left.label}{right.label}", [left, right], div_values, agg=agg)
+    return _operator(
+        label or f"Div{_ref_label(left, 'LeftSpanSeries')}{_ref_label(right, 'RightSpanSeries')}",
+        [left, right],
+        div_values,
+        agg=agg,
+    )
 
 
 def div_scalar(
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series that divides each span by `value`."""
-    return _operator(
-        label or f"Div{series.label}Scalar",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"Div{_ref_label(series, 'SpanSeries')}Scalar",
+        [series_ref],
         div_scalar_values(value),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
 def rdiv_scalar(
     value: int | float,
-    series: SpanSeriesDef,
+    series: SpanSeriesRef,
     *,
     label: str | None = None,
 ) -> SpanSeriesDef:
     """Create a span series by dividing `value` by each span."""
-    return _operator(
-        label or f"RDivScalar{series.label}",
-        [series],
+    series_ref = _SeriesRef(series)
+    return _operator_refs(
+        label or f"RDivScalar{_ref_label(series, 'SpanSeries')}",
+        [series_ref],
         rdiv_scalar_values(value),
-        agg=_inherit_agg(series),
+        agg=_inherit_agg(series_ref),
     )
 
 
@@ -568,13 +618,25 @@ def extend(
 
 def _operator(
     label: str,
-    series_defs: Sequence[SpanSeriesDef],
+    series_defs: Sequence[SpanSeriesRef],
+    op: ValueOp,
+    *,
+    agg: SpanAgg,
+) -> SpanSeriesDef:
+    series_refs = tuple(_SeriesRef(series) for series in series_defs)
+    return _operator_refs(label, series_refs, op, agg=agg)
+
+
+def _operator_refs(
+    label: str,
+    series_refs: Sequence[_SeriesRef[SpanSeriesDef]],
     op: ValueOp,
     *,
     agg: SpanAgg,
 ) -> SpanSeriesDef:
     def spans(ctx: "Context") -> Iterable[Span]:
-        for aligned in align_spans(ctx, series_defs):
+        resolved_series = [series.get() for series in series_refs]
+        for aligned in align_spans(ctx, resolved_series):
             period = aligned[0].period
             yield Span(
                 period,

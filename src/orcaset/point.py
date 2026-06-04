@@ -25,7 +25,7 @@ from ._value_ops import (
 from .cell import Point, Span
 from .formula import Formula, Op
 from .period import Period
-from .span import SpanSeriesDef
+from .span import SpanSeriesRef
 
 if TYPE_CHECKING:
     from .context import Context
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 type PointSeriesFn = Callable[["Context", date], Formula[float | None]]
 type PointSeriesKeyFn[K: Hashable] = Callable[[date], Iterable[K]]
 type PointSeriesFactory[K: Hashable] = Callable[[K], "PointSeriesDef"]
+type PointSeriesRef = PointSeriesDef | Callable[[], PointSeriesDef]
 
 
 class PointSeriesDef(NamedTuple):
@@ -87,6 +88,30 @@ class _PointValueOp(Op[float | None]):
         return f"PointValueOp(point={self.point!r})"
 
 
+@dataclass(slots=True)
+class _SeriesRef[T]:
+    ref: T | Callable[[], T]
+    _values: list[T]
+
+    def __init__(self, ref: T | Callable[[], T]) -> None:
+        self.ref = ref
+        self._values = []
+
+    def get(self) -> T:
+        if not self._values:
+            if callable(self.ref):
+                self._values.append(self.ref())
+            else:
+                self._values.append(self.ref)
+        return self._values[0]
+
+
+def _ref_label(ref: PointSeriesRef, fallback: str) -> str:
+    if isinstance(ref, PointSeriesDef):
+        return ref.label
+    return fallback
+
+
 @overload
 def define(
     fn: PointSeriesFn,
@@ -133,10 +158,11 @@ def keyed[K: Hashable](
 def accumulate(
     start: date,
     value: float | None,
-    changes: SpanSeriesDef,
+    changes: SpanSeriesRef,
     label: str = "AccumulatedPointSeries",
 ) -> PointSeriesDef:
     """Create a point series by accumulating span changes from a start value."""
+    changes_ref = _SeriesRef(changes)
 
     def point(ctx: "Context", dt: date) -> Formula[float | None]:
         if dt < start:
@@ -144,7 +170,7 @@ def accumulate(
         if dt == start:
             return Formula.pure(value)
 
-        spans = changes.query(ctx, Period(start, dt))
+        spans = changes_ref.get().query(ctx, Period(start, dt))
 
         def add_changes(spans: list[Span]) -> float | None:
             if value is None:
@@ -162,33 +188,37 @@ def accumulate(
     return PointSeriesDef(fn=point, label=label)
 
 
-def neg(series: PointSeriesDef, *, label: str | None = None) -> PointSeriesDef:
+def neg(series: PointSeriesRef, *, label: str | None = None) -> PointSeriesDef:
     """Create a point series that negates another point series."""
-    return _operator(label or f"Neg{series.label}", [series], neg_values)
+    return _operator(label or f"Neg{_ref_label(series, 'PointSeries')}", [series], neg_values)
 
 
 def scale(
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     factor: float,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series scaled by `factor`."""
-    return _operator(label or f"Scale{series.label}", [series], scale_values(factor))
+    return _operator(label or f"Scale{_ref_label(series, 'PointSeries')}", [series], scale_values(factor))
 
 
 def add_scalar(
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series with `value` added to each point."""
-    return _operator(label or f"Add{series.label}Scalar", [series], add_scalar_values(value))
+    return _operator(
+        label or f"Add{_ref_label(series, 'PointSeries')}Scalar",
+        [series],
+        add_scalar_values(value),
+    )
 
 
 def sum(
-    series: Sequence[PointSeriesDef],
+    series: Sequence[PointSeriesRef],
     *,
     label: str = "SumPointSeries",
 ) -> PointSeriesDef:
@@ -197,37 +227,50 @@ def sum(
 
 
 def sub(
-    left: PointSeriesDef,
-    right: PointSeriesDef,
+    left: PointSeriesRef,
+    right: PointSeriesRef,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series that subtracts `right` from `left`."""
-    return _operator(label or f"Sub{left.label}{right.label}", [left, right], sub_values)
+    return _operator(
+        label
+        or f"Sub{_ref_label(left, 'LeftPointSeries')}{_ref_label(right, 'RightPointSeries')}",
+        [left, right],
+        sub_values,
+    )
 
 
 def sub_scalar(
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series with `value` subtracted from each point."""
-    return _operator(label or f"Sub{series.label}Scalar", [series], sub_scalar_values(value))
+    return _operator(
+        label or f"Sub{_ref_label(series, 'PointSeries')}Scalar",
+        [series],
+        sub_scalar_values(value),
+    )
 
 
 def rsub_scalar(
     value: int | float,
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series by subtracting each point from `value`."""
-    return _operator(label or f"RSubScalar{series.label}", [series], rsub_scalar_values(value))
+    return _operator(
+        label or f"RSubScalar{_ref_label(series, 'PointSeries')}",
+        [series],
+        rsub_scalar_values(value),
+    )
 
 
 def mul(
-    series: Sequence[PointSeriesDef],
+    series: Sequence[PointSeriesRef],
     *,
     label: str = "MulPointSeries",
 ) -> PointSeriesDef:
@@ -236,42 +279,57 @@ def mul(
 
 
 def div(
-    left: PointSeriesDef,
-    right: PointSeriesDef,
+    left: PointSeriesRef,
+    right: PointSeriesRef,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series that divides `left` by `right`."""
-    return _operator(label or f"Div{left.label}{right.label}", [left, right], div_values)
+    return _operator(
+        label
+        or f"Div{_ref_label(left, 'LeftPointSeries')}{_ref_label(right, 'RightPointSeries')}",
+        [left, right],
+        div_values,
+    )
 
 
 def div_scalar(
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     value: int | float,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series that divides each point by `value`."""
-    return _operator(label or f"Div{series.label}Scalar", [series], div_scalar_values(value))
+    return _operator(
+        label or f"Div{_ref_label(series, 'PointSeries')}Scalar",
+        [series],
+        div_scalar_values(value),
+    )
 
 
 def rdiv_scalar(
     value: int | float,
-    series: PointSeriesDef,
+    series: PointSeriesRef,
     *,
     label: str | None = None,
 ) -> PointSeriesDef:
     """Create a point series by dividing `value` by each point."""
-    return _operator(label or f"RDivScalar{series.label}", [series], rdiv_scalar_values(value))
+    return _operator(
+        label or f"RDivScalar{_ref_label(series, 'PointSeries')}",
+        [series],
+        rdiv_scalar_values(value),
+    )
 
 
 def _operator(
     label: str,
-    series_defs: Sequence[PointSeriesDef],
+    series_defs: Sequence[PointSeriesRef],
     op: ValueOp,
 ) -> PointSeriesDef:
+    series_refs = tuple(_SeriesRef(series) for series in series_defs)
+
     def point(ctx: "Context", dt: date) -> Formula[float | None]:
-        points = [series.query(ctx, dt) for series in series_defs]
+        points = [series.get().query(ctx, dt) for series in series_refs]
         return Formula(_PointTupleValueOp(ctx, points, op))
 
     return PointSeriesDef(fn=point, label=label)

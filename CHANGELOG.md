@@ -9,6 +9,12 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added lazy series refs for point and span convenience constructors, allowing
+  constructors to accept zero-argument functions that return dependent series
+  definitions.
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
