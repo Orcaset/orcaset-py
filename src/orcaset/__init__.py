@@ -33,6 +33,7 @@ from .point import (
 from .span import (
     KeyedSpanSeries,
     SpanAgg,
+    SpanMapFn,
     SpanSeriesDef,
     SpanSeriesFactory,
     SpanSeriesFn,
@@ -82,6 +83,7 @@ __all__ = [
     "fixed_width_table",
     "markdown_table",
     "SpanAgg",
+    "SpanMapFn",
     "KeyedPointSeries",
     "KeyedSpanSeries",
     "PointSeriesFactory",

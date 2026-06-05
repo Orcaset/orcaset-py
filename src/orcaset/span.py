@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
 
 type SpanAgg = Callable[[list[Span]], float | None]
+type SpanMapFn = Callable[[Period, Formula[float | None]], Formula[float | None]]
 type SpanSeriesFn = Callable[["Context"], Iterable[Span]]
 type SpanSeriesRef = SpanSeriesDef | Callable[[], SpanSeriesDef]
 type SpanSeriesKeyFn[K: Hashable] = Callable[[Period], Iterable[K]]
@@ -53,6 +54,82 @@ class SpanSeriesDef(NamedTuple):
     def value(self, ctx: "Context", period: Period) -> Formula[float | None]:
         """Return a formula resolving this series value over `period`."""
         return self.query(ctx, period).map(self.agg)
+
+    def then(
+        self,
+        continuation: SpanSeriesRef,
+        *,
+        label: str | None = None,
+    ) -> SpanSeriesDef:
+        """Return this series followed by `continuation` clipped to this series end."""
+        return then(self, continuation, label=label)
+
+    def clip(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        label: str | None = None,
+    ) -> SpanSeriesDef:
+        """Return this series clipped to an optional date window."""
+        return clip(self, start=start, end=end, label=label)
+
+    @overload
+    def map(
+        self,
+        transform: SpanMapFn,
+        /,
+        *,
+        label: str | None = None,
+    ) -> SpanSeriesDef: ...
+
+    @overload
+    def map(
+        self,
+        *,
+        label: str | None = None,
+    ) -> Callable[[SpanMapFn], SpanSeriesDef]: ...
+
+    def map(
+        self,
+        transform: SpanMapFn | None = None,
+        /,
+        *,
+        label: str | None = None,
+    ) -> SpanSeriesDef | Callable[[SpanMapFn], SpanSeriesDef]:
+        """Return a mapped series, or a decorator that maps this series."""
+        decorator = map(self, label=label)
+        if transform is None:
+            return decorator
+        return decorator(transform)
+
+    def neg(self, *, label: str | None = None) -> SpanSeriesDef:
+        """Return this series with each span negated."""
+        return neg(self, label=label)
+
+    def scale(self, factor: float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return this series scaled by `factor`."""
+        return scale(self, factor, label=label)
+
+    def add_scalar(self, value: int | float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return this series with `value` added to each span."""
+        return add_scalar(self, value, label=label)
+
+    def sub_scalar(self, value: int | float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return this series with `value` subtracted from each span."""
+        return sub_scalar(self, value, label=label)
+
+    def rsub_scalar(self, value: int | float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return a series created by subtracting each span from `value`."""
+        return rsub_scalar(value, self, label=label)
+
+    def div_scalar(self, value: int | float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return this series with each span divided by `value`."""
+        return div_scalar(self, value, label=label)
+
+    def rdiv_scalar(self, value: int | float, *, label: str | None = None) -> SpanSeriesDef:
+        """Return a series created by dividing `value` by each span."""
+        return rdiv_scalar(value, self, label=label)
 
 
 @dataclass(slots=True)
@@ -232,6 +309,12 @@ def _first_span_start(caches) -> date | None:
     return min(starts) if starts else None
 
 
+def _iter_cached_spans(ctx: "Context", series: SpanSeriesDef) -> Iterator[Span]:
+    cache = ctx.get_or_create_span_cache(series)
+    for span in cache.iter_source_spans():
+        yield _bind_span(ctx, span)
+
+
 def _active_span(spans: Iterable[Span], dt: date) -> Span | None:
     return next((span for span in spans if span.period.start <= dt and span.period.end > dt), None)
 
@@ -391,6 +474,103 @@ def periodic(
     return _create_span_series(label or "PeriodicSpanSeries", spans, agg)
 
 
+def clip(
+    base: SpanSeriesRef,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    label: str | None = None,
+) -> SpanSeriesDef:
+    """Create a span series by clipping `base` to an optional date window."""
+    if start is not None and end is not None and start >= end:
+        raise ValueError("clip start must be before clip end")
+
+    base_ref = _SeriesRef(base)
+
+    def spans(ctx: "Context") -> Iterable[Span]:
+        yield from _iter_clipped_spans(ctx, base_ref.get(), start=start, end=end)
+
+    return SpanSeriesDef(
+        fn=spans,
+        agg=_inherit_agg(base_ref),
+        label=label or f"Clip{_ref_label(base, 'SpanSeries')}",
+    )
+
+
+def _iter_clipped_spans(
+    ctx: "Context",
+    series: SpanSeriesDef,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> Iterator[Span]:
+    for source_span in _iter_cached_spans(ctx, series):
+        clipped_start = (
+            max(source_span.period.start, start) if start is not None else source_span.period.start
+        )
+        clipped_end = (
+            min(source_span.period.end, end) if end is not None else source_span.period.end
+        )
+        if clipped_start >= clipped_end:
+            if end is not None and source_span.period.start >= end:
+                break
+            continue
+        yield _clip_span(ctx, source_span, Period(clipped_start, clipped_end))
+
+
+def then(
+    base: SpanSeriesRef,
+    continuation: SpanSeriesRef,
+    *,
+    label: str | None = None,
+) -> SpanSeriesDef:
+    """Create a series by appending `continuation` after `base` ends."""
+    base_ref = _SeriesRef(base)
+    continuation_ref = _SeriesRef(continuation)
+
+    def spans(ctx: "Context") -> Iterable[Span]:
+        last_end: date | None = None
+
+        for base_span in _iter_cached_spans(ctx, base_ref.get()):
+            last_end = base_span.period.end
+            yield base_span
+
+        yield from _iter_clipped_spans(ctx, continuation_ref.get(), start=last_end)
+
+    return SpanSeriesDef(
+        fn=spans,
+        agg=_inherit_agg(base_ref),
+        label=label or _ref_label(base, "ThenSpanSeries"),
+    )
+
+
+def map(
+    base: SpanSeriesRef,
+    *,
+    label: str | None = None,
+) -> Callable[[SpanMapFn], SpanSeriesDef]:
+    """Create a decorator that maps each `base` span value and period."""
+    base_ref = _SeriesRef(base)
+
+    def decorator(transform: SpanMapFn) -> SpanSeriesDef:
+        def spans(ctx: "Context") -> Iterable[Span]:
+            for source_span in _iter_cached_spans(ctx, base_ref.get()):
+                value = Formula(_SpanValueOp(ctx, source_span))
+                yield Span(
+                    source_span.period,
+                    transform(source_span.period, value),
+                    _map_span_split(ctx, source_span, transform),
+                )
+
+        return SpanSeriesDef(
+            fn=spans,
+            agg=_inherit_agg(base_ref),
+            label=label or transform.__name__,
+        )
+
+    return decorator
+
+
 class _SpanTupleValueOp(Op[float | None]):
     def __init__(self, ctx: "Context", spans: Sequence[Span], op: ValueOp) -> None:
         self.ctx = ctx
@@ -432,6 +612,33 @@ def _span_tuple_split(
 
         setattr(left_transform, "_source_spans", tuple(left_spans))
         setattr(right_transform, "_source_spans", tuple(right_spans))
+        return left_transform, right_transform
+
+    return split
+
+
+def _map_span_split(
+    ctx: "Context",
+    source_span: Span,
+    transform: SpanMapFn,
+) -> Callable[[Span, date], tuple[SpanFormulaTransform, SpanFormulaTransform]]:
+    def split(span: Span, dt: date) -> tuple[SpanFormulaTransform, SpanFormulaTransform]:
+        (current_source,) = span._source_spans or (source_span,)
+        left_source, right_source = _split_span(ctx, current_source, dt)
+        if left_source is None or right_source is None:
+            raise RuntimeError("map split expected an interior split")
+
+        def transform_source(span: Span) -> Formula[float | None]:
+            return transform(span.period, Formula(_SpanValueOp(ctx, span)))
+
+        def left_transform(_: Formula[float | None]) -> Formula[float | None]:
+            return transform_source(left_source)
+
+        def right_transform(_: Formula[float | None]) -> Formula[float | None]:
+            return transform_source(right_source)
+
+        setattr(left_transform, "_source_spans", (left_source,))
+        setattr(right_transform, "_source_spans", (right_source,))
         return left_transform, right_transform
 
     return split
@@ -598,20 +805,24 @@ def rdiv_scalar(
 
 def extend(
     base: SpanSeriesDef,
+    *,
+    label: str | None = None,
 ) -> Callable[[Callable[["Context", date | None], Iterable[Span]]], SpanSeriesDef]:
     """Create a decorator that extends `base` with continuation spans."""
 
-    def decorator(continuation: Callable[["Context", date | None], Iterable[Span]]) -> SpanSeriesDef:
+    def decorator(
+        continuation: Callable[["Context", date | None], Iterable[Span]],
+    ) -> SpanSeriesDef:
         def spans(ctx: "Context") -> Iterable[Span]:
             last_end: date | None = None
 
-            for span in base.fn(ctx):
+            for span in _iter_cached_spans(ctx, base):
                 last_end = span.period.end
                 yield span
 
             yield from continuation(ctx, last_end)
 
-        return SpanSeriesDef(fn=spans, agg=base.agg, label=continuation.__name__)
+        return SpanSeriesDef(fn=spans, agg=base.agg, label=label or continuation.__name__)
 
     return decorator
 

@@ -11,6 +11,13 @@ change between minor releases.
 
 ### Added
 
+- Added `span.clip(...)` for defining span series clipped to an optional fixed
+  start and end date.
+- Added `span.map(...)` for defining span series by mapping each base span's
+  period and value formula into a new formula.
+- Added fluent `SpanSeriesDef` helpers for span transformations, including
+  `.then(...)` for appending a continuation series clipped to the base series
+  end date.
 - Added lazy series refs for point and span convenience constructors, allowing
   constructors to accept zero-argument functions that return dependent series
   definitions.
