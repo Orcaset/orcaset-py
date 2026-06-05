@@ -62,6 +62,19 @@ class _SpanCache:
         self.derived_spans.pop(next_span.period, None)
         self._cursor_date = next_span.period.end
 
+    def iter_source_spans(self) -> Iterator[Span]:
+        yielded = 0
+        while True:
+            spans = tuple(self.source_spans.values())
+            while yielded < len(spans):
+                yield spans[yielded]
+                yielded += 1
+
+            if self._exhausted:
+                return
+
+            self.materialize_next()
+
     def get_span(self, period: Period) -> Span | None:
         span = self.source_spans.get(period)
         if span is not None:
