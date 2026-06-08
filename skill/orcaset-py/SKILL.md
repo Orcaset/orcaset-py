@@ -19,7 +19,7 @@ Warn the user if there is a major or minor version difference between the instal
 
 ## Reference Map
 
-- `references/api-0.2.x.md`: Orcaset 0.2.x public API, constructors, querying, statement output, examples, and pitfalls.
+- `references/api-0.3.x.md`: Orcaset 0.3.x public API, constructors, querying, statement output, examples, and pitfalls.
 - `references/version-policy.md`: How to handle version mismatches and update the skill safely.
 
 ## Core Workflow
@@ -34,7 +34,7 @@ Use Orcaset models as typed line-item graphs rather than spreadsheet cell grids.
 6. Present output with `Stmt`, `Group`, `Total`, `Stmt.values(...)`, `Stmt.values_for_periods(...)`, `Stmt.values_for_dates(...)`, and formatters such as `fixed_width_table`.
 7. Do a final review to check mistakes or issues that should be fixed.
 
-Read `references/api-0.2.x.md` when exact signatures, docstring details, or examples are needed.
+Read `references/api-0.3.x.md` when exact signatures, docstring details, or examples are needed.
 
 ## Model Organization
 
@@ -46,7 +46,7 @@ Keep model packages focused on definitions:
 - Put querying, value inspection, printing, exports, notebooks, and CLI behavior in a top-level script, notebook, test, or CLI entrypoint. Do not put user queries into the model package.
 - Define series at module scope so other modules can import stable definition objects. Do not use model or series builder functions, define series as module-level values.
 - Use top-level imports for acyclic model dependencies.
-- For cross-file circular model dependencies, use local imports inside the smallest series function that needs the dependency, outside inner loops when possible. Orcaset series are lazy, so function bodies run when a `Context` queries the series, after modules have finished defining their series objects.
+- For cross-file circular dependencies, use local imports inside `@span.define(...)` / `@point.define(...)` functions and zero-argument ref functions for dependencies passed to convenience constructors. See `references/api-0.3.x.md` for examples.
 - Keep imports one-way: entrypoints may import model modules, but model modules should not import entrypoint scripts, notebooks, or CLI code.
 
 Example multi-file model layout:
@@ -69,6 +69,7 @@ Make labels legible but concise. Use common financial abbreviations such as `ebi
 
 ## Code Style & Validation
 
+- Prefer to keep line item definitions self contained over creating helper functions used by many line item definitions.
 - Preserve the user's existing model organization and sign convention unless it is clearly wrong. Add abstractions only when the model repeats a real pattern, such as a schedule family, roll-forward, historical-plus-projection line, or statement subtotal.
 - Treat series as immutable definition values. Query series directly with explicit contexts, e.g. `revenue.value(ctx, period)` or `cash.query(ctx, dt)`.
 - For linked forecasts, prefer formulas that query values through explicit query or value calls rather than carrying value state internally. Use loop-carried Python values only for exogenous assumptions or simple scaffolding where no model dependency is being hidden.
@@ -77,6 +78,7 @@ Make labels legible but concise. Use common financial abbreviations such as `ebi
 - For external data, fetch and normalize source data outside formula evaluation. Formula resolution should stay deterministic and should not trigger network calls.
 - DO NOT inline external data into model files unless explicitly directed. Instead, build parsing/loading functions to retrieve data from sources dynamically.
 - Group single-file models with short section comments like `# ----- Assumptions -----`, `# ----- Model -----`, and `# ----- Output -----`.
+- Make sure to structure statements into hierarchical groups and totals following standard statement conventions. Do not structure statements as flat lists of line items.
 - Python is installed. You can use the interpreter for resolving one-off queries, validating values or code, and other checks. Run it with `uv ...`.
 - Run `ruff` over any modified python files.
 - All Python files MUST pass type checking. Use `pyrefly check ...`. Continue update code until type checking passes. NEVER use `typing.cast`, `typing.Any`, or any `# type: ignore` or other configurations to supress typing errors.

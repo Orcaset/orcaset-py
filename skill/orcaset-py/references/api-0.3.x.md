@@ -1,6 +1,6 @@
 # Orcaset Python API Reference
 
-This reference describes the Orcaset 0.2.x def-object API.
+This reference describes the Orcaset 0.3.x def-object API.
 
 ## Imports
 
@@ -36,7 +36,7 @@ from orcaset import (
 
 ## Series Definitions
 
-Series are modeled as instances of `SpanSeriesDef` or `POintSeriesDef`. Create series using the decorator or helper constructors, do not instantiate series directly.
+Series are modeled as instances of `SpanSeriesDef` or `PointSeriesDef`. Create series using the decorator or helper constructors, do not instantiate series directly.
 
 ```py
 type SpanAgg = Callable[[list[Span]], float | None]
@@ -80,7 +80,7 @@ Span helper constructors:
 span.from_list(values, agg=..., split=no_split, label="Revenue")
 span.constant(value, agg=..., split=..., start=..., end=..., label="Units")
 span.periodic(start, freq, value, agg=..., split=..., end=..., label="Rent")
-span.extend(base)(continuation)
+span.extend(base)(continuation)  # continuation(ctx, start: date)
 span.keyed(keys, series_factory, label="Cohorts")
 ```
 
@@ -107,6 +107,7 @@ Aggregation and splitting:
 - `last_span(fill)` returns the last queried span value.
 - `split_daily` prorates by days, `split_const` keeps both sides unchanged, and `no_split` raises if a span must be split.
 - `span.constant(...)` and `span.periodic(...)` require an explicit `split=...`.
+- `span.extend(...)` passes the concrete base series end date to the continuation and does not call the continuation if the base yields no spans.
 
 ## Point Series
 
@@ -194,6 +195,55 @@ def interest(ctx: Context) -> Iterable[Span]:
 debt = point.accumulate(model_start, opening_debt, interest, label="Debt")
 ```
 
+## Multi-File Circular Dependencies
+
+Use top-level imports for acyclic dependencies. For cross-file circular dependencies inside
+`@span.define(...)` or `@point.define(...)` functions, use local imports inside the smallest
+series function that needs the dependency:
+
+```py
+# interest.py
+@span.define(agg=sum_spans(0.0), label="Interest")
+def interest(ctx: Context) -> Iterable[Span]:
+    from .debt import debt
+
+    for period in Period.seq(start_date, quarter):
+        beginning_debt = debt.value(ctx, period.start)
+        yield Span(period, beginning_debt * interest_rate / 4, split_daily)
+```
+
+For cross-file circular dependencies passed to convenience constructors, pass a
+zero-argument ref function instead of importing the dependency at module load time:
+
+```py
+# debt.py
+from orcaset import SpanSeriesDef, point
+
+from .assumptions import initial_debt, start_date
+
+
+def interest_ref() -> SpanSeriesDef:
+    from .interest import interest
+
+    return interest
+
+
+debt = point.accumulate(start_date, initial_debt, interest_ref, label="Debt")
+```
+
+Use the same ref pattern for helper lists:
+
+```py
+total_cash_flow = span.sum(
+    [operating_cash_flow, financing_ref],
+    agg=sum_spans(0.0),
+    label="Total cash flow",
+)
+```
+
+Use a lambda only when the referenced series is already in scope. A lambda cannot contain an
+import statement, so named ref functions are clearer for cross-file dependencies.
+
 For self-references to prior periods, query the prior period explicitly:
 
 ```py
@@ -202,6 +252,7 @@ yield Span(period, prior.map(lambda spans: sum(s.eval(ctx) or 0.0 for s in spans
 ```
 
 Avoid same-period circular formulas unless convergence is intentional and tested.
+When cyclic cells are solved, newly resolving cells are initially primed with `1.0`.
 
 ## Dynamic Keyed Series
 
@@ -313,9 +364,7 @@ historical_revenue = span.from_list(
 )
 
 @span.extend(historical_revenue)
-def revenue(ctx: Context, start: date | None) -> Iterable[Span]:
-    if start is None:
-        return
+def revenue(ctx: Context, start: date) -> Iterable[Span]:
     for period in Period.seq(start, relativedelta(years=1)):
         prior = revenue.value(ctx, period.from_start(relativedelta(years=-1)))
         yield Span(period, prior * 1.05, split_daily)
@@ -344,3 +393,5 @@ Span dependencies use concrete spans from `series.query(ctx, period).eval()`.
 - Do not use arithmetic operators on series defs; use `span.*` or `point.*` helpers.
 - Do not evaluate formulas too early when building dependent formulas. Return `Formula[...]` objects from model functions.
 - Do not fetch network or filesystem data during formula evaluation. Load external data before defining or querying model series.
+- Do not structure statements as flat lists of line items. Use groups and totals to structure statements.
+- Do not define model end dates. Query ranges are a reporting concern and should be defined in output code, never in the model.
