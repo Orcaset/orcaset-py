@@ -29,7 +29,7 @@ from .formula import Formula, Op
 from .period import Period
 
 if TYPE_CHECKING:
-    from .context import Context
+    from .context import Context, _SpanCache
 
 
 type SpanAgg = Callable[[list[Span]], float | None]
@@ -304,7 +304,7 @@ def align_spans(ctx: "Context", series: Sequence[SpanSeriesDef]) -> Iterator[tup
         cursor = end
 
 
-def _first_span_start(caches) -> date | None:
+def _first_span_start(caches: Iterable["_SpanCache"]) -> date | None:
     starts = [span.period.start for cache in caches for span in cache.source_spans.values()]
     return min(starts) if starts else None
 
@@ -319,7 +319,7 @@ def _active_span(spans: Iterable[Span], dt: date) -> Span | None:
     return next((span for span in spans if span.period.start <= dt and span.period.end > dt), None)
 
 
-def _next_span_start(caches, dt: date) -> date | None:
+def _next_span_start(caches: Iterable["_SpanCache"], dt: date) -> date | None:
     starts = [
         span.period.start
         for cache in caches
@@ -807,11 +807,11 @@ def extend(
     base: SpanSeriesDef,
     *,
     label: str | None = None,
-) -> Callable[[Callable[["Context", date | None], Iterable[Span]]], SpanSeriesDef]:
+) -> Callable[[Callable[["Context", date], Iterable[Span]]], SpanSeriesDef]:
     """Create a decorator that extends `base` with continuation spans."""
 
     def decorator(
-        continuation: Callable[["Context", date | None], Iterable[Span]],
+        continuation: Callable[["Context", date], Iterable[Span]],
     ) -> SpanSeriesDef:
         def spans(ctx: "Context") -> Iterable[Span]:
             last_end: date | None = None
@@ -820,7 +820,8 @@ def extend(
                 last_end = span.period.end
                 yield span
 
-            yield from continuation(ctx, last_end)
+            if last_end is not None:
+                yield from continuation(ctx, last_end)
 
         return SpanSeriesDef(fn=spans, agg=base.agg, label=label or continuation.__name__)
 

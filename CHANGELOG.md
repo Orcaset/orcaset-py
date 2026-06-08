@@ -22,6 +22,16 @@ change between minor releases.
   constructors to accept zero-argument functions that return dependent series
   definitions.
 
+### Changed
+
+- Changed `span.extend(...)` continuation callables to receive the concrete
+  base series end date instead of an optional date.
+- Improved `Period` typing so `start` and `end` are typed attributes while
+  preserving tuple unpacking.
+- Improved `YF` singleton deepcopy typing to return `Self`.
+- Changed Gauss-Seidel cell solving to prime newly resolving cells with `1.0`
+  instead of `0.0` to avoid initial division by zero errors.
+
 ## [0.3.0] - 2026-06-01
 
 ### Added

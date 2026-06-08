@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 from .context import Context
 from .period import Period
@@ -14,7 +15,7 @@ from .span import KeyedSpanSeries, SpanSeriesDef
 
 
 type StmtSeries = SpanSeriesDef | PointSeriesDef
-type StmtItem = StmtSeries | KeyedSpanSeries | KeyedPointSeries | Total | Group
+type StmtItem = StmtSeries | KeyedSpanSeries[Any] | KeyedPointSeries[Any] | Total | Group
 type StmtValue = PeriodValue | DateValue
 
 

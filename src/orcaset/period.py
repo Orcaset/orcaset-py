@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-from collections import namedtuple
 from datetime import date
-from typing import Generator
+from typing import Generator, NamedTuple
 
 from dateutil.relativedelta import relativedelta
 
@@ -16,12 +15,12 @@ class InvalidPeriodError(Exception):
     pass
 
 
-_Period = namedtuple("_Period", ["start", "end"])
+class _Period(NamedTuple):
+    start: date
+    end: date
 
 
 class Period(_Period):
-    __slots__ = ()
-
     def __new__(cls, start: date, end: date):
         if start >= end:
             raise InvalidPeriodError(

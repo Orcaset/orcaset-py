@@ -295,7 +295,7 @@ class Context:
     def _prime_cell(self, cell: Cell) -> None:
         cell_id = cell.id()
         if cell_id not in self._cell_values:
-            self._cell_values[cell_id] = _ResolvingCell(cell, 0.0)
+            self._cell_values[cell_id] = _ResolvingCell(cell, 1.0)
         if cell_id not in self._solving_cell_ids:
             self._solving_cells.append(cell)
             self._solving_cell_ids.add(cell_id)

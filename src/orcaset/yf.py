@@ -5,6 +5,7 @@ import calendar
 from collections.abc import Callable
 
 from datetime import date
+from typing import Self
 
 
 ####################
@@ -27,7 +28,7 @@ class YF:
         def __repr__(self):
             return "YF.na"
 
-        def __deepcopy__(self, _):
+        def __deepcopy__(self, _: object) -> Self:
             return self
 
     class _Actual360:
@@ -37,7 +38,7 @@ class YF:
         def __repr__(self):
             return "YF.act360"
 
-        def __deepcopy__(self, _):
+        def __deepcopy__(self, _: object) -> Self:
             return self
 
     class _Thirty360:
@@ -70,7 +71,7 @@ class YF:
         def __repr__(self):
             return "YF.thirty360"
 
-        def __deepcopy__(self, _):
+        def __deepcopy__(self, _: object) -> Self:
             return self
 
     class _CMonthly:
@@ -113,7 +114,7 @@ class YF:
         def __repr__(self):
             return "YF.cmonthly"
 
-        def __deepcopy__(self, _):
+        def __deepcopy__(self, _: object) -> Self:
             return self
 
     act360 = _Actual360()
