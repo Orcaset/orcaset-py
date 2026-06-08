@@ -26,7 +26,7 @@ def row_values(row: LineRow | TotalRow) -> tuple[float | None, ...]:
     return tuple(value.value for value in row.values)
 
 
-def rows(result: StatementResult) -> tuple:
+def rows(result: StatementResult) -> tuple[GroupRow | LineRow | TotalRow, ...]:
     return result.rows
 
 
@@ -282,6 +282,8 @@ def test_stmt_period_query_evaluates_point_series_at_period_boundaries():
     result_rows = rows(result)
 
     assert result.dates == (date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1))
+    assert isinstance(result_rows[0], LineRow)
+    assert isinstance(result_rows[1], LineRow)
     assert all(isinstance(value, PeriodValue) for value in result_rows[0].values)
     assert all(isinstance(value, DateValue) for value in result_rows[1].values)
     assert row_values(result_rows[0]) == (0.0, 0.0)
@@ -304,5 +306,7 @@ def test_stmt_date_query_evaluates_points_and_returns_na_for_spans():
 
     assert result.periods == ()
     assert result.dates == (date(2025, 1, 1), date(2025, 4, 1))
+    assert isinstance(result_rows[0], LineRow)
+    assert isinstance(result_rows[1], LineRow)
     assert row_values(result_rows[0]) == (None, None)
     assert row_values(result_rows[1]) == (100.0, 120.0)

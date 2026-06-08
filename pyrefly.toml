@@ -1,2 +1,6 @@
 # `examples/tr` on the path resolves the local `model` package used by `examples/tr/main.py`.
 search-path = ["src", "examples/tr"]
+strict-callable-subtyping = true
+
+[errors]
+implicit-any = true
