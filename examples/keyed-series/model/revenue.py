@@ -26,7 +26,7 @@ from orcaset import (
     sum_spans,
 )
 
-from .assumptions import SCENARIOS, ndr
+from .assumptions import ndr
 from .data import group_keys, hist_metrics, hist_revenue, hist_start, last_hist_period
 from .metrics import customers
 
@@ -34,7 +34,7 @@ qtr_offset = relativedelta(months=3, day=31)
 qtr_lookback = relativedelta(months=-3, day=31)
 
 
-def _revenue_series(scenario: str, group: str) -> SpanSeriesDef:
+def revenue(scenario: str, group: str) -> SpanSeriesDef:
     group_ndr = ndr[scenario][group]
     group_customers = customers[scenario][group]
 
@@ -63,34 +63,22 @@ def _revenue_series(scenario: str, group: str) -> SpanSeriesDef:
     return projected
 
 
-revenue: dict[str, dict[str, SpanSeriesDef]] = {
-    scenario: {group: _revenue_series(scenario, group) for group in group_keys}
-    for scenario in SCENARIOS
-}
-
-
-def _total_revenue_series(scenario: str) -> SpanSeriesDef:
+def total_revenue(scenario: str) -> SpanSeriesDef:
     @span.define(agg=sum_spans(0.0), label="Total Revenue")
-    def total_revenue(ctx: Context) -> Iterable[Span]:
+    def _total(ctx: Context) -> Iterable[Span]:
         for period in Period.seq(hist_start, qtr_offset):
-            values = [revenue[scenario][group].value(ctx, period) for group in group_keys]
+            values = [revenue(scenario, group).value(ctx, period) for group in group_keys]
             total: Formula[float | None] = Formula.sequence(values).map(
                 lambda vals: sum(v or 0.0 for v in vals)
             )
             yield Span(period, total, split_daily)
 
-    return total_revenue
+    return _total
 
 
-total_revenue: dict[str, SpanSeriesDef] = {
-    scenario: _total_revenue_series(scenario) for scenario in SCENARIOS
-}
-
-revenue_groups: dict[str, KeyedSpanSeries[str]] = {
-    scenario: span.keyed(
+def revenue_groups(scenario: str) -> KeyedSpanSeries[str]:
+    return span.keyed(
         keys=lambda _: group_keys,
-        series=lambda group, scenario=scenario: revenue[scenario][group],
+        series=lambda group: revenue(scenario, group),
         label="Revenue by group",
     )
-    for scenario in SCENARIOS
-}

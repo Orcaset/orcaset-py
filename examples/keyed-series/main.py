@@ -2,7 +2,7 @@ from datetime import date
 
 from dateutil.relativedelta import relativedelta
 from model.assumptions import SCENARIOS
-from model.statements import statements
+from model.statements import scenario_stmt
 
 from orcaset import Context, Period, fixed_width_table
 
@@ -22,6 +22,6 @@ def format_value(value: float | None) -> str:
 for scenario in SCENARIOS:
     ctx = Context()
     print(f"\n{scenario.upper()} CASE\n")
-    result = statements[scenario].values(ctx, query_periods)
+    result = scenario_stmt(scenario).values(ctx, query_periods)
     print(fixed_width_table(result, value_formatter=format_value))
     print()
