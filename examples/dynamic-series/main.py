@@ -29,7 +29,7 @@ useful_life_qtrs = 4
 
 # ------------------ CAPEX ------------------
 @span.define(agg=sum_spans(0.0), label="Capital Expenditures")
-def capex(_) -> Iterable[Span]:
+def capex(_: Context) -> Iterable[Span]:
     for period in Period.seq(start_date, qtr_offset):
         yield Span(period, Formula.pure(100.0), split_daily)
 

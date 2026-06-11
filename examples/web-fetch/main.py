@@ -61,9 +61,7 @@ historical_revenue = span.from_list(historical_revenue_values, agg=sum_spans(0.0
 
 
 @span.extend(historical_revenue)
-def revenue(ctx: Context, start: date | None) -> Iterable[Span]:
-    if start is None:
-        return
+def revenue(ctx: Context, start: date) -> Iterable[Span]:
     for period in Period.seq(start, relativedelta(years=1)):
         lookback_period = period.from_start(relativedelta(years=-1))
         prior_value = revenue.value(ctx, lookback_period)
