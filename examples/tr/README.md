@@ -10,7 +10,6 @@ The model contains approximately 100 line items plus dynamically generated line 
 tr/
 ├── README.md
 ├── main.py                      # Prints the three statements and a balance check
-├── notebook.py                  # Interactive marimo notebook (charts, assumption sliders)
 ├── depreciation_schedule.py     # Prints cohort-level capex and depreciation detail
 └── model/
     ├── __init__.py              # Public entry points: statements, Assumptions, ModelContext
@@ -38,12 +37,6 @@ Clone the repo and navigate to this directory (`examples/tr`), then run the `mai
 ```sh
 cd examples/tr
 python main.py
-```
-
-This folder also contains a [marimo](https://marimo.io) notebook with interactive visualizations. Running the notebook requires plotly to build charts. Open it with `uv` by the following command from the top level folder:
-
-```sh
-uv run --with plotly --with marimo marimo edit examples/tr/notebook.py
 ```
 
 ## Fixed asset schedule
