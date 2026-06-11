@@ -239,6 +239,37 @@ def deferred_comp_and_other_liabilities(ctx: Context, start: date) -> Iterable[S
         )
 
 
+# Filed cash flow statements absorb lease balance changes in other captions, so this
+# line is zero in historical periods. Projected lease balances scale with COGS from
+# different starting levels, so their changes do not offset.
+hist_lease_balances_net_change = span.from_list(
+    [(period, 0.0) for period, _ in hist_cash_flow.deferred_income_taxes],
+    agg=sum_spans(0.0),
+    split=no_split,
+)
+
+
+@span.extend(
+    hist_lease_balances_net_change,
+    label="Operating lease assets and liabilities, net",
+)
+def lease_balances_net_change(ctx: Context, start: date) -> Iterable[Span]:
+    from .assets import lease_rou_assets
+    from .liabilities import lease_liabilities, lease_liabilities_noncurrent
+
+    for period in Period.seq(start, c_qtr_offset):
+        liability_change = (
+            lease_liabilities.value(ctx, period.end)
+            + lease_liabilities_noncurrent.value(ctx, period.end)
+            - lease_liabilities.value(ctx, period.start)
+            - lease_liabilities_noncurrent.value(ctx, period.start)
+        )
+        rou_change = lease_rou_assets.value(ctx, period.end) - lease_rou_assets.value(
+            ctx, period.start
+        )
+        yield Span(period, liability_change - rou_change, split_daily)
+
+
 changes_in_operating_assets_and_liabilities = span.sum(
     [
         accounts_receivable,
@@ -249,6 +280,7 @@ changes_in_operating_assets_and_liabilities = span.sum(
         income_taxes_payable,
         postretirement_benefits,
         deferred_comp_and_other_liabilities,
+        lease_balances_net_change,
     ],
     agg=sum_spans(0.0),
     label="Changes in operating assets and liabilities",
@@ -549,6 +581,7 @@ cf_stmt = Total(
                         income_taxes_payable,
                         postretirement_benefits,
                         deferred_comp_and_other_liabilities,
+                        lease_balances_net_change,
                     ],
                 ),
             ],

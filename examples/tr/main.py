@@ -1,11 +1,7 @@
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
-from model.assets import total_assets
-from model.balance_sheet import bs_stmt, total_liabilities_and_equity
-from model.cash_flow import cf_stmt
-from model.income import income_stmt
-
+from model import total_assets, bs_stmt, total_liabilities_and_equity, cf_stmt, income_stmt
 from orcaset import Context, Group, Period, Stmt, Total, fixed_width_table, point
 
 query_periods = Period.list(date(2024, 12, 31), relativedelta(months=3, day=31), date(2026, 12, 31))

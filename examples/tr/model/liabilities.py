@@ -22,7 +22,6 @@ from orcaset import (
 
 from . import cash_flow
 from . import income
-from . import leases
 from .data import BalanceSheet
 
 hist_balance_sheet = BalanceSheet()
@@ -99,7 +98,7 @@ def bank_loans_changes(ctx: Context, start: date) -> Iterable[Span]:
 bank_loans = point.accumulate(
     *hist_balance_sheet.bank_loans[0],
     bank_loans_changes,
-    label="Current - Bank Loans",
+    label="Bank Loans - Current",
 )
 
 
@@ -147,16 +146,35 @@ accrued_liabilities = point.accumulate(
 
 postretirement_benefits = flat_point(
     hist_balance_sheet.postretirement_benefits,
-    "Current - Postretirement health care benefits",
+    "Postretirement health care benefits - Current",
 )
 
 deferred_income_taxes_current_liab = zero_point(
     hist_balance_sheet.deferred_income_taxes_current_liab,
-    "Current - Deferred Income Taxes (liability)",
+    "Deferred Income Taxes (liability) - Current",
 )
 
 
-lease_liabilities = leases.current_lease_liability
+@span.extend(balance_changes(hist_balance_sheet.lease_liabilities))
+def lease_liabilities_changes(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        prior_yr_period = period.shift(yr_lookback)
+        prior_yr_ratio = lease_liabilities.value(
+            ctx, prior_yr_period.end
+        ) / income.total_cogs.value(ctx, prior_yr_period)
+        target_balance = prior_yr_ratio * income.total_cogs.value(ctx, period)
+        yield Span(
+            period,
+            target_balance - lease_liabilities.value(ctx, period.start),
+            split_daily,
+        )
+
+
+lease_liabilities = point.accumulate(
+    *hist_balance_sheet.lease_liabilities[0],
+    lease_liabilities_changes,
+    label="Operating lease liabilities - Current",
+)
 
 
 income_taxes_payable_data = fill_blanks(hist_balance_sheet.income_taxes_payable)
@@ -186,7 +204,7 @@ income_taxes_payable = point.accumulate(
 
 uncertain_tax_positions_current = zero_point(
     hist_balance_sheet.uncertain_tax_positions_current,
-    "Current - Liability for Uncertain Tax Positions",
+    "Liability for Uncertain Tax Positions - Current",
 )
 
 
@@ -233,9 +251,7 @@ total_current_liabilities = point.sum(
 
 
 @span.extend(balance_changes(hist_balance_sheet.deferred_income_taxes_noncurrent_liab))
-def deferred_income_taxes_noncurrent_liab_changes(
-    ctx: Context, start: date
-) -> Iterable[Span]:
+def deferred_income_taxes_noncurrent_liab_changes(ctx: Context, start: date) -> Iterable[Span]:
     for period in Period.seq(start, c_qtr_offset):
         prior_yr_period = period.shift(yr_lookback)
         prior_yr_ratio = deferred_income_taxes_noncurrent_liab.value(
@@ -252,7 +268,7 @@ def deferred_income_taxes_noncurrent_liab_changes(
 deferred_income_taxes_noncurrent_liab = point.accumulate(
     *hist_balance_sheet.deferred_income_taxes_noncurrent_liab[0],
     deferred_income_taxes_noncurrent_liab_changes,
-    label="Noncurrent - Deferred income taxes (liability)",
+    label="Deferred income taxes (liability) - Noncurrent",
 )
 
 
@@ -264,12 +280,12 @@ total_deferred_income_tax_liabilities = point.sum(
 
 bank_loans_noncurrent = zero_point(
     hist_balance_sheet.bank_loans_noncurrent,
-    "Noncurrent - Bank Loans",
+    "Bank Loans - Noncurrent",
 )
 
 postretirement_benefits_noncurrent = flat_point(
     hist_balance_sheet.postretirement_benefits_noncurrent,
-    "Noncurrent - Postretirement health care benefits",
+    "Postretirement health care benefits - Noncurrent",
 )
 
 industrial_development_bonds = flat_point(
@@ -279,11 +295,30 @@ industrial_development_bonds = flat_point(
 
 uncertain_tax_positions_noncurrent = flat_point(
     hist_balance_sheet.uncertain_tax_positions_noncurrent,
-    "Noncurrent - Liability for uncertain tax positions",
+    "Liability for uncertain tax positions - Noncurrent",
 )
 
 
-lease_liabilities_noncurrent = leases.noncurrent_lease_liability
+@span.extend(balance_changes(hist_balance_sheet.lease_liabilities_noncurrent))
+def lease_liabilities_noncurrent_changes(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        prior_yr_period = period.shift(yr_lookback)
+        prior_yr_ratio = lease_liabilities_noncurrent.value(
+            ctx, prior_yr_period.end
+        ) / income.total_cogs.value(ctx, prior_yr_period)
+        target_balance = prior_yr_ratio * income.total_cogs.value(ctx, period)
+        yield Span(
+            period,
+            target_balance - lease_liabilities_noncurrent.value(ctx, period.start),
+            split_daily,
+        )
+
+
+lease_liabilities_noncurrent = point.accumulate(
+    *hist_balance_sheet.lease_liabilities_noncurrent[0],
+    lease_liabilities_noncurrent_changes,
+    label="Operating lease liabilities - Noncurrent",
+)
 
 
 @span.extend(balance_changes(hist_balance_sheet.deferred_comp_and_other_liabilities))

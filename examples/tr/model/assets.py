@@ -22,7 +22,6 @@ from orcaset import (
 
 from . import cash_flow
 from . import income
-from . import leases
 from . import ppe
 from .data import BalanceSheet
 
@@ -57,7 +56,7 @@ def flat_point(values: list[tuple[date, float | None]], label: str) -> PointSeri
 deferred_income_taxes_current_start = hist_balance_sheet.deferred_income_taxes_current[0][0]
 
 
-@point.define(label="Current - Deferred Income Taxes")
+@point.define(label="Deferred Income Taxes - Current")
 def deferred_income_taxes_current(_: Context, dt: date) -> Formula[float | None]:
     return Formula.pure(0.0 if dt >= deferred_income_taxes_current_start else None)
 
@@ -267,7 +266,26 @@ machinery_equipment = point.accumulate(
 )
 
 
-lease_rou_assets = leases.lease_rou_asset
+@span.extend(balance_changes(hist_balance_sheet.lease_rou_assets))
+def lease_rou_assets_changes(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        prior_yr_period = period.shift(yr_lookback)
+        prior_yr_ratio = lease_rou_assets.value(ctx, prior_yr_period.end) / income.total_cogs.value(
+            ctx, prior_yr_period
+        )
+        target_balance = prior_yr_ratio * income.total_cogs.value(ctx, period)
+        yield Span(
+            period,
+            target_balance - lease_rou_assets.value(ctx, period.start),
+            split_daily,
+        )
+
+
+lease_rou_assets = point.accumulate(
+    *hist_balance_sheet.lease_rou_assets[0],
+    lease_rou_assets_changes,
+    label="Operating lease right-of-use assets",
+)
 
 
 total_ppe_cost = point.sum(
@@ -366,7 +384,7 @@ def deferred_income_taxes_noncurrent_changes(ctx: Context, start: date) -> Itera
 deferred_income_taxes_noncurrent = point.accumulate(
     *hist_balance_sheet.deferred_income_taxes_noncurrent[0],
     deferred_income_taxes_noncurrent_changes,
-    label="Noncurrent - Deferred income taxes",
+    label="Deferred income taxes - Noncurrent",
 )
 
 

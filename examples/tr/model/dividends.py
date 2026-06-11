@@ -41,7 +41,9 @@ def _project_from_prior_year_earnings(
             or current_earnings is None
         ):
             return 0.0
-        return current_earnings * (prior_value / prior_earnings)
+        # Dividends paid are a cash outflow; clamp so negative earnings
+        # cannot flip the projection into an inflow.
+        return min(0.0, current_earnings * (prior_value / prior_earnings))
 
     return Formula.sequence(
         [

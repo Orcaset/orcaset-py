@@ -15,7 +15,7 @@ from orcaset import (
     sum_spans,
 )
 
-from .assumptions import Assumptions
+from .assumptions import get_assumptions
 from .data import Income
 
 c_qtr_offset = relativedelta(months=3, day=31)
@@ -34,7 +34,7 @@ def product_sales(ctx: Context, start: date) -> Iterable[Span]:
         yield Span(
             period,
             product_sales.value(ctx, prior_yr_period)
-            * (1 + Assumptions.Income.product_sales_growth_rate),
+            * (1 + get_assumptions(ctx).income.product_sales_growth_rate),
             split_daily,
         )
 
@@ -49,27 +49,37 @@ def rental_revenue(ctx: Context, start: date) -> Iterable[Span]:
         yield Span(
             period,
             rental_revenue.value(ctx, prior_yr_period)
-            * (1 + Assumptions.Income.rental_revenue_growth_rate),
+            * (1 + get_assumptions(ctx).income.rental_revenue_growth_rate),
             split_daily,
         )
 
 
 total_revenue = span.sum([product_sales, rental_revenue], agg=sum_spans(0.0), label="Total revenue")
 
-product_cogs = span.from_list(hist_income.product_cogs, agg=sum_spans(0.0), split=no_split).then(
-    product_sales.scale(
-        Assumptions.Income.product_cogs_margin,
-        label="Projected product cost of goods sold",
-    ),
-    label="Product cost of goods sold",
-)
+hist_product_cogs = span.from_list(hist_income.product_cogs, agg=sum_spans(0.0), split=no_split)
 
-rental_cogs = span.from_list(hist_income.rental_cogs, agg=sum_spans(0.0), split=no_split).then(
-    rental_revenue.scale(
-        Assumptions.Income.rental_cogs_margin,
-    ),
-    label="Rental cost of goods sold",
-)
+
+@span.extend(hist_product_cogs, label="Product cost of goods sold")
+def product_cogs(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        yield Span(
+            period,
+            product_sales.value(ctx, period) * get_assumptions(ctx).income.product_cogs_margin,
+            split_daily,
+        )
+
+
+hist_rental_cogs = span.from_list(hist_income.rental_cogs, agg=sum_spans(0.0), split=no_split)
+
+
+@span.extend(hist_rental_cogs, label="Rental cost of goods sold")
+def rental_cogs(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        yield Span(
+            period,
+            rental_revenue.value(ctx, period) * get_assumptions(ctx).income.rental_cogs_margin,
+            split_daily,
+        )
 
 total_cogs = span.sum(
     [product_cogs, rental_cogs], agg=sum_spans(0.0), label="Total cost of goods sold"
@@ -83,7 +93,9 @@ historical_sga = span.from_list(hist_income.sga, agg=sum_spans(0.0), split=no_sp
 def sga(ctx: Context, start: date) -> Iterable[Span]:
     for period in Period.seq(start, c_qtr_offset):
         prior_yr_value = sga.value(ctx, period.shift(yr_lookback))
-        yield Span(period, prior_yr_value * (1 + Assumptions.Income.sga_growth_rate), split_daily)
+        yield Span(
+            period, prior_yr_value * (1 + get_assumptions(ctx).income.sga_growth_rate), split_daily
+        )
 
 
 earnings_from_operations = span.sub(
@@ -98,7 +110,9 @@ def other_income(ctx: Context, start: date) -> Iterable[Span]:
     for period in Period.seq(start, c_qtr_offset):
         prior_yr_value = other_income.value(ctx, period.shift(yr_lookback))
         yield Span(
-            period, prior_yr_value * (1 + Assumptions.Income.other_income_growth_rate), split_daily
+            period,
+            prior_yr_value * (1 + get_assumptions(ctx).income.other_income_growth_rate),
+            split_daily,
         )
 
 
@@ -106,33 +120,39 @@ income_before_tax = span.sum(
     [earnings_from_operations, other_income], agg=sum_spans(0.0), label="Income before tax"
 )
 
-income_tax_provision = span.from_list(
-    hist_income.tax_provision,
-    agg=sum_spans(0.0),
-    split=no_split,
-    label="Income tax provision",
-).then(
-    income_before_tax.scale(Assumptions.Income.income_tax_rate),
-    label="Income tax provision",
-)
+hist_income_tax = span.from_list(hist_income.tax_provision, agg=sum_spans(0.0), split=no_split)
+
+
+@span.extend(hist_income_tax, label="Income tax provision")
+def income_tax_provision(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        yield Span(
+            period,
+            income_before_tax.value(ctx, period) * get_assumptions(ctx).income.income_tax_rate,
+            split_daily,
+        )
 
 net_earnings = span.sub(
     income_before_tax, income_tax_provision, agg=sum_spans(0.0), label="Net earnings"
 )
 
 
-nci_net_income = span.from_list(
-    hist_income.nci_net_income, agg=sum_spans(0.0), split=no_split
-).then(net_earnings.scale(Assumptions.Income.nci_net_income_rate), label="NCI net income")
+hist_nci_net_income = span.from_list(hist_income.nci_net_income, agg=sum_spans(0.0), split=no_split)
+
+
+@span.extend(hist_nci_net_income, label="NCI net income")
+def nci_net_income(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, c_qtr_offset):
+        yield Span(
+            period,
+            net_earnings.value(ctx, period) * get_assumptions(ctx).income.nci_net_income_rate,
+            split_daily,
+        )
 
 earnings_to_stockholders = span.sum(
     [net_earnings, nci_net_income.scale(-1.0)], agg=sum_spans(0.0), label="Earnings to stockholders"
 )
 
-# TODO: This causes division by zero error/stat
-# earnings_to_stockholders = span.sub(
-#     net_earnings, nci_net_income, agg=sum_spans(0.0), label="Earnings to stockholders"
-# )
 
 income_stmt = Group(
     [
