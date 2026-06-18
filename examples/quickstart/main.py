@@ -8,6 +8,7 @@ from orcaset import (
     Formula,
     Group,
     Period,
+    Point,
     Span,
     Stmt,
     Total,
@@ -56,8 +57,7 @@ def interest(ctx: Context) -> Iterable[Span]:
 
 
 # ----------- BALANCE (POINT SERIES) -----------
-@point.define(label="Balance")
-def balance(ctx: Context, dt: date) -> Formula[float | None]:
+def balance_value(ctx: Context, dt: date) -> Formula[float | None]:
     # Return None for dates before the start date
     if dt < start_date:
         return Formula.pure(None)
@@ -69,6 +69,11 @@ def balance(ctx: Context, dt: date) -> Formula[float | None]:
     # Return the initial balance plus the interest accrued to `dt`
     interest_value = interest.value(ctx, Period(start_date, dt))
     return initial_balance + interest_value
+
+
+@point.define(interpolate=balance_value, label="Balance")
+def balance(_: Context) -> Iterable[Point]:
+    yield Point(start_date, Formula.pure(initial_balance))
 
 
 # ------------- RESOLVING VALUES -------------

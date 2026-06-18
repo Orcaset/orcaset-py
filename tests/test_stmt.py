@@ -194,7 +194,7 @@ def test_stmt_expands_keyed_point_series_for_period_queries():
     def series_for(key: int):
         created.append(key)
 
-        @point.define(label=f"Tranche {key}")
+        @point.derived(label=f"Tranche {key}")
         def tranche(_: Context, dt: date) -> Formula[float | None]:
             return Formula.pure(float(key * 100 + dt.month))
 
@@ -239,7 +239,7 @@ def test_stmt_expands_keyed_point_series_for_date_queries():
         return ["cash", "debt"]
 
     def series_for(key: str):
-        @point.define(label=key.title())
+        @point.derived(label=key.title())
         def balance(_: Context, dt: date) -> Formula[float | None]:
             sign = 1.0 if key == "cash" else -1.0
             return Formula.pure(sign * dt.month)
@@ -265,14 +265,14 @@ def test_stmt_expands_keyed_point_series_for_date_queries():
 def test_stmt_period_query_evaluates_point_series_at_period_boundaries():
     cash = span.from_list([], agg=sum_spans(0.0), label="Cash Flow")
 
-    @point.define(label="Balance")
-    def balance(ctx: Context, dt: date) -> Formula[float | None]:
-        values = {
-            date(2025, 1, 1): 10.0,
-            date(2025, 4, 1): 20.0,
-            date(2025, 7, 1): 30.0,
-        }
-        return Formula.pure(values[dt])
+    balance = point.from_list(
+        [
+            (date(2025, 1, 1), 10.0),
+            (date(2025, 4, 1), 20.0),
+            (date(2025, 7, 1), 30.0),
+        ],
+        label="Balance",
+    )
 
     ctx = Context()
     result = Stmt(cash, balance).values_for_periods(
@@ -293,9 +293,13 @@ def test_stmt_period_query_evaluates_point_series_at_period_boundaries():
 def test_stmt_date_query_evaluates_points_and_returns_na_for_spans():
     revenue = span.from_list([], agg=sum_spans(0.0), label="Revenue")
 
-    @point.define(label="Balance")
-    def balance(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(100.0 if dt == date(2025, 1, 1) else 120.0)
+    balance = point.from_list(
+        [
+            (date(2025, 1, 1), 100.0),
+            (date(2025, 4, 1), 120.0),
+        ],
+        label="Balance",
+    )
 
     ctx = Context()
     result = Stmt(revenue, balance).values_for_dates(

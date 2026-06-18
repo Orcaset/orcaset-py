@@ -68,7 +68,7 @@ def revenue(ctx: Context, start: date) -> Iterable[Span]:
         yield Span(period, prior_value * (1 + revenue_growth_rate), split_daily)
 
 
-@point.define(label="YoY Growth Rate")
+@point.derived(label="YoY Growth Rate")
 def revenue_growth(ctx: Context, dt: date) -> Formula[float | None]:
     current = revenue.value(ctx, Period(dt - relativedelta(years=1), dt))
     prior = revenue.value(ctx, Period(dt - relativedelta(years=2), dt - relativedelta(years=1)))

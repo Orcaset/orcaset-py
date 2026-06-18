@@ -29,7 +29,7 @@ Use Orcaset models as typed line-item graphs rather than spreadsheet cell grids.
 1. Start by planning out the line items needed for the model and which line items are co-dependent on each other.
 2. Start every model with calendar assumptions: `date`, `relativedelta`, the first `Period`, and output periods from `Period.list` or `Period.seq`.
 3. Use `@span.define(...)` and `SpanSeriesDef` values for flows over periods: revenue, expense, cash flow, capex, depreciation, interest, taxes.
-4. Use `@point.define(...)` and `PointSeriesDef` values for point-in-time balances: cash, debt, PPE, equity, retained earnings, shares.
+4. Use `point.accumulate(...)`, `point.constant(...)`, `point.from_list(...)`, `point.derived(...)`, or `@point.define(...)` with an interpolation function for point-in-time balances: cash, debt, PPE, equity, retained earnings, shares.
 5. Use `span.keyed(...)` or `point.keyed(...)` for query-dependent dynamic rows such as cohorts, tranches, customers, facilities, or schedules.
 6. Present output with `Stmt`, `Group`, `Total`, `Stmt.values(...)`, `Stmt.values_for_periods(...)`, `Stmt.values_for_dates(...)`, and formatters such as `fixed_width_table`.
 7. Do a final review to check mistakes or issues that should be fixed.
@@ -46,7 +46,7 @@ Keep model packages focused on definitions:
 - Put querying, value inspection, printing, exports, notebooks, and CLI behavior in a top-level script, notebook, test, or CLI entrypoint. Do not put user queries into the model package.
 - Define series at module scope so other modules can import stable definition objects. Do not use model or series builder functions, define series as module-level values.
 - Use top-level imports for acyclic model dependencies.
-- For cross-file circular dependencies, use local imports inside `@span.define(...)` / `@point.define(...)` functions and zero-argument ref functions for dependencies passed to convenience constructors. See `references/api-0.3.x.md` for examples.
+- For cross-file circular dependencies, use local imports inside `@span.define(...)` functions, point interpolation/source functions, and zero-argument ref functions for dependencies passed to convenience constructors. See `references/api-0.3.x.md` for examples.
 - Keep imports one-way: entrypoints may import model modules, but model modules should not import entrypoint scripts, notebooks, or CLI code.
 
 Example multi-file model layout:

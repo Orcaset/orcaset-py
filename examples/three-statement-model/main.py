@@ -125,13 +125,7 @@ ppe_net = point.accumulate(model_start, initial_ppe_net, ppe_net_change, label="
 
 total_assets = point.sum([cash, ppe_net], label="Total assets")
 
-
-@point.define(label="Common stock")
-def common_stock(ctx: Context, dt: date) -> Formula[float | None]:
-    if dt < model_start:
-        return Formula.pure(None)
-    return Formula.pure(common_stock_value)
-
+common_stock = point.constant(common_stock_value, start=model_start, label="Common stock")
 
 retained_earnings = point.accumulate(
     model_start,

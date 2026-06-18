@@ -41,7 +41,8 @@ Series are modeled as instances of `SpanSeriesDef` or `PointSeriesDef`. Create s
 ```py
 type SpanAgg = Callable[[list[Span]], float | None]
 type SpanSeriesFn = Callable[[Context], Iterable[Span]]
-type PointSeriesFn = Callable[[Context, date], Formula[float | None]]
+type PointSeriesFn = Callable[[Context], Iterable[Point]]
+type PointInterpolationFn = Callable[[Context, date], Formula[float | None]]
 
 class SpanSeriesDef(NamedTuple):
     fn: SpanSeriesFn
@@ -53,6 +54,7 @@ class SpanSeriesDef(NamedTuple):
 
 class PointSeriesDef(NamedTuple):
     fn: PointSeriesFn
+    interpolate: PointInterpolationFn
     label: str
 
     def query(self, ctx: Context, dt: date) -> Point: ...
@@ -114,18 +116,25 @@ Aggregation and splitting:
 Use point series for balances and point-in-time metrics.
 
 ```py
-@point.define(label="Cash")
-def cash(ctx: Context, dt: date) -> Formula[float | None]:
+def cash_value(ctx: Context, dt: date) -> Formula[float | None]:
     if dt < model_start:
         return Formula.pure(None)
     if dt == model_start:
         return Formula.pure(1_000.0)
     return Formula.pure(1_000.0) + net_cash_flow.value(ctx, Period(model_start, dt))
+
+
+@point.define(interpolate=cash_value, label="Cash")
+def cash(_: Context) -> Iterable[Point]:
+    yield Point(model_start, Formula.pure(1_000.0))
 ```
 
 Point helper constructors:
 
 ```py
+point.from_list([(dt, value)], label="History")
+point.constant(value, start=start, end=end, label="Constant")
+point.derived(interpolate, label="Metric")
 point.accumulate(start, value, changes, label="Cash")
 point.keyed(keys, series_factory, label="Tranches")
 ```
@@ -198,8 +207,8 @@ debt = point.accumulate(model_start, opening_debt, interest, label="Debt")
 ## Multi-File Circular Dependencies
 
 Use top-level imports for acyclic dependencies. For cross-file circular dependencies inside
-`@span.define(...)` or `@point.define(...)` functions, use local imports inside the smallest
-series function that needs the dependency:
+`@span.define(...)` functions or point source/interpolation functions, use local imports inside
+the smallest series function that needs the dependency:
 
 ```py
 # interest.py
@@ -288,7 +297,7 @@ def tranche_keys(dt: date) -> Iterable[str]:
     return active_tranches_as_of(dt)
 
 def create_tranche(key: str) -> PointSeriesDef:
-    @point.define(label=f"Tranche {key}")
+    @point.derived(label=f"Tranche {key}")
     def tranche(ctx: Context, dt: date) -> Formula[float | None]:
         return Formula.pure(tranche_balance(key, dt))
 

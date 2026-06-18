@@ -15,6 +15,9 @@ change between minor releases.
   start and end date.
 - Added `span.map(...)` for defining span series by mapping each base span's
   period and value formula into a new formula.
+- Added timeline-backed point helpers, including `point.from_list(...)`,
+  `point.constant(...)`, `point.derived(...)`, `point.extend(...)`, point
+  interpolation helpers, and `align_points(...)`.
 - Added fluent `SpanSeriesDef` helpers for span transformations, including
   `.then(...)` for appending a continuation series clipped to the base series
   end date.
@@ -26,6 +29,8 @@ change between minor releases.
 
 - Changed `span.extend(...)` continuation callables to receive the concrete
   base series end date instead of an optional date.
+- Changed `PointSeriesDef` to use source point timelines plus an
+  `interpolate(ctx, dt)` function for non-source query dates.
 - Improved `Period` typing so `start` and `end` are typed attributes while
   preserving tuple unpacking.
 - Improved `YF` singleton deepcopy typing to return `Self`.

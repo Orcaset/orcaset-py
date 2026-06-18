@@ -89,6 +89,95 @@ class _SpanCache:
         return span
 
 
+class _PointCache:
+    __slots__ = (
+        "series",
+        "iterator",
+        "source_points",
+        "derived_points",
+        "_cursor_date",
+        "_exhausted",
+    )
+
+    def __init__(
+        self,
+        series: "PointSeriesDef",
+        iterator: Iterator[Point],
+        source_points: dict[date, Point],
+    ) -> None:
+        self.series = series
+        self.iterator = iterator
+        self.source_points = source_points
+        self.derived_points: dict[date, Point] = {}
+        self._cursor_date: date | None = None
+        self._exhausted = False
+
+    @property
+    def exhausted(self) -> bool:
+        return self._exhausted
+
+    @property
+    def cursor_date(self) -> date | None:
+        return self._cursor_date
+
+    def ensure_materialized_at_or_after(self, date: date) -> None:
+        """Ensure that at least one materialized source point is at or after `date`."""
+        while not self._exhausted and (self._cursor_date is None or date > self._cursor_date):
+            self.materialize_next()
+
+    def ensure_materialized_after(self, date: date) -> None:
+        """Ensure that at least one materialized source point is after `date`, if possible."""
+        while not self._exhausted and (self._cursor_date is None or date >= self._cursor_date):
+            self.materialize_next()
+
+    def materialize_next(self) -> None:
+        try:
+            next_point = next(self.iterator)
+        except StopIteration:
+            self._exhausted = True
+            return
+
+        if self._cursor_date is not None and next_point.dt <= self._cursor_date:
+            raise ValueError(
+                "Point series source points must be yielded in strictly increasing date order"
+            )
+
+        if next_point.source is None:
+            next_point.source = self.series
+        self.source_points[next_point.dt] = next_point
+        self.derived_points.pop(next_point.dt, None)
+        self._cursor_date = next_point.dt
+
+    def iter_source_points(self) -> Iterator[Point]:
+        yielded = 0
+        while True:
+            points = tuple(self.source_points.values())
+            while yielded < len(points):
+                yield points[yielded]
+                yielded += 1
+
+            if self._exhausted:
+                return
+
+            self.materialize_next()
+
+    def get_point(self, dt: date) -> Point | None:
+        point = self.source_points.get(dt)
+        if point is not None:
+            return point
+        return self.derived_points.get(dt)
+
+    def get_source_point(self, dt: date) -> Point | None:
+        return self.source_points.get(dt)
+
+    def get_or_add_derived_point(self, point: Point) -> Point:
+        cached = self.get_point(point.dt)
+        if cached is not None:
+            return cached
+        self.derived_points[point.dt] = point
+        return point
+
+
 class CellConvergenceError(RuntimeError):
     """Raised when recursive cell formulas do not converge."""
 
@@ -143,7 +232,7 @@ class Context:
 
     def __init__(self) -> None:
         self._span_cache: dict[int, _SpanCache] = {}
-        self._point_cache: dict[int, dict[date, Point]] = {}
+        self._point_cache: dict[int, _PointCache] = {}
         self._keyed_span_cache: dict[int, dict[Hashable, SpanSeriesDef]] = {}
         self._keyed_point_cache: dict[int, dict[Hashable, PointSeriesDef]] = {}
         self._series_refs: dict[int, object] = {}
@@ -162,13 +251,14 @@ class Context:
         self._span_cache[series_id] = cache
         return cache
 
-    def get_or_create_point_cache(self, series: "PointSeriesDef") -> dict[date, Point]:
+    def get_or_create_point_cache(self, series: "PointSeriesDef") -> _PointCache:
         series_id = id(series)
         if series_id in self._point_cache:
             return self._point_cache[series_id]
         self._series_refs[series_id] = series
-        self._point_cache[series_id] = {}
-        return self._point_cache[series_id]
+        cache = _PointCache(series, iter(series.fn(self)), {})
+        self._point_cache[series_id] = cache
+        return cache
 
     def get_or_create_keyed_span_series[K: Hashable](
         self,

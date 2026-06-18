@@ -24,11 +24,14 @@ from .formula import Formula
 from .period import Period
 from .point import (
     KeyedPointSeries,
+    PointCoverageError,
+    PointInterpolationFn,
     PointSeriesDef,
     PointSeriesFactory,
     PointSeriesFn,
     PointSeriesKeyFn,
     PointSeriesRef,
+    align_points,
 )
 from .span import (
     KeyedSpanSeries,
@@ -85,6 +88,8 @@ __all__ = [
     "SpanAgg",
     "SpanMapFn",
     "KeyedPointSeries",
+    "PointCoverageError",
+    "PointInterpolationFn",
     "KeyedSpanSeries",
     "PointSeriesFactory",
     "PointSeriesDef",
@@ -96,6 +101,7 @@ __all__ = [
     "SpanSeriesFn",
     "SpanSeriesKeyFn",
     "SpanSeriesRef",
+    "align_points",
     "align_spans",
     "DateValue",
     "Group",

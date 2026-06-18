@@ -48,13 +48,7 @@ def balance_changes(values: list[tuple[date, float | None]]) -> SpanSeriesDef:
 
 
 def zero_point(values: list[tuple[date, float | None]], label: str) -> PointSeriesDef:
-    start = values[0][0]
-
-    @point.define(label=label)
-    def series(_: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(0.0 if dt >= start else None)
-
-    return series
+    return point.constant(0.0, start=values[0][0], label=label)
 
 
 def flat_point(values: list[tuple[date, float | None]], label: str) -> PointSeriesDef:

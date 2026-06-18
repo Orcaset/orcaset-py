@@ -15,13 +15,17 @@ def interest(ctx: Context) -> Iterable[Span]:
         )
 
 
-@point.define(label="Balance")
-def balance(ctx: Context, dt: date) -> Formula[float | None]:
+def balance_value(ctx: Context, dt: date) -> Formula[float | None]:
     if dt < start_date:
         return Formula.pure(None)
     if dt == start_date:
         return Formula.pure(initial_balance)
     return initial_balance + interest.value(ctx, Period(start_date, dt))
+
+
+@point.define(interpolate=balance_value, label="Balance")
+def balance(_: Context) -> Iterable[Point]:
+    yield Point(start_date, Formula.pure(initial_balance))
 ```
 
 Resolve values with a context:

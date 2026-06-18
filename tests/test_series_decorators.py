@@ -7,6 +7,7 @@ from orcaset import (
     Context,
     Formula,
     Period,
+    Point,
     PointSeriesDef,
     Span,
     SpanSeriesDef,
@@ -19,8 +20,8 @@ from orcaset import (
 
 def test_point_define_creates_queryable_series_def():
     @point.define(label="Daily price")
-    def price(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(42.0 if dt == date(2026, 1, 1) else None)
+    def price(_: Context) -> Iterable[Point]:
+        yield Point(date(2026, 1, 1), Formula.pure(42.0))
 
     ctx = Context()
     cell = price.query(ctx, date(2026, 1, 1))
@@ -31,6 +32,21 @@ def test_point_define_creates_queryable_series_def():
     assert cell.eval(ctx) == 42.0
     assert price.value(ctx, date(2026, 1, 2)).eval() is None
     assert price.query(ctx, date(2026, 1, 1)) is cell
+
+
+def test_point_define_uses_interpolation_for_non_source_dates():
+    def interpolate(_: Context, dt: date) -> Formula[float | None]:
+        return Formula.pure(7.0 if dt == date(2026, 1, 2) else None)
+
+    @point.define(interpolate=interpolate, label="Daily price")
+    def price(_: Context) -> Iterable[Point]:
+        yield Point(date(2026, 1, 1), Formula.pure(42.0))
+
+    ctx = Context()
+
+    assert price.value(ctx, date(2026, 1, 1)).eval() == 42.0
+    assert price.value(ctx, date(2026, 1, 2)).eval() == 7.0
+    assert price.query(ctx, date(2026, 1, 2)) is price.query(ctx, date(2026, 1, 2))
 
 
 def test_span_define_creates_queryable_series_def():

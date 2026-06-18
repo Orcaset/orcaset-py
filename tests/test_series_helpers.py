@@ -1,9 +1,10 @@
+from collections.abc import Iterable
 from datetime import date
 
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, Formula, Period, point, span, split_daily, sum_spans
+from orcaset import Context, Formula, Period, Point, point, span, split_daily, sum_spans
 
 
 def test_span_constant_and_periodic_constructors_create_series_defs():
@@ -33,13 +34,8 @@ def test_span_constant_and_periodic_constructors_create_series_defs():
 
 
 def test_point_operators_evaluate_dependencies():
-    @point.define(label="A")
-    def a(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(10.0)
-
-    @point.define(label="B")
-    def b(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(2.0)
+    a = point.constant(10.0, label="A")
+    b = point.constant(2.0, label="B")
 
     ctx = Context()
     dt = date(2025, 1, 1)
@@ -76,6 +72,98 @@ def test_point_accumulate_sums_span_changes():
     assert balance.value(ctx, date(2025, 3, 1)).eval() == pytest.approx(1300.0)
 
 
+def test_point_accumulate_interpolates_partial_span_changes():
+    changes = span.from_list(
+        [((date(2025, 1, 1), date(2025, 1, 11)), 100.0)],
+        agg=sum_spans(0.0),
+        split=split_daily,
+        label="Changes",
+    )
+    balance = point.accumulate(date(2025, 1, 1), 1000.0, changes, label="Balance")
+
+    ctx = Context()
+
+    assert balance.value(ctx, date(2025, 1, 6)).eval() == pytest.approx(1050.0)
+
+
+def test_point_from_list_uses_none_interpolation_by_default():
+    price = point.from_list(
+        [
+            (date(2025, 1, 1), 10.0),
+            (date(2025, 2, 1), 20.0),
+        ],
+        label="Price",
+    )
+
+    ctx = Context()
+
+    assert price.value(ctx, date(2025, 1, 1)).eval() == 10.0
+    assert price.value(ctx, date(2025, 1, 15)).eval() is None
+    assert price.value(ctx, date(2025, 3, 1)).eval() is None
+
+
+def test_point_constant_covers_optional_range():
+    price = point.constant(10.0, start=date(2025, 1, 1), end=date(2025, 2, 1), label="Price")
+
+    ctx = Context()
+
+    assert price.value(ctx, date(2024, 12, 31)).eval() is None
+    assert price.value(ctx, date(2025, 1, 1)).eval() == 10.0
+    assert price.value(ctx, date(2025, 1, 15)).eval() == 10.0
+    assert price.value(ctx, date(2025, 2, 1)).eval() is None
+    assert price.value(ctx, date(2025, 3, 1)).eval() is None
+
+
+def test_point_timeline_helpers_expose_source_neighbors():
+    price = point.from_list(
+        [
+            (date(2025, 1, 1), 10.0),
+            (date(2025, 2, 1), 20.0),
+        ],
+        label="Price",
+    )
+
+    ctx = Context()
+
+    assert point.source_point(ctx, price, date(2025, 1, 1)) is price.query(
+        ctx, date(2025, 1, 1)
+    )
+    assert point.previous_point(ctx, price, date(2025, 1, 15)) is price.query(
+        ctx, date(2025, 1, 1)
+    )
+    assert point.next_point(ctx, price, date(2025, 1, 15)) is price.query(
+        ctx, date(2025, 2, 1)
+    )
+    assert point.is_exhausted_after(ctx, price, date(2025, 2, 1))
+
+
+def test_point_carry_forward_interpolation_uses_previous_source_point():
+    price = point.from_list(
+        [
+            (date(2025, 1, 1), 10.0),
+            (date(2025, 2, 1), 20.0),
+        ],
+        label="Price",
+    )
+    carried = point.derived(point.carry_forward(price), label="CarriedPrice")
+
+    ctx = Context()
+
+    assert carried.value(ctx, date(2024, 12, 31)).eval() is None
+    assert carried.value(ctx, date(2025, 1, 15)).eval() == 10.0
+    assert carried.value(ctx, date(2025, 3, 1)).eval() == 20.0
+
+
+def test_point_series_rejects_unordered_source_points():
+    @point.define(label="Unordered")
+    def unordered(_: Context) -> Iterable[Point]:
+        yield Point(date(2025, 2, 1), Formula.pure(20.0))
+        yield Point(date(2025, 1, 1), Formula.pure(10.0))
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        unordered.query(Context(), date(2025, 3, 1))
+
+
 def test_point_accumulate_accepts_lazy_span_series_ref():
     calls = 0
     changes = span.from_list(
@@ -101,10 +189,7 @@ def test_point_accumulate_accepts_lazy_span_series_ref():
 
 def test_point_operator_accepts_lazy_point_series_ref_with_fallback_label():
     calls = 0
-
-    @point.define(label="A")
-    def a(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(10.0)
+    a = point.constant(10.0, label="A")
 
     def a_ref() -> point.PointSeriesDef:
         nonlocal calls
@@ -122,13 +207,8 @@ def test_point_operator_accepts_lazy_point_series_ref_with_fallback_label():
 
 
 def test_sequence_operators_accept_lazy_series_refs():
-    @point.define(label="A")
-    def a(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(10.0)
-
-    @point.define(label="B")
-    def b(ctx: Context, dt: date) -> Formula[float | None]:
-        return Formula.pure(2.0)
+    a = point.constant(10.0, label="A")
+    b = point.constant(2.0, label="B")
 
     left = span.from_list(
         [((date(2025, 1, 1), date(2025, 2, 1)), 100.0)],

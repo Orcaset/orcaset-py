@@ -53,12 +53,11 @@ def flat_point(values: list[tuple[date, float | None]], label: str) -> PointSeri
     return point.accumulate(*values[0], changes, label=label)
 
 
-deferred_income_taxes_current_start = hist_balance_sheet.deferred_income_taxes_current[0][0]
-
-
-@point.define(label="Deferred Income Taxes - Current")
-def deferred_income_taxes_current(_: Context, dt: date) -> Formula[float | None]:
-    return Formula.pure(0.0 if dt >= deferred_income_taxes_current_start else None)
+deferred_income_taxes_current = point.constant(
+    0.0,
+    start=hist_balance_sheet.deferred_income_taxes_current[0][0],
+    label="Deferred Income Taxes - Current",
+)
 
 
 @span.extend(balance_changes(hist_balance_sheet.cash))
