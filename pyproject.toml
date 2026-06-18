@@ -1,6 +1,6 @@
 [project]
 name = "orcaset"
-version = "0.3.0"
+version = "0.4.0"
 description = "Financial models in Python"
 readme = "README.md"
 license = "SSPL-1.0"

@@ -1,6 +1,6 @@
 # Orcaset Python API Reference
 
-This reference describes the Orcaset 0.3.x def-object API.
+This reference describes the Orcaset 0.4.x def-object API.
 
 ## Imports
 
