@@ -25,7 +25,7 @@ initial_balance = 100.0
 interest_rate = 0.05
 
 
-# ------------------ CELLS ------------------
+# -------------- HISTORICAL DATA --------------
 interest_data = [
     ((date(2025, 12, 31), date(2026, 3, 31)), 1.00),
     ((date(2026, 3, 31), date(2026, 6, 30)), 2.00),
@@ -46,6 +46,15 @@ def interest(ctx: Context) -> Iterable[Span]:
     # Yield projected interest accruals
     if s is None:
         return
+
+    # Non-recursive initial definition
+    # for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
+    #     s = Span(
+    #         period=period,
+    #         fn=s.fn * (1 + interest_rate / 4),
+    #         split=split_daily,
+    #     )
+    #     yield s
 
     # Linked example: interest is based on the beginning period balance
     for period in Period.seq(s.period.end, relativedelta(months=3, day=31)):
@@ -100,8 +109,22 @@ for period in Period.seq(start_date, monthly_period, end=date(2026, 12, 31)):
 print("\n")
 
 # ----------- SIMPLIFYING THE MODEL -----------
+
+# Create the historical interest series
+historical_interest = span.from_list(
+    interest_data, agg=sum_spans(0.0), split=split_daily, label="Interest 2"
+)
+
+
+# Extend historical interest to projections
+@span.extend(historical_interest)
+def interest_2(ctx: Context, start: date) -> Iterable[Span]:
+    for period in Period.seq(start, relativedelta(months=3, day=31)):
+        yield Span(period, balance_2.value(ctx, period.start) * interest_rate / 4, split_daily)
+
+
 # Redefine Balance using the `point.accumulate` convenience constructor
-balance_2 = point.accumulate(start_date, initial_balance, interest, label="Balance 2")
+balance_2 = point.accumulate(start_date, initial_balance, interest_2, label="Balance 2")
 
 
 # Demo other convenience constructors

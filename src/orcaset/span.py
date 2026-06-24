@@ -48,7 +48,7 @@ class SpanSeriesDef(NamedTuple):
     label: str
 
     def query(self, ctx: "Context", period: Period) -> Formula[list[Span]]:
-        """Return spans covering `period`, clipping and filling gaps as needed."""
+        """Return a formula with spans covering `period`, clipping and filling gaps as needed."""
         return Formula(SpanQueryOp(ctx, self, period))
 
     def value(self, ctx: "Context", period: Period) -> Formula[float | None]:

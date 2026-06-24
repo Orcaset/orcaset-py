@@ -9,6 +9,7 @@ from orcaset import (
     Formula,
     Group,
     Period,
+    Point,
     PointSeriesDef,
     Span,
     SpanSeriesDef,
@@ -60,9 +61,13 @@ deferred_income_taxes_current = point.constant(
 )
 
 
-@span.extend(balance_changes(hist_balance_sheet.cash))
-def cash_changes(ctx: Context, start: date) -> Iterable[Span]:
-    for period in Period.seq(start, c_qtr_offset):
+cash_history = point.from_list(hist_balance_sheet.cash, label="Cash history")
+cash_projection_start, cash_projection_value = hist_balance_sheet.cash[-1]
+
+
+@span.define(agg=sum_spans(0.0), label="Cash changes")
+def cash_projected_changes(ctx: Context) -> Iterable[Span]:
+    for period in Period.seq(cash_projection_start, c_qtr_offset):
         yield Span(
             period,
             cash_flow.cash_change.value(ctx, period)
@@ -71,7 +76,25 @@ def cash_changes(ctx: Context, start: date) -> Iterable[Span]:
         )
 
 
-cash = point.accumulate(*hist_balance_sheet.cash[0], cash_changes, label="Cash")
+cash_projection = point.accumulate(
+    cash_projection_start,
+    cash_projection_value,
+    cash_projected_changes,
+    label="Cash projection",
+)
+
+
+def cash_value(ctx: Context, dt: date) -> Formula[float | None]:
+    if dt > cash_projection_start:
+        return cash_projection.value(ctx, dt)
+    return cash_history.value(ctx, dt)
+
+
+@point.extend(cash_history, interpolate=cash_value, label="Cash")
+def cash(ctx: Context, start: date) -> Iterable[Point]:
+    for projected_point in point.iter_source_points(ctx, cash_projection):
+        if projected_point.dt > start:
+            yield projected_point
 
 
 @span.extend(balance_changes(hist_balance_sheet.restricted_cash))
