@@ -1,3 +1,5 @@
+# Build a sequence of spans using a recursive function.
+
 from __future__ import annotations
 
 from datetime import date
@@ -64,6 +66,7 @@ revenue: F[SpanSeq[float]] = F.pure(
 )
 
 
+# Print dependencies for the third revenue span and value
 ctx = Context()
 
 third_span = revenue.bind(lambda spans: nth(spans, 2), label="Third revenue span")

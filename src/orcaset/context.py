@@ -21,7 +21,6 @@ class Context:
     stack: list[F[Any]] = field(default_factory=list)
     edges: set[tuple[F[Any], F[Any]]] = field(default_factory=set)
     cache: dict[int, Any] = field(default_factory=dict)
-    eval_count: int = field(default_factory=lambda: 0)
 
     def run[A](self, node: F[A]) -> A:
         if self.stack:
@@ -37,7 +36,6 @@ class Context:
         try:
             result = node.eval(self)
             self.cache[node.id] = result
-            self.eval_count += 1
             return result
         finally:
             self.stack.pop()

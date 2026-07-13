@@ -1,4 +1,6 @@
-from orcaset import F, Pure, Context, print_deps, Seq, Cons
+# Build a sequence of integers using a recursive function.
+
+from orcaset import Cons, Context, F, Pure, Seq, print_deps
 
 
 def nth[T](s: Seq[F[T]], n: int) -> F[T]:
@@ -32,18 +34,11 @@ first = nth(seq, 0)
 second = nth(seq, 1)
 
 
+# Print dependencies for the first, second, and third sequence elements
 ctx = Context()
 print("First node deps:")
 print_deps(ctx, first)
-print(f"Eval count: {ctx.eval_count}")
 print("\nSecond node deps:")
 print_deps(ctx, second)
-print(f"Eval count: {ctx.eval_count}")
 print("\nThird node deps:")
 print_deps(ctx, nth(seq, 2))
-print(f"Eval count: {ctx.eval_count}")
-print("\nThird node deps again:")
-print_deps(ctx, nth(seq, 2))
-
-# print("\100th node deps:")
-# print_deps(ctx, nth(seq, 4))
