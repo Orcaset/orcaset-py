@@ -3,419 +3,111 @@
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable, Iterator
-from dataclasses import dataclass
-from datetime import date
-from typing import TYPE_CHECKING
-
-from .cell import Cell, Point, Span
-from .period import Period
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .point import KeyedPointSeries, PointSeriesDef
-    from .span import KeyedSpanSeries, SpanSeriesDef
+    from .f import F
 
 
-class _SpanCache:
-    __slots__ = (
-        "series",
-        "iterator",
-        "source_spans",
-        "derived_spans",
-        "_cursor_date",
-        "_exhausted",
-    )
-
-    def __init__(
-        self,
-        series: "SpanSeriesDef",
-        iterator: Iterator[Span],
-        source_spans: dict[Period, Span],
-    ) -> None:
-        self.series = series
-        self.iterator = iterator
-        self.source_spans = source_spans
-        self.derived_spans: dict[Period, Span] = {}
-        # Date of last materialized span, or None if no spans have been materialized yet
-        self._cursor_date: date | None = None
-        self._exhausted = False
-
-    def ensure_materialized_through(self, date: date) -> None:
-        """Ensure that the cache is materialized through `date`."""
-        while not self._exhausted and (self._cursor_date is None or date > self._cursor_date):
-            self.materialize_next()
-
-    def ensure_materialized_after(self, date: date) -> None:
-        """Ensure that at least one materialized span ends after `date`, if possible."""
-        while not self._exhausted and (self._cursor_date is None or date >= self._cursor_date):
-            self.materialize_next()
-
-    def materialize_next(self) -> None:
-        try:
-            next_span = next(self.iterator)
-        except StopIteration:
-            self._exhausted = True
-            return
-        if next_span.source is None:
-            next_span.source = self.series
-        self.source_spans[next_span.period] = next_span
-        self.derived_spans.pop(next_span.period, None)
-        self._cursor_date = next_span.period.end
-
-    def iter_source_spans(self) -> Iterator[Span]:
-        yielded = 0
-        while True:
-            spans = tuple(self.source_spans.values())
-            while yielded < len(spans):
-                yield spans[yielded]
-                yielded += 1
-
-            if self._exhausted:
-                return
-
-            self.materialize_next()
-
-    def get_span(self, period: Period) -> Span | None:
-        span = self.source_spans.get(period)
-        if span is not None:
-            return span
-        return self.derived_spans.get(period)
-
-    def get_or_add_derived_span(self, span: Span) -> Span:
-        cached = self.get_span(span.period)
-        if cached is not None:
-            return cached
-        self.derived_spans[span.period] = span
-        return span
-
-
-class _PointCache:
-    __slots__ = (
-        "series",
-        "iterator",
-        "source_points",
-        "derived_points",
-        "_cursor_date",
-        "_exhausted",
-    )
-
-    def __init__(
-        self,
-        series: "PointSeriesDef",
-        iterator: Iterator[Point],
-        source_points: dict[date, Point],
-    ) -> None:
-        self.series = series
-        self.iterator = iterator
-        self.source_points = source_points
-        self.derived_points: dict[date, Point] = {}
-        self._cursor_date: date | None = None
-        self._exhausted = False
-
-    @property
-    def exhausted(self) -> bool:
-        return self._exhausted
-
-    @property
-    def cursor_date(self) -> date | None:
-        return self._cursor_date
-
-    def ensure_materialized_at_or_after(self, date: date) -> None:
-        """Ensure that at least one materialized source point is at or after `date`."""
-        while not self._exhausted and (self._cursor_date is None or date > self._cursor_date):
-            self.materialize_next()
-
-    def ensure_materialized_after(self, date: date) -> None:
-        """Ensure that at least one materialized source point is after `date`, if possible."""
-        while not self._exhausted and (self._cursor_date is None or date >= self._cursor_date):
-            self.materialize_next()
-
-    def materialize_next(self) -> None:
-        try:
-            next_point = next(self.iterator)
-        except StopIteration:
-            self._exhausted = True
-            return
-
-        if self._cursor_date is not None and next_point.dt <= self._cursor_date:
-            raise ValueError(
-                "Point series source points must be yielded in strictly increasing date order"
-            )
-
-        if next_point.source is None:
-            next_point.source = self.series
-        self.source_points[next_point.dt] = next_point
-        self.derived_points.pop(next_point.dt, None)
-        self._cursor_date = next_point.dt
-
-    def iter_source_points(self) -> Iterator[Point]:
-        yielded = 0
-        while True:
-            points = tuple(self.source_points.values())
-            while yielded < len(points):
-                yield points[yielded]
-                yielded += 1
-
-            if self._exhausted:
-                return
-
-            self.materialize_next()
-
-    def get_point(self, dt: date) -> Point | None:
-        point = self.source_points.get(dt)
-        if point is not None:
-            return point
-        return self.derived_points.get(dt)
-
-    def get_source_point(self, dt: date) -> Point | None:
-        return self.source_points.get(dt)
-
-    def get_or_add_derived_point(self, point: Point) -> Point:
-        cached = self.get_point(point.dt)
-        if cached is not None:
-            return cached
-        self.derived_points[point.dt] = point
-        return point
-
-
-class CellConvergenceError(RuntimeError):
-    """Raised when recursive cell formulas do not converge."""
-
-
-@dataclass(frozen=True)
-class CellDependencyNode:
-    cell: Cell
-    value: float | None
-
-
-@dataclass(frozen=True)
-class CellDependencyGraph:
-    root: Cell
-    nodes: dict[int, CellDependencyNode]
-    edges: dict[int, frozenset[int]]
-
-    def to_dot(self) -> str:
-        lines = ["digraph cell_dependencies {"]
-        for cell_id in sorted(self.nodes):
-            node = self.nodes[cell_id]
-            label = _cell_dot_label(cell_id, node)
-            lines.append(f'  cell_{cell_id} [label="{label}"];')
-
-        for source_id in sorted(self.edges):
-            for dependency_id in sorted(self.edges[source_id]):
-                lines.append(f"  cell_{source_id} -> cell_{dependency_id};")
-
-        lines.append("}")
-        return "\n".join(lines)
-
-
-class _ResolvingCell:
-    __slots__ = ("cell", "cell_id", "value")
-
-    def __init__(self, cell: Cell, value: float | None):
-        self.cell = cell
-        self.cell_id = cell.id()
-        self.value = value
-
-
-class _ResolvedCell:
-    __slots__ = ("cell", "cell_id", "value")
-
-    def __init__(self, cell: Cell, value: float | None):
-        self.cell = cell
-        self.cell_id = cell.id()
-        self.value = value
-
-
+@dataclass(slots=True)
 class Context:
-    """`Context` manages all state for cell and value evaluation."""
+    """Evaluation engine with id-keyed result cache.
 
-    def __init__(self) -> None:
-        self._span_cache: dict[int, _SpanCache] = {}
-        self._point_cache: dict[int, _PointCache] = {}
-        self._keyed_span_cache: dict[int, dict[Hashable, SpanSeriesDef]] = {}
-        self._keyed_point_cache: dict[int, dict[Hashable, PointSeriesDef]] = {}
-        self._series_refs: dict[int, object] = {}
-        self._cell_values: dict[int, _ResolvingCell | _ResolvedCell] = {}
-        self._solving_cells: list[Cell] = []
-        self._solving_cell_ids: set[int] = set()
-        self._active_cell: Cell | None = None
-        self._cell_dependencies: dict[int, set[int]] = {}
+    Cache keys are ``F.id`` values, not object identity, so shared subgraphs
+    and re-forced sequence tails reuse the same computed results.
+    """
 
-    def get_or_create_span_cache(self, series: "SpanSeriesDef") -> _SpanCache:
-        series_id = id(series)
-        if series_id in self._span_cache:
-            return self._span_cache[series_id]
-        self._series_refs[series_id] = series
-        cache = _SpanCache(series, iter(series.fn(self)), {})
-        self._span_cache[series_id] = cache
-        return cache
+    stack: list[F[Any]] = field(default_factory=list)
+    edges: set[tuple[F[Any], F[Any]]] = field(default_factory=set)
+    cache: dict[int, Any] = field(default_factory=dict)
+    eval_count: int = field(default_factory=lambda: 0)
 
-    def get_or_create_point_cache(self, series: "PointSeriesDef") -> _PointCache:
-        series_id = id(series)
-        if series_id in self._point_cache:
-            return self._point_cache[series_id]
-        self._series_refs[series_id] = series
-        cache = _PointCache(series, iter(series.fn(self)), {})
-        self._point_cache[series_id] = cache
-        return cache
+    def run[A](self, node: F[A]) -> A:
+        if self.stack:
+            self.edges.add((self.stack[-1], node))
 
-    def get_or_create_keyed_span_series[K: Hashable](
-        self,
-        keyed_series: "KeyedSpanSeries[K]",
-        key: K,
-    ) -> "SpanSeriesDef":
-        series_id = id(keyed_series)
-        series_by_key = self._keyed_span_cache.get(series_id)
-        if series_by_key is None:
-            self._series_refs[series_id] = keyed_series
-            series_by_key = {}
-            self._keyed_span_cache[series_id] = series_by_key
+        if node.id in self.cache:
+            return self.cache[node.id]
 
-        series = series_by_key.get(key)
-        if series is None:
-            series = keyed_series.series_factory(key)
-            series_by_key[key] = series
-        return series
+        if any(frame.id == node.id for frame in self.stack):
+            raise RuntimeError(f"cycle detected: {node!r}")
 
-    def get_or_create_keyed_point_series[K: Hashable](
-        self,
-        keyed_series: "KeyedPointSeries[K]",
-        key: K,
-    ) -> "PointSeriesDef":
-        series_id = id(keyed_series)
-        series_by_key = self._keyed_point_cache.get(series_id)
-        if series_by_key is None:
-            self._series_refs[series_id] = keyed_series
-            series_by_key = {}
-            self._keyed_point_cache[series_id] = series_by_key
-
-        series = series_by_key.get(key)
-        if series is None:
-            series = keyed_series.series_factory(key)
-            series_by_key[key] = series
-        return series
-
-    def eval_cell(self, cell: Cell) -> float | None:
-        if self._active_cell is not None:
-            self._cell_dependencies.setdefault(self._active_cell.id(), set()).add(cell.id())
-
-        cached_value = self._cell_values.get(cell.id())
-        if isinstance(cached_value, _ResolvedCell):
-            return cached_value.value
-        if cached_value is not None and self._active_cell is not None:
-            return cached_value.value
-
-        if self._active_cell is None:
-            return self.solve_cells([cell])[0]
-
-        self._prime_cell(cell)
-        return self._cell_values[cell.id()].value
-
-    def solve_cells(
-        self,
-        cells: Iterable[Cell],
-        *,
-        tolerance: float = 1e-9,
-        max_iterations: int = 1000,
-    ) -> list[float | None]:
-        input_cells = list(cells)
-        previous_solving_cells = self._solving_cells
-        previous_solving_cell_ids = self._solving_cell_ids
-
-        self._solving_cells = []
-        self._solving_cell_ids = set()
-        for cell in input_cells:
-            self._prime_cell(cell)
-
+        self.stack.append(node)
         try:
-            for _ in range(1, max_iterations + 1):
-                max_delta = 0.0
-                index = 0
-
-                while index < len(self._solving_cells):
-                    cell = self._solving_cells[index]
-                    index += 1
-
-                    cached_value = self._cell_values[cell.id()]
-                    if isinstance(cached_value, _ResolvedCell):
-                        continue
-
-                    old_value = cached_value.value
-                    new_value = self._eval_cell_formula(cell)
-                    cached_value.value = new_value
-                    max_delta = max(max_delta, _value_delta(old_value, new_value))
-
-                if max_delta < tolerance:
-                    for cell in self._solving_cells:
-                        cached_value = self._cell_values[cell.id()]
-                        if isinstance(cached_value, _ResolvingCell):
-                            self._cell_values[cell.id()] = _ResolvedCell(cell, cached_value.value)
-                    return [self._cell_values[cell.id()].value for cell in input_cells]
-
-            raise CellConvergenceError(
-                f"Cell formulas failed to converge after {max_iterations} iterations"
-            )
+            result = node.eval(self)
+            self.cache[node.id] = result
+            self.eval_count += 1
+            return result
         finally:
-            self._solving_cells = previous_solving_cells
-            self._solving_cell_ids = previous_solving_cell_ids
-
-    def deps(self, cell: Cell) -> CellDependencyGraph:
-        if not isinstance(self._cell_values.get(cell.id()), _ResolvedCell):
-            self.solve_cells([cell])
-
-        nodes: dict[int, CellDependencyNode] = {}
-        edges: dict[int, frozenset[int]] = {}
-        pending = [cell.id()]
-
-        while pending:
-            cell_id = pending.pop()
-            if cell_id in nodes:
-                continue
-
-            cached_value = self._cell_values[cell_id]
-            nodes[cell_id] = CellDependencyNode(cached_value.cell, cached_value.value)
-
-            dependency_ids = frozenset(self._cell_dependencies.get(cell_id, set()))
-            edges[cell_id] = dependency_ids
-            pending.extend(dependency_ids)
-
-        return CellDependencyGraph(cell, nodes, edges)
-
-    def _prime_cell(self, cell: Cell) -> None:
-        cell_id = cell.id()
-        if cell_id not in self._cell_values:
-            self._cell_values[cell_id] = _ResolvingCell(cell, 1.0)
-        if cell_id not in self._solving_cell_ids:
-            self._solving_cells.append(cell)
-            self._solving_cell_ids.add(cell_id)
-
-    def _eval_cell_formula(self, cell: Cell) -> float | None:
-        self._cell_dependencies[cell.id()] = set()
-        previous_active_cell = self._active_cell
-        self._active_cell = cell
-        try:
-            return cell.fn.eval()
-        finally:
-            self._active_cell = previous_active_cell
+            self.stack.pop()
 
 
-def _value_delta(old_value: float | None, new_value: float | None) -> float:
-    if isinstance(old_value, int | float) and isinstance(new_value, int | float):
-        return abs(float(new_value) - float(old_value))
-    if old_value == new_value:
-        return 0.0
-    return float("inf")
+def _fmt(node: F[Any]) -> str:
+    name = node.label if node.label is not None else repr(node)
+    return f"({node.id}) {name}"
 
 
-def _dot_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+def _fmt_node(ctx: Context, node: F[Any]) -> str:
+    label = _fmt(node)
+    if node.id in ctx.cache:
+        return f"{label} = {ctx.cache[node.id]!r}"
+    return label
 
 
-def _cell_dot_label(cell_id: int, node: CellDependencyNode) -> str:
-    parts = [f"cell {cell_id}"]
-    if node.cell.source is not None:
-        source_name = getattr(node.cell.source, "label", type(node.cell.source).__name__)
-        parts.append(f"source: {source_name}")
-    parts.append(f"value: {repr(node.value)}")
-    return "\\n".join(_dot_escape(part) for part in parts)
+def _children_of(ctx: Context, parent: F[Any]) -> list[F[Any]]:
+    seen: set[int] = set()
+    children: list[F[Any]] = []
+    for p, child in ctx.edges:
+        if p.id == parent.id and child.id not in seen:
+            seen.add(child.id)
+            children.append(child)
+    return children
+
+
+def _render(
+    ctx: Context,
+    node: F[Any],
+    *,
+    prefix: str,
+    is_last: bool,
+    is_root: bool,
+    seen: set[int],
+) -> None:
+    if is_root:
+        print(_fmt_node(ctx, node))
+    else:
+        branch = "└─ " if is_last else "├─ "
+        print(f"{prefix}{branch}{_fmt_node(ctx, node)}")
+
+    if node.id in seen:
+        return
+    seen.add(node.id)
+
+    kids = _children_of(ctx, node)
+    child_prefix = "" if is_root else prefix + ("   " if is_last else "│  ")
+    for i, kid in enumerate(kids):
+        _render(
+            ctx,
+            kid,
+            prefix=child_prefix,
+            is_last=i == len(kids) - 1,
+            is_root=False,
+            seen=seen,
+        )
+
+
+def print_deps(ctx: Context, root: F[Any]) -> None:
+    """Print the dependency tree for ``root``.
+
+    Runs ``root`` if it is not already cached; does not re-run when present.
+    """
+    if root.id not in ctx.cache:
+        ctx.run(root)
+    _render(ctx, root, prefix="", is_last=True, is_root=True, seen=set())
+
+
+def print_edges(ctx: Context) -> None:
+    for parent, child in sorted(ctx.edges, key=lambda e: (_fmt(e[0]), _fmt(e[1]))):
+        print("--------------------------------")
+        print(f"{_fmt(child)} -> {_fmt(parent)}")
