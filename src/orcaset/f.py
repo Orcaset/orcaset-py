@@ -6,8 +6,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import count
+from typing import TYPE_CHECKING
 
-from .context import Context
+if TYPE_CHECKING:
+    from .context import Context
 
 _ids = count()
 
@@ -16,12 +18,22 @@ def _new_id() -> int:
     return next(_ids)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class F[A]:
-    """Lazy monadic expression: transformations are values, evaluated by run()."""
+    """Lazy monadic expression: an inert Free-style AST evaluated by Context.run.
+
+    Equality and hashing are by ``id`` only so deep Map/Bind chains do not
+    recurse when recorded in ``Context.edges``.
+    """
 
     label: str | None = field(default=None, kw_only=True)
     id: int = field(default_factory=_new_id, kw_only=True)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, F) and self.id == other.id
+
+    def __hash__(self) -> int:
+        return self.id
 
     @staticmethod
     def pure[T](value: T, *, label: str | None = None) -> F[T]:
@@ -29,14 +41,14 @@ class F[A]:
 
     @staticmethod
     def delay[T](thunk: Callable[[], T], *, label: str | None = None) -> F[T]:
-        """Defer a computation until first eval; result is cached by id in Context."""
+        """Defer a computation until first force; result is cached by id in Context."""
         return Delay(thunk, label=label)
 
     def map[B](self, f: Callable[[A], B], *, label: str | None = None) -> F[B]:
         return Map(self, f, label=label)
 
     def apply[B, C](self: F[Callable[[B], C]], fa: F[B], *, label: str | None = None) -> F[C]:
-        return Apply(self, fa, label=label)
+        return self.bind(lambda f: fa.map(f), label=label)
 
     def bind[B](self, f: Callable[[A], F[B]], *, label: str | None = None) -> F[B]:
         return Bind(self, f, label=label)
@@ -44,63 +56,36 @@ class F[A]:
     def run(self, ctx: Context) -> A:
         return ctx.run(self)
 
-    def eval(self, ctx: Context) -> A:
-        raise NotImplementedError
 
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Pure[A](F[A]):
     value: A
-
-    def eval(self, ctx: Context) -> A:
-        return self.value
 
     def __repr__(self) -> str:
         return f"Pure({self.value!r})"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Delay[A](F[A]):
     thunk: Callable[[], A]
-
-    def eval(self, ctx: Context) -> A:
-        return self.thunk()
 
     def __repr__(self) -> str:
         return f"Delay({self.thunk!r})"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Map[A, B](F[B]):
     source: F[A]
     f: Callable[[A], B]
-
-    def eval(self, ctx: Context) -> B:
-        return self.f(ctx.run(self.source))
 
     def __repr__(self) -> str:
         return f"Map({self.source!r}, {self.f!r})"
 
 
-@dataclass(frozen=True, slots=True)
-class Apply[A, B](F[B]):
-    func: F[Callable[[A], B]]
-    arg: F[A]
-
-    def eval(self, ctx: Context) -> B:
-        return ctx.run(self.func)(ctx.run(self.arg))
-
-    def __repr__(self) -> str:
-        return f"Apply({self.func!r}, {self.arg!r})"
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Bind[A, B](F[B]):
     source: F[A]
     f: Callable[[A], F[B]]
-
-    def eval(self, ctx: Context) -> B:
-        return ctx.run(self.f(ctx.run(self.source)))
 
     def __repr__(self) -> str:
         return f"Bind({self.source!r}, {self.f!r})"

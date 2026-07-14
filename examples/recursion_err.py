@@ -1,28 +1,26 @@
-# Examples of recursion errors
+# Deep F evaluation example
+#
+# Previously ``F`` was forced recursively, so chains deeper than ~1000 raised
+# RecursionError. Evaluation is now an iterative Free interpreter, so arbitrary
+# Map/Bind depth is fine.
+#
+# The Seq ``nth`` performance issue remains.
 
 from orcaset import Cons, Context, F, Pure, Seq, print_deps
 
 # -------------------------------------------------------------------------------------------------
-# Map explosion example
-# `F.eval` is resolved recursively, not iteratively, so node depth can blow up the stack.
-# Simple example of a RecursionError from this approach
-# Depth of >1000 easily achievable for even mid-sized models
-value = Pure(1)
+# Deep Map chain — used to blow the call stack; now evaluates iteratively.
+value: F[int] = Pure(1)
 
-for i in range(1000):
+for _ in range(10_000):
     value = value.map(lambda x: x + 1)
 
 ctx = Context()
-
-# This fails for i == 1000
-print(value.run(ctx))
-
-# Print dependency edges
-# print_deps(ctx, value)
+print("Value of 10,000th mapped value: ", value.run(ctx))
 
 
 # -------------------------------------------------------------------------------------------------
-# Sequence explosion example
+# Sequence lookback example (construction footgun; not a recursion-limit issue anymore)
 def nth[T](s: Seq[F[T]], n: int) -> F[T]:
     """Return the nth F-headed element, forcing tails through the F cache."""
     if n < 0:
@@ -49,28 +47,16 @@ def make_seq() -> Seq[F[int]]:
 
 seq = make_seq()
 
+# ``nth`` still builds a Bind chain of length n (large graphs / quadratic lookback).
+print("\nSequence elements:")
+print(nth(seq, 0).run(Context()))
+print(nth(seq, 1).run(Context()))
+print(nth(seq, 2).run(Context()))
 
-first = nth(seq, 0)
-second = nth(seq, 1)
-
-ctx = Context()
-
-# Print dependencies for the first, second, and third sequence elements
-# print("First node deps:")
-# print_deps(ctx, first)
-# print("\nSecond node deps:")
-# print_deps(ctx, second)
-# print("\nThird node deps:")
-# print_deps(ctx, nth(seq, 2))
-
-# This blows up
-# `Seq.tail` is defined by a recursive index-based lookback via `nth`.
-# The `bind` operation in `nth` creates a new object with a new ID on each call.
-# This means that calling `nth(seq, i)` walks up a new bind sequence to element `i - 1` at each step `i`.
-# Results in quadratic(?) complexity.
-
-# print("\nGetting even a semi-far out element results in a RecursionError:")
-# try:
-#     print_deps(ctx, nth(seq, 40))
-# except RecursionError as e:
-#     raise e
+print("\nSequence element deps:")
+print("\nNode 0 deps:")
+print_deps(ctx, nth(seq, 0))
+print("\nNode 1 deps:")
+print_deps(ctx, nth(seq, 1))
+print("\nNode 2 deps:")
+print_deps(ctx, nth(seq, 2))

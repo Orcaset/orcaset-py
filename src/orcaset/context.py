@@ -3,42 +3,122 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from .f import F
+from .f import Bind, Delay, F, Map, Pure
+
+
+@dataclass(frozen=True, slots=True)
+class _Eval:
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _MapK:
+    f: Callable[[Any], Any]
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _BindK:
+    f: Callable[[Any], F[Any]]
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _Join:
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _Done:
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _Mark:
+    """Sentinel so nested ``run`` stops when its subtree has produced a value."""
+
+
+type _Frame = _Eval | _MapK | _BindK | _Join | _Done | _Mark
 
 
 @dataclass(slots=True)
 class Context:
-    """Evaluation engine with id-keyed result cache.
+    """Iterative Free interpreter with id-keyed result cache.
 
     Cache keys are ``F.id`` values, not object identity, so shared subgraphs
     and re-forced sequence tails reuse the same computed results.
     """
 
     stack: list[F[Any]] = field(default_factory=list)
+    frames: list[_Frame] = field(default_factory=list)
+    values: list[Any] = field(default_factory=list)
     edges: set[tuple[F[Any], F[Any]]] = field(default_factory=set)
     cache: dict[int, Any] = field(default_factory=dict)
 
     def run[A](self, node: F[A]) -> A:
+        mark = _Mark()
+        self.frames.append(mark)
+        self.frames.append(_Eval(node))
+        while self.frames[-1] is not mark:
+            self._step()
+        self.frames.pop()
+        return self.values.pop()
+
+    def _step(self) -> None:
+        frame = self.frames.pop()
+        match frame:
+            case _Eval(node):
+                self._eval(node)
+            case _MapK(f, node):
+                v = self.values.pop()
+                self.values.append(f(v))
+                self.frames.append(_Done(node))
+            case _BindK(f, node):
+                v = self.values.pop()
+                fb = f(v)
+                self.frames.append(_Join(node))
+                self.frames.append(_Eval(fb))
+            case _Join(node):
+                self.frames.append(_Done(node))
+            case _Done(node):
+                self.cache[node.id] = self.values[-1]
+                self.stack.pop()
+            case _Mark():
+                raise RuntimeError("internal error: mark frame reached _step")
+            case _:
+                raise TypeError(f"unknown frame: {frame!r}")
+
+    def _eval(self, node: F[Any]) -> None:
         if self.stack:
             self.edges.add((self.stack[-1], node))
 
         if node.id in self.cache:
-            return self.cache[node.id]
+            self.values.append(self.cache[node.id])
+            return
 
         if any(frame.id == node.id for frame in self.stack):
             raise RuntimeError(f"cycle detected: {node!r}")
 
         self.stack.append(node)
-        try:
-            result = node.eval(self)
-            self.cache[node.id] = result
-            return result
-        finally:
-            self.stack.pop()
+        match node:
+            case Pure(value=v):
+                self.values.append(v)
+                self.frames.append(_Done(node))
+            case Delay(thunk=t):
+                self.values.append(t())
+                self.frames.append(_Done(node))
+            case Map(source=src, f=f):
+                self.frames.append(_MapK(f, node))
+                self.frames.append(_Eval(src))
+            case Bind(source=src, f=f):
+                self.frames.append(_BindK(f, node))
+                self.frames.append(_Eval(src))
+            case _:
+                raise TypeError(f"unknown F node: {type(node).__name__}")
 
 
 def _fmt(node: F[Any]) -> str:
