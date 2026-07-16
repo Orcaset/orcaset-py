@@ -1,6 +1,0 @@
-# Local config so this example's `model` package doesn't collide with other examples'.
-search-path = ["../../src", "."]
-strict-callable-subtyping = true
-
-[errors]
-implicit-any = true
