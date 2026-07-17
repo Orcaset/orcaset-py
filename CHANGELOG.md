@@ -9,6 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Changed demand resolution to use an explicit stack so deeply dependent rule
+  chains do not exhaust Python's call stack.
+
 ## [0.4.0] - 2026-06-18
 
 ### Added
