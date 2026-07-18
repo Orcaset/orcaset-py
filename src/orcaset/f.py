@@ -48,7 +48,7 @@ class F[A]:
         return Map(self, f, label=label)
 
     def apply[B, C](self: F[Callable[[B], C]], fa: F[B], *, label: str | None = None) -> F[C]:
-        return self.bind(lambda f: fa.map(f), label=label)
+        return Apply(self, fa, label=label)
 
     def bind[B](self, f: Callable[[A], F[B]], *, label: str | None = None) -> F[B]:
         return Bind(self, f, label=label)
@@ -80,6 +80,15 @@ class Map[A, B](F[B]):
 
     def __repr__(self) -> str:
         return f"Map({self.source!r}, {self.f!r})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class Apply[B, C](F[C]):
+    ff: F[Callable[[B], C]]
+    fa: F[B]
+
+    def __repr__(self) -> str:
+        return f"Apply({self.ff!r}, {self.fa!r})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)

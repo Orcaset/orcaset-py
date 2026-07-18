@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .f import Bind, Delay, F, Map, Pure
+from .f import Apply, Bind, Delay, F, Map, Pure
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +28,17 @@ class _BindK:
 
 
 @dataclass(frozen=True, slots=True)
+class _ApplyArg:
+    fa: F[Any]
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _ApplyCall:
+    node: F[Any]
+
+
+@dataclass(frozen=True, slots=True)
 class _Join:
     node: F[Any]
 
@@ -42,7 +53,7 @@ class _Mark:
     """Sentinel so nested ``run`` stops when its subtree has produced a value."""
 
 
-type _Frame = _Eval | _MapK | _BindK | _Join | _Done | _Mark
+type _Frame = _Eval | _MapK | _BindK | _ApplyArg | _ApplyCall | _Join | _Done | _Mark
 
 
 @dataclass(slots=True)
@@ -82,6 +93,14 @@ class Context:
                 fb = f(v)
                 self.frames.append(_Join(node))
                 self.frames.append(_Eval(fb))
+            case _ApplyArg(fa, node):
+                self.frames.append(_ApplyCall(node))
+                self.frames.append(_Eval(fa))
+            case _ApplyCall(node):
+                a = self.values.pop()
+                f = self.values.pop()
+                self.values.append(f(a))
+                self.frames.append(_Done(node))
             case _Join(node):
                 self.frames.append(_Done(node))
             case _Done(node):
@@ -114,6 +133,9 @@ class Context:
             case Map(source=src, f=f):
                 self.frames.append(_MapK(f, node))
                 self.frames.append(_Eval(src))
+            case Apply(ff=ff, fa=fa):
+                self.frames.append(_ApplyArg(fa, node))
+                self.frames.append(_Eval(ff))
             case Bind(source=src, f=f):
                 self.frames.append(_BindK(f, node))
                 self.frames.append(_Eval(src))

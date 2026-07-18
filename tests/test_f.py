@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from orcaset import Bind, Context, F, Pure
+from orcaset import Apply, Bind, Context, F, Pure
 
 
 def test_deep_map_chain() -> None:
@@ -20,6 +20,14 @@ def test_deep_bind_chain() -> None:
     value: F[int] = Pure(0)
     for _ in range(10_000):
         value = value.bind(lambda x: Pure(x + 1))
+
+    assert value.run(Context()) == 10_000
+
+
+def test_deep_apply_chain() -> None:
+    value: F[int] = Pure(0)
+    for _ in range(10_000):
+        value = Pure(lambda x: x + 1).apply(value)
 
     assert value.run(Context()) == 10_000
 
@@ -68,7 +76,7 @@ def test_edges_recorded_for_map_and_bind() -> None:
     assert (bound.id, mapped.id) in edge_ids
 
 
-def test_apply_sugar_matches_bind_map() -> None:
+def test_apply_matches_bind_map() -> None:
     ff = Pure(lambda x: x * 3)
     fa = Pure(7)
 
@@ -78,8 +86,30 @@ def test_apply_sugar_matches_bind_map() -> None:
     ctx = Context()
     assert via_apply.run(ctx) == 21
     assert via_bind.run(Context()) == 21
-    assert isinstance(via_apply, Bind)
+    assert isinstance(via_apply, Apply)
     assert isinstance(via_apply, F)
+
+    edge_ids = {(p.id, c.id) for p, c in ctx.edges}
+    assert (via_apply.id, ff.id) in edge_ids
+    assert (via_apply.id, fa.id) in edge_ids
+
+
+def test_apply_reuses_shared_argument() -> None:
+    calls = 0
+
+    def tick() -> int:
+        nonlocal calls
+        calls += 1
+        return 7
+
+    fa = F.delay(tick, label="fa")
+    left = Pure(lambda x: x + 1).apply(fa, label="left")
+    right = Pure(lambda x: x * 3).apply(fa, label="right")
+    total = left.bind(lambda a: right.map(lambda b: a + b), label="total")
+
+    ctx = Context()
+    assert total.run(ctx) == 29
+    assert calls == 1
 
 
 def test_nested_run_from_delay_thunk() -> None:

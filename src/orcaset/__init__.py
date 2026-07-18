@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from .context import Context, print_deps, print_edges
-from .f import Bind, Delay, F, Map, Pure
+from .f import Apply, Bind, Delay, F, Map, Pure
 from .period import Period
 from .seq import Cons, Empty, Seq, empty
 from .cell import Point, Span
 
 __all__ = [
+    "Apply",
     "Bind",
     "Context",
     "Delay",
