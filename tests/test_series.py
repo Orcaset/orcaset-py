@@ -541,7 +541,7 @@ def test_only_rejects_empty_and_ambiguous() -> None:
 
 def test_sum_cells_sums_and_defaults_when_empty() -> None:
     ctx = Context()
-    assert sum_cells(0.0)(()).run(ctx) == 0.0
+    assert sum_cells(fill=0.0)(()).run(ctx) == 0.0
     pairs = ((0, Pure(1.0)), (1, Pure(2.0)), (2, Pure(3.5)))
     assert sum_cells()(pairs).run(ctx) == pytest.approx(6.5)
 
