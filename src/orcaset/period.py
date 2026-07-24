@@ -14,11 +14,7 @@ class Period:
 
     ``a < b`` iff ``a`` ends at or before ``b`` starts; ``a > b`` iff ``a``
     starts at or after ``b`` ends. Overlapping periods are incomparable
-    (comparisons return ``NotImplemented``). Equality is unchanged: same
-    ``start`` and ``end``.
-
-    Periods used as series keys must be non-overlapping and increasing so this
-    partial order is total on each series' key set.
+    (comparisons return ``NotImplemented``).
 
     The start date must be strictly before the end date. Raises a ValueError if not.
     """
