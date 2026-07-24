@@ -5,17 +5,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
-from functools import total_ordering
 
 from dateutil.relativedelta import relativedelta
 
 
-@total_ordering
 class Period:
-    """A span of time ordered by ``(start, end)``.
+    """A span of time with a partial order over non-overlapping intervals.
 
-    Periods used as series keys must be totally ordered, which is meaningful
-    when the periods in one series are non-overlapping and increasing.
+    ``a < b`` iff ``a`` ends at or before ``b`` starts; ``a > b`` iff ``a``
+    starts at or after ``b`` ends. Overlapping periods are incomparable
+    (comparisons return ``NotImplemented``). Equality is unchanged: same
+    ``start`` and ``end``.
+
+    Periods used as series keys must be non-overlapping and increasing so this
+    partial order is total on each series' key set.
 
     The start date must be strictly before the end date. Raises a ValueError if not.
     """
@@ -31,8 +34,45 @@ class Period:
             return NotImplemented
         return self.start == other.start and self.end == other.end
 
-    def __lt__(self, other: Period) -> bool:
-        return self.end <= other.start
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        if self.end <= other.start:
+            return True
+        if self.start >= other.end:
+            return False
+        if self == other:
+            return False
+        return NotImplemented
+
+    def __gt__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        if self.start >= other.end:
+            return True
+        if self.end <= other.start:
+            return False
+        if self == other:
+            return False
+        return NotImplemented
+
+    def __le__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        if self == other or self.end <= other.start:
+            return True
+        if self.start >= other.end:
+            return False
+        return NotImplemented
+
+    def __ge__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        if self == other or self.start >= other.end:
+            return True
+        if self.end <= other.start:
+            return False
+        return NotImplemented
 
     def __hash__(self) -> int:
         return hash((self.start, self.end))
