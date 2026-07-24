@@ -25,6 +25,3 @@ line-length = 100
 dev = [
     "pytest>=9.0.3",
 ]
-examples = [
-    "pandas>=3.0.3",
-]

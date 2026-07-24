@@ -17,7 +17,7 @@ from itertools import islice
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, F, Period, Series, print_deps
+from orcaset import Context, F, Period, Series, clip_daily, flow, print_deps, total
 
 timeline: list[Period] = list(islice(Period.seq(date(2025, 12, 31), relativedelta(years=1)), 4))
 
@@ -25,14 +25,16 @@ timeline: list[Period] = list(islice(Period.seq(date(2025, 12, 31), relativedelt
 # CAPEX — model input
 capex = Series.from_pairs(
     [(timeline[0], 100.0), (timeline[1], 200.0)],
+    clip_daily(),
+    total(0.0),
     label="Capex",
 )
 
 
-# AMORT COHORTS — one series per capex period, defined against the capex cell
+# AMORT COHORTS — one series per capex period, defined against the capex window
 def amort_cells(source: Period, label: str) -> Callable[[], Iterator[tuple[Period, F[float]]]]:
     def cells() -> Iterator[tuple[Period, F[float]]]:
-        expense = capex.at(source)
+        expense = capex.query(source)
         period = Period(source.end, source.end + relativedelta(years=1))
         for _ in range(2):
             yield period, expense.map(lambda x: x / 2, label=f"{label}@{period}")
@@ -42,7 +44,7 @@ def amort_cells(source: Period, label: str) -> Callable[[], Iterator[tuple[Perio
 
 
 cohorts: list[Series[Period, float]] = [
-    Series.from_cells(amort_cells(period, f"Amort cohort {i}"), label=f"Amort cohort {i}")
+    flow(amort_cells(period, f"Amort cohort {i}"), label=f"Amort cohort {i}")
     for i, period in enumerate(timeline[:2], start=1)
 ]
 
@@ -62,8 +64,8 @@ rows: list[tuple[str, Series[Period, float]]] = [
 
 print("Period end".ljust(16) + "".join(str(p.end).rjust(12) for p in timeline))
 for name, series in rows:
-    values = (series.get(period, 0.0).run(ctx) for period in timeline)
+    values = (series.query(period).run(ctx) for period in timeline)
     print(name.ljust(16) + "".join(f"{value:12.0f}" for value in values))
 
 print(f"\n{'-' * 16}\nTotal amort deps for {timeline[2]}:\n")
-print_deps(ctx, total_amort.at(timeline[2]))
+print_deps(ctx, total_amort.query(timeline[2]))

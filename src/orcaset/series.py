@@ -4,38 +4,49 @@
 """Line-item series over the free monad core.
 
 A :class:`Series` is a financial line item: an ordered stream of
-``(key, F[value])`` cells. It owns the identity that makes caching correct:
+``(key, F[value])`` cells plus a query convention — two functions fixed at
+construction:
+
+- ``select`` narrows the materialized stream to the ``(key, cell)`` pairs
+  that answer a query, clipping or otherwise transforming pairs as needed.
+  Its output is the complete, self-describing evidence for a query's value.
+- ``reduce`` collapses the selected pairs to a single value.
+
+Identity is what makes caching correct:
 
 - Each series holds exactly one stream node, built at construction. Construct
   a series once per model and share it by reference; never rebuild the same
   logical series.
-- :meth:`Series.at` returns one memoized cell-address node per key
-  (``"Label@key"``), so every reference to the same cell shares a single
-  graph node.
+- :meth:`Series.select` and :meth:`Series.query` return one memoized node per
+  ``(series, query)``, keyed by query equality, so every reference to the
+  same question shares a single graph node and repeated calls are O(1).
 - Values are cached per :class:`~orcaset.context.Context`. Evaluating in a
   fresh context re-runs the cell factory from scratch.
 
 Key discipline (assumed by the machinery, enforced by convention): keys are
-hashable and totally ordered, and each series yields its keys in strictly
-increasing order, so lookups can stop as soon as the stream passes the
-requested key.
+hashable and totally ordered, each series yields its keys in strictly
+increasing order, and queries are hashable and immutable. Select and reduce
+functions must be deterministic, must never evaluate nodes (no ``run``), and
+should return original cell nodes on trivial paths (an unclipped pair, a
+fold of one) so shared cells stay shared graph nodes.
 
-Recursive definitions are written as unfolds: carry the previous cell in
-generator state so each cell references its predecessor directly. Use
-``at``/``get`` for references *between* series.
+Recursive definitions query the series being defined: a cell references
+``series.query(prior_window)`` for whatever it depends on, so dependencies
+are stated in key terms rather than stream positions and survive re-keying
+(e.g. monthly to quarterly). Standard conventions live in
+:mod:`orcaset.conventions`.
 """
 
 from __future__ import annotations
 
 import heapq
+from bisect import bisect_left
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from datetime import date
-from functools import reduce
 from itertools import groupby
+from typing import Any, cast
 
 from .context import Context
 from .f import Delay, F, Pure
-from .period import Period
 
 
 def _lift2[A, B, W](
@@ -73,8 +84,9 @@ class ReplayIter[K, V]:
     def find(self, key: K) -> F[V]:
         """Return the cell at ``key``, pulling the stream forward as needed.
 
-        Raises ``KeyError`` if the stream passes or exhausts without yielding
-        ``key``.
+        Hash-indexed: repeated lookups are O(1) once the stream has been
+        pulled through ``key``. Raises ``KeyError`` if the stream passes or
+        exhausts without yielding ``key``.
         """
         cell = self._index.get(key)
         if cell is not None:
@@ -86,6 +98,23 @@ class ReplayIter[K, V]:
             if kk > key:  # type: ignore[operator]
                 break
         raise KeyError(key)
+
+    def iter_from(self, key: K) -> Iterator[tuple[K, F[V]]]:
+        """Iterate pairs from the first key not strictly less than ``key``.
+
+        Relies on keys arriving in increasing order: pulls the stream until it
+        reaches or passes ``key``, then bisects the buffer, so window selects
+        skip the prefix instead of rescanning it on every query.
+        """
+        while not self._items or self._items[-1][0] < key:  # type: ignore[operator]
+            if not self._pull():
+                break
+        i = bisect_left(self._items, key, key=lambda item: item[0])  # type: ignore[bad-argument-type]
+        while True:
+            if i >= len(self._items) and not self._pull():
+                return
+            yield self._items[i]
+            i += 1
 
     def _pull(self) -> bool:
         if self._exhausted:
@@ -101,105 +130,149 @@ class ReplayIter[K, V]:
         return True
 
 
-class Series[K, V]:
-    """A financial line item: an ordered stream of ``(key, F[value])`` cells.
+type Select[K, V, Q] = Callable[[ReplayIter[K, V], Q], tuple[tuple[K, F[V]], ...]]
+"""Narrow a stream to the (possibly clipped) ``(key, cell)`` pairs answering ``Q``.
+
+Pure and deterministic: may transform keys and construct new cell nodes as
+data (e.g. scale a partial period) but must never evaluate them, and must
+return original cell nodes when no transformation applies. Coverage and gap
+policy live here — the output is the full evidence handed to ``Reduce``.
+"""
+
+type Reduce[K, V] = Callable[[tuple[tuple[K, F[V]], ...]], F[V]]
+"""Collapse selected ``(key, cell)`` pairs to a single value node.
+
+Pure and deterministic: sees exactly the select output and should return the
+lone cell untouched when reducing a single pair.
+"""
+
+
+class Series[K, V, Q = K]:
+    """A financial line item: an ordered stream of ``(key, F[value])`` cells
+    plus the select/reduce convention that answers queries against it.
 
     ``stream`` is the single graph node whose per-context value is the
     :class:`ReplayIter` materialization of this series.
     """
 
-    __slots__ = ("_cells", "_stream", "label")
+    __slots__ = ("_queries", "_reduce", "_select", "_selects", "_stream", "label")
 
-    def __init__(self, stream: F[ReplayIter[K, V]], *, label: str) -> None:
+    def __init__(
+        self,
+        stream: F[ReplayIter[K, V]],
+        select: Select[K, V, Q],
+        reduce: Reduce[K, V],
+        *,
+        label: str,
+    ) -> None:
         self.label = label
         self._stream: F[ReplayIter[K, V]] = stream
-        self._cells: dict[K, F[V]] = {}
+        self._select = select
+        self._reduce = reduce
+        self._selects: dict[Q, F[tuple[tuple[K, F[V]], ...]]] = {}
+        self._queries: dict[Q, F[V]] = {}
 
     def __repr__(self) -> str:
         return f"Series({self.label!r})"
 
     @classmethod
     def from_cells(
-        cls, cells: Callable[[], Iterable[tuple[K, F[V]]]], *, label: str
-    ) -> Series[K, V]:
+        cls,
+        cells: Callable[[], Iterable[tuple[K, F[V]]]],
+        select: Select[K, V, Q],
+        reduce: Reduce[K, V],
+        *,
+        label: str,
+    ) -> Series[K, V, Q]:
         """Define a series from a factory of ``(key, cell)`` pairs.
 
-        The factory runs once per context. Generator locals are the idiomatic
-        place to thread recursive state (the prior cell); the factory must be
-        deterministic.
+        The factory runs once per context. It may reference the series being
+        defined through ``query`` (nodes are inert until evaluated); it must
+        be deterministic and must not evaluate its own cells.
         """
-        return cls(
-            Delay(lambda: ReplayIter(cells()), label=f"{label} stream"),
-            label=label,
+        return cast(
+            Series[K, V, Q],
+            Series(
+                Delay(lambda: ReplayIter(cells()), label=f"{label} stream"),
+                select,
+                reduce,
+                label=label,
+            ),
         )
 
     @classmethod
-    def from_pairs(cls, pairs: Iterable[tuple[K, V]], *, label: str) -> Series[K, V]:
+    def from_pairs(
+        cls,
+        pairs: Iterable[tuple[K, V]],
+        select: Select[K, V, Q],
+        reduce: Reduce[K, V],
+        *,
+        label: str,
+    ) -> Series[K, V, Q]:
         """Define an input series from plain ``(key, value)`` pairs.
 
         Values are lifted with ``Pure`` once at construction, so input cells
         are model-owned nodes shared across contexts.
         """
         items: list[tuple[K, F[V]]] = [(key, Pure(value)) for key, value in pairs]
-        return cls.from_cells(lambda: items, label=label)
+        return cls.from_cells(lambda: items, select, reduce, label=label)
 
-    def at(self, key: K) -> F[V]:
-        """The cell address ``Label@key``: one shared node per (series, key).
+    def select(self, q: Q) -> F[tuple[tuple[K, F[V]], ...]]:
+        """The selection ``Label.select[q]``: one shared node per (series, query).
 
-        Evaluation forces the stream through ``key``; a key the series never
-        yields raises ``KeyError``.
+        Evaluates to the (possibly clipped) ``(key, cell)`` pairs that answer
+        ``q`` — the audit view behind :meth:`query`. Cells stay lazy; run them
+        in the same context to see the values they contribute.
         """
-        cell = self._cells.get(key)
-        if cell is None:
-            cell = self._stream.bind(lambda replay: replay.find(key), label=f"{self.label}@{key}")
-            self._cells[key] = cell
-        return cell
+        node = self._selects.get(q)
+        if node is None:
+            sel = self._select
+            node = self._stream.map(
+                lambda replay: sel(replay, q), label=f"{self.label}.select[{q}]"
+            )
+            self._selects[q] = node
+        return node
 
-    def get(self, key: K, default: V) -> F[V]:
-        """Like :meth:`at`, but evaluates to ``default`` when ``key`` is absent."""
+    def query(self, q: Q) -> F[V]:
+        """The value of this series at ``q``: one shared node per (series, query).
 
-        def lookup(replay: ReplayIter[K, V]) -> F[V]:
-            try:
-                return replay.find(key)
-            except KeyError:
-                return Pure(default)
+        ``query`` is the sole retrieval interface: ``reduce(select(q))``.
+        Evaluation forces only the cells the convention selects.
+        """
+        node = self._queries.get(q)
+        if node is None:
+            red = self._reduce
+            label = f"{self.label}[{q}]"
 
-        return self._stream.bind(lookup, label=f"{self.label}@{key}?")
+            def reduce_pairs(pairs: tuple[tuple[K, F[V]], ...]) -> F[V]:
+                try:
+                    return red(pairs)
+                except Exception as err:
+                    err.add_note(f"while reducing {label}")
+                    raise
+
+            node = self.select(q).bind(reduce_pairs, label=label)
+            self._queries[q] = node
+        return node
 
     def items(self, ctx: Context) -> Iterator[tuple[K, F[V]]]:
         """Iterate ``(key, cell)`` pairs by materializing the stream in ``ctx``."""
         return iter(self._stream.run(ctx))
 
-    def between(
-        self: Series[Period, float], start: date, end: date, *, label: str | None = None
-    ) -> F[float]:
-        """Aggregate a period-keyed flow series over ``[start, end)``.
+    def map[W](
+        self,
+        f: Callable[[V], W],
+        *,
+        select: Select[K, W, Q] | None = None,
+        reduce: Reduce[K, W] | None = None,
+        label: str,
+    ) -> Series[K, W, Q]:
+        """Pointwise transform. Derived cells reference this series' cells.
 
-        Sums every cell whose period overlaps the window, prorating partial
-        overlaps by day count (values accrue uniformly across their period).
-        Time not covered by any period contributes zero, so a window touching
-        no periods evaluates to ``0.0``. Zero-length periods are skipped.
+        The select/reduce convention is inherited unless overridden. An
+        inherited convention must make sense for ``W``: the derived series is
+        its own line item, so queries clip and fold the mapped values.
         """
-
-        def aggregate(replay: ReplayIter[Period, float]) -> F[float]:
-            total: F[float] | None = None
-            for period, cell in replay:
-                if period.start >= end:
-                    break
-                overlap = (min(period.end, end) - max(period.start, start)).days
-                if overlap <= 0:
-                    continue
-                span = (period.end - period.start).days
-                if span == 0:
-                    continue
-                part = cell if overlap == span else cell.map(lambda v, f=overlap / span: v * f)
-                total = part if total is None else _lift2(lambda a, b: a + b, total, part)
-            return total if total is not None else Pure(0.0)
-
-        return self._stream.bind(aggregate, label=label or f"{self.label}[{start}..{end}]")
-
-    def map[W](self, f: Callable[[V], W], *, label: str) -> Series[K, W]:
-        """Pointwise transform. Derived cells reference this series' cells."""
 
         def wrap(replay: ReplayIter[K, V]) -> ReplayIter[K, W]:
             def cells() -> Iterator[tuple[K, F[W]]]:
@@ -208,20 +281,31 @@ class Series[K, V]:
 
             return ReplayIter(cells())
 
-        return Series(self._stream.map(wrap, label=f"{label} stream"), label=label)
+        return cast(
+            Series[K, W, Q],
+            Series(
+                self._stream.map(wrap, label=f"{label} stream"),
+                select if select is not None else cast("Select[K, W, Q]", self._select),
+                reduce if reduce is not None else cast("Reduce[K, W]", self._reduce),
+                label=label,
+            ),
+        )
 
     @staticmethod
-    def map2[K2, A, B, W](
-        a: Series[K2, A],
-        b: Series[K2, B],
+    def map2[K2, A, B, W, Q2](
+        a: Series[K2, A, Q2],
+        b: Series[K2, B, Any],
         f: Callable[[A, B], W],
         *,
+        select: Select[K2, W, Q2] | None = None,
+        reduce: Reduce[K2, W] | None = None,
         label: str,
-    ) -> Series[K2, W]:
+    ) -> Series[K2, W, Q2]:
         """Combine two key-aligned series pointwise.
 
         Streams are zipped strictly: iteration stops at the shorter series and
-        raises ``ValueError`` if keys ever disagree.
+        raises ``ValueError`` if keys ever disagree. The select/reduce
+        convention comes from ``a`` unless overridden.
         """
 
         def wrap(ra: ReplayIter[K2, A], rb: ReplayIter[K2, B]) -> ReplayIter[K2, W]:
@@ -237,19 +321,27 @@ class Series[K, V]:
             lambda ra: b._stream.map(lambda rb: wrap(ra, rb)),
             label=f"{label} stream",
         )
-        return Series(stream, label=label)
+        return Series(
+            stream,
+            select if select is not None else cast("Select[K2, W, Q2]", a._select),
+            reduce if reduce is not None else cast("Reduce[K2, W]", a._reduce),
+            label=label,
+        )
 
     @staticmethod
-    def merge[K2, V2](
-        items: Sequence[Series[K2, V2]],
+    def merge[K2, V2, Q2](
+        items: Sequence[Series[K2, V2, Q2]],
         combine: Callable[[V2, V2], V2],
         *,
+        select: Select[K2, V2, Q2] | None = None,
+        reduce: Reduce[K2, V2] | None = None,
         label: str,
-    ) -> Series[K2, V2]:
+    ) -> Series[K2, V2, Q2]:
         """Ordered outer-merge of several series, combining cells on equal keys.
 
         Keys absent from a series are passed through from the others, so the
-        result covers the union of keys in key order.
+        result covers the union of keys in key order. The select/reduce
+        convention comes from the first series unless overridden.
         """
         if not items:
             raise ValueError("merge requires at least one series")
@@ -261,14 +353,11 @@ class Series[K, V]:
                     key=lambda item: item[0],  # type: ignore[bad-argument-type]
                 )
                 for key, group in groupby(merged, key=lambda item: item[0]):
-                    group_cells = [cell for _, cell in group]
-                    yield (
-                        key,
-                        reduce(
-                            lambda ca, cb: _lift2(combine, ca, cb, label=f"{label}@{key}"),
-                            group_cells,
-                        ),
-                    )
+                    group_cells = (cell for _, cell in group)
+                    acc = next(group_cells)
+                    for cell in group_cells:
+                        acc = _lift2(combine, acc, cell, label=f"{label}@{key}")
+                    yield key, acc
 
             return ReplayIter(cells())
 
@@ -277,4 +366,9 @@ class Series[K, V]:
             gathered = gathered.bind(
                 lambda replays, series=series: series._stream.map(lambda replay: (*replays, replay))
             )
-        return Series(gathered.map(wrap, label=f"{label} stream"), label=label)
+        return Series(
+            gathered.map(wrap, label=f"{label} stream"),
+            select if select is not None else items[0]._select,
+            reduce if reduce is not None else items[0]._reduce,
+            label=label,
+        )

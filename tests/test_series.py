@@ -10,49 +10,186 @@ from itertools import islice
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, F, Period, Pure, Series
+from orcaset import (
+    Context,
+    F,
+    Period,
+    Pure,
+    ReplayIter,
+    Series,
+    clip_daily,
+    exact,
+    flow,
+    keyed,
+    only,
+    only_or,
+    total,
+)
+
+MONTHLY = relativedelta(months=1)
+QUARTERLY = relativedelta(months=3)
+YEARLY = relativedelta(years=1)
+
+QUARTERS = list(islice(Period.seq(date(2025, 12, 31), QUARTERLY), 4))
 
 
-def test_at_basic_lookup() -> None:
-    series = Series.from_pairs([(0, 10.0), (1, 20.0), (2, 30.0)], label="Input")
+def quarterly_revenue() -> Series[Period, float]:
+    return Series.from_pairs(
+        zip(QUARTERS, [100.0, 110.0, 120.0, 130.0]),
+        clip_daily(),
+        total(0.0),
+        label="Revenue",
+    )
+
+
+# ------------------------------------------------------------------ query basics
+
+
+def test_query_exact_key_lookup() -> None:
+    series = Series.from_pairs([(0, 10.0), (1, 20.0), (2, 30.0)], exact(), only(), label="Input")
 
     ctx = Context()
-    assert series.at(1).run(ctx) == 20.0
-    assert series.at(2).run(ctx) == 30.0
+    assert series.query(1).run(ctx) == 20.0
+    assert series.query(2).run(ctx) == 30.0
 
 
-def test_at_returns_same_node() -> None:
-    series = Series.from_pairs([(0, 1.0)], label="Input")
+def test_query_and_select_return_same_node() -> None:
+    series = Series.from_pairs([(0, 1.0)], exact(), only(), label="Input")
 
-    assert series.at(0) is series.at(0)
-    assert series.at(0).label == "Input@0"
+    assert series.query(0) is series.query(0)
+    assert series.select(0) is series.select(0)
+    assert series.query(0).label == "Input[0]"
+    assert series.select(0).label == "Input.select[0]"
 
 
-def test_at_missing_key_raises_and_context_survives() -> None:
-    series = Series.from_pairs([(0, 1.0), (2, 2.0)], label="Input")
+def test_query_nodes_memoized_by_query_equality() -> None:
+    revenue = quarterly_revenue()
+
+    a = revenue.query(Period(date(2026, 3, 1), date(2026, 4, 30)))
+    b = revenue.query(Period(date(2026, 3, 1), date(2026, 4, 30)))
+    assert a is b
+
+    sa = revenue.select(Period(date(2026, 3, 1), date(2026, 4, 30)))
+    sb = revenue.select(Period(date(2026, 3, 1), date(2026, 4, 30)))
+    assert sa is sb
+
+
+def test_query_missing_key_raises_and_context_survives() -> None:
+    series = Series.from_pairs([(0, 1.0), (2, 2.0)], exact(), only(), label="Input")
 
     ctx = Context()
     with pytest.raises(KeyError):
-        series.at(1).run(ctx)
+        series.query(1).run(ctx)
 
     assert ctx.frames == []
     assert ctx.values == []
     assert ctx.stack == []
     assert ctx.inflight == set()
-    assert series.at(2).run(ctx) == 2.0
+    assert series.query(2).run(ctx) == 2.0
 
 
-def test_get_defaults_on_missing_gap_and_past_end() -> None:
-    series = Series.from_pairs([(1, 5.0), (3, 7.0)], label="Input")
+def test_query_errors_note_the_query_label() -> None:
+    series = Series.from_pairs([(0, 1.0)], exact(), only(), label="Input")
+
+    with pytest.raises(KeyError) as excinfo:
+        series.query(7).run(Context())
+
+    assert any("Input[7]" in note for note in excinfo.value.__notes__)
+
+
+def test_only_or_defaults_on_missing_gap_and_past_end() -> None:
+    series = Series.from_pairs([(1, 5.0), (3, 7.0)], exact(), only_or(0.0), label="Input")
 
     ctx = Context()
-    assert series.get(0, 0.0).run(ctx) == 0.0
-    assert series.get(1, 0.0).run(ctx) == 5.0
-    assert series.get(2, 0.0).run(ctx) == 0.0
-    assert series.get(9, 0.0).run(ctx) == 0.0
+    assert series.query(0).run(ctx) == 0.0
+    assert series.query(1).run(ctx) == 5.0
+    assert series.query(2).run(ctx) == 0.0
+    assert series.query(9).run(ctx) == 0.0
 
 
-def test_unfold_lookback_is_linear_and_cached() -> None:
+# ------------------------------------------------------------------ caching
+
+
+def test_select_and_reduce_run_once_per_context_per_query() -> None:
+    sel_calls = 0
+    red_calls = 0
+    base_sel = clip_daily()
+    base_red = total(0.0)
+
+    def counting_sel(
+        replay: ReplayIter[Period, float], q: Period
+    ) -> tuple[tuple[Period, F[float]], ...]:
+        nonlocal sel_calls
+        sel_calls += 1
+        return base_sel(replay, q)
+
+    def counting_red(pairs: tuple[tuple[Period, F[float]], ...]) -> F[float]:
+        nonlocal red_calls
+        red_calls += 1
+        return base_red(pairs)
+
+    revenue = Series.from_pairs(
+        zip(QUARTERS, [100.0, 110.0, 120.0, 130.0]),
+        counting_sel,
+        counting_red,
+        label="Revenue",
+    )
+
+    q = Period(date(2025, 12, 31), date(2026, 12, 31))
+    ctx = Context()
+    assert revenue.query(q).run(ctx) == pytest.approx(460.0)
+    assert (sel_calls, red_calls) == (1, 1)
+
+    # Repeats in the same context are pure cache hits, including via an
+    # equal-but-distinct query object and the select audit view.
+    assert revenue.query(q).run(ctx) == pytest.approx(460.0)
+    assert revenue.query(Period(date(2025, 12, 31), date(2026, 12, 31))).run(ctx) == pytest.approx(
+        460.0
+    )
+    assert len(revenue.select(q).run(ctx)) == 4
+    assert (sel_calls, red_calls) == (1, 1)
+
+    # A fresh context re-evaluates once.
+    assert revenue.query(q).run(Context()) == pytest.approx(460.0)
+    assert (sel_calls, red_calls) == (2, 2)
+
+
+def test_query_recursion_is_linear_and_cached() -> None:
+    """counter[n] = counter[n - 1] + 1 via self-query; O(n) evaluations."""
+    map_calls = 0
+
+    def cells() -> Iterator[tuple[int, F[int]]]:
+        def inc(x: int) -> int:
+            nonlocal map_calls
+            map_calls += 1
+            return x + 1
+
+        yield 0, Pure(0)
+        n = 1
+        while True:
+            yield n, counter.query(n - 1).map(inc)
+            n += 1
+
+    counter = keyed(cells, label="Counter")
+
+    ctx = Context()
+    assert counter.query(100).run(ctx) == 100
+    assert map_calls == 100
+
+    # Earlier cells were computed along the way; nothing recomputes.
+    map_calls = 0
+    assert counter.query(50).run(ctx) == 50
+    assert map_calls == 0
+    assert counter.query(100).run(ctx) == 100
+    assert map_calls == 0
+
+    # A fresh context re-runs the factory from scratch.
+    map_calls = 0
+    assert counter.query(10).run(Context()) == 10
+    assert map_calls == 10
+
+
+def test_generator_state_recursion_is_linear_and_cached() -> None:
     """counter[n] = counter[n - 1] + 1 via generator state; O(n) evaluations."""
     map_calls = 0
 
@@ -69,22 +206,18 @@ def test_unfold_lookback_is_linear_and_cached() -> None:
             cell = cell.map(inc)
             n += 1
 
-    counter = Series.from_cells(cells, label="Counter")
+    counter = keyed(cells, label="Counter")
 
     ctx = Context()
-    assert counter.at(100).run(ctx) == 100
+    assert counter.query(100).run(ctx) == 100
     assert map_calls == 100
 
-    # Earlier cells were computed along the way; nothing recomputes.
     map_calls = 0
-    assert counter.at(50).run(ctx) == 50
-    assert map_calls == 0
-    assert counter.at(100).run(ctx) == 100
+    assert counter.query(50).run(ctx) == 50
     assert map_calls == 0
 
-    # A fresh context re-runs the factory from scratch.
     map_calls = 0
-    assert counter.at(10).run(Context()) == 10
+    assert counter.query(10).run(Context()) == 10
     assert map_calls == 10
 
 
@@ -99,27 +232,263 @@ def test_cross_series_shared_cells_compute_once() -> None:
 
         yield 0, F.delay(tick)
 
-    base = Series.from_cells(base_cells, label="Base")
+    base = keyed(base_cells, label="Base")
     double = base.map(lambda x: x * 2, label="Double")
     triple = base.map(lambda x: x * 3, label="Triple")
-    total = Series.map2(double, triple, lambda x, y: x + y, label="Total")
+    combined = Series.map2(double, triple, lambda x, y: x + y, label="Combined")
 
     ctx = Context()
-    assert total.at(0).run(ctx) == 500.0
+    assert combined.query(0).run(ctx) == 500.0
     assert calls == 1
 
 
+# ------------------------------------------------------------------ select audit
+
+
+def test_select_audits_clipping_and_reproduces_query_value() -> None:
+    revenue = quarterly_revenue()
+    window = Period(date(2026, 3, 1), date(2026, 4, 30))
+
+    ctx = Context()
+    pairs = revenue.select(window).run(ctx)
+
+    # 30 tail days of Q1 (90 days) + 30 head days of Q2 (91 days), keys clipped.
+    assert [key for key, _ in pairs] == [
+        Period(date(2026, 3, 1), date(2026, 3, 31)),
+        Period(date(2026, 3, 31), date(2026, 4, 30)),
+    ]
+    values = [cell.run(ctx) for _, cell in pairs]
+    assert values == pytest.approx([100.0 * 30 / 90, 110.0 * 30 / 91])
+    assert sum(values) == pytest.approx(revenue.query(window).run(ctx))
+
+
+def test_select_preserves_cell_identity_when_unclipped() -> None:
+    revenue = quarterly_revenue()
+
+    ctx = Context()
+    cells = dict(revenue.items(ctx))
+    [(key, cell)] = revenue.select(QUARTERS[1]).run(ctx)
+    assert key == QUARTERS[1]
+    assert cell is cells[QUARTERS[1]]
+
+
+def test_clip_daily_fill_materializes_gaps() -> None:
+    q2 = Period(date(2026, 3, 31), date(2026, 6, 30))
+    revenue = Series.from_pairs([(q2, 90.0)], clip_daily(fill=0.0), total(0.0), label="Revenue")
+    window = Period(date(2026, 1, 1), date(2027, 1, 1))
+
+    ctx = Context()
+    pairs = revenue.select(window).run(ctx)
+    assert [key for key, _ in pairs] == [
+        Period(date(2026, 1, 1), date(2026, 3, 31)),
+        q2,
+        Period(date(2026, 6, 30), date(2027, 1, 1)),
+    ]
+    assert [cell.run(ctx) for _, cell in pairs] == [0.0, 90.0, 0.0]
+    assert revenue.query(window).run(ctx) == pytest.approx(90.0)
+
+
+# ------------------------------------------------------------------ window queries
+
+
+def test_window_spanning_multiple_periods() -> None:
+    revenue = quarterly_revenue()
+
+    ctx = Context()
+    window = Period(date(2025, 12, 31), date(2026, 12, 31))
+    assert revenue.query(window).run(ctx) == pytest.approx(460.0)
+
+
+def test_window_exactly_one_period() -> None:
+    revenue = quarterly_revenue()
+
+    ctx = Context()
+    assert revenue.query(Period(date(2025, 12, 31), date(2026, 3, 31))).run(ctx) == pytest.approx(
+        100.0
+    )
+
+
+def test_window_part_of_one_period() -> None:
+    revenue = quarterly_revenue()
+
+    # 30 days of Q1's 90: 100 * 30 / 90
+    ctx = Context()
+    window = Period(date(2026, 1, 15), date(2026, 2, 14))
+    assert revenue.query(window).run(ctx) == pytest.approx(100.0 * 30 / 90)
+
+
+def test_window_straddling_two_periods() -> None:
+    revenue = quarterly_revenue()
+
+    # 30 tail days of Q1 (90 days) + 30 head days of Q2 (91 days)
+    expected = 100.0 * 30 / 90 + 110.0 * 30 / 91
+    ctx = Context()
+    window = Period(date(2026, 3, 1), date(2026, 4, 30))
+    assert revenue.query(window).run(ctx) == pytest.approx(expected)
+
+
+def test_window_touching_no_periods() -> None:
+    revenue = quarterly_revenue()
+
+    ctx = Context()
+    assert revenue.query(Period(date(2020, 1, 1), date(2020, 12, 31))).run(ctx) == 0.0
+    assert revenue.query(Period(date(2030, 1, 1), date(2030, 12, 31))).run(ctx) == 0.0
+
+
+def test_window_past_series_end_sums_covered_part() -> None:
+    revenue = quarterly_revenue()
+
+    ctx = Context()
+    window = Period(date(2026, 9, 30), date(2027, 12, 31))
+    assert revenue.query(window).run(ctx) == pytest.approx(130.0)
+
+
+def test_window_terminates_on_infinite_series() -> None:
+    def cells() -> Iterator[tuple[Period, F[float]]]:
+        for period in Period.seq(date(2025, 12, 31), QUARTERLY):
+            yield period, Pure(100.0)
+
+    revenue = flow(cells, label="Revenue")
+
+    ctx = Context()
+    window = Period(date(2026, 3, 31), date(2026, 9, 30))
+    assert revenue.query(window).run(ctx) == pytest.approx(200.0)
+
+
+# ------------------------------------------------------------------ recursion
+
+
+def test_calendrical_year_ago_self_reference() -> None:
+    """Historicals extended by revenue[q] = revenue[q - 1 year] * 1.1 via window query."""
+    historicals = [100.0, 110.0, 120.0, 130.0]
+
+    def cells() -> Iterator[tuple[Period, F[float]]]:
+        quarters = iter(Period.seq(date(2025, 12, 31), QUARTERLY))
+        for value, period in zip(historicals, quarters):
+            yield period, Pure(value)
+        for period in quarters:
+            prior = revenue.query(period.shift(relativedelta(years=-1)))
+            yield period, prior.map(lambda x: x * 1.1)
+
+    revenue = flow(cells, label="Revenue")
+    quarters = list(islice(Period.seq(date(2025, 12, 31), QUARTERLY), 12))
+
+    ctx = Context()
+    assert revenue.query(quarters[4]).run(ctx) == pytest.approx(110.0)  # 100 * 1.1
+    assert revenue.query(quarters[7]).run(ctx) == pytest.approx(143.0)  # 130 * 1.1
+    assert revenue.query(quarters[11]).run(ctx) == pytest.approx(157.3)  # 130 * 1.1^2
+
+    # Lookback goes through memoized query nodes: one node per (series, query).
+    assert revenue.query(quarters[4]) is revenue.query(quarters[4])
+
+
+def test_positional_year_ago_with_deque() -> None:
+    """Same model with a positional 4-quarter lag carried in generator state."""
+    from collections import deque
+
+    historicals = [100.0, 110.0, 120.0, 130.0]
+    quarters = list(islice(Period.seq(date(2025, 12, 31), QUARTERLY), 12))
+
+    def cells() -> Iterator[tuple[Period, F[float]]]:
+        window: deque[F[float]] = deque(maxlen=4)
+        values = iter(historicals)
+        for period in quarters:
+            value = next(values, None)
+            cell: F[float] = Pure(value) if value is not None else window[0].map(lambda x: x * 1.1)
+            window.append(cell)
+            yield period, cell
+
+    revenue = flow(cells, label="Revenue")
+
+    ctx = Context()
+    assert revenue.query(quarters[4]).run(ctx) == pytest.approx(110.0)
+    assert revenue.query(quarters[11]).run(ctx) == pytest.approx(157.3)
+
+
+def test_rekeying_growth_series_from_monthly_to_quarterly_stays_correct() -> None:
+    """Window-query recursion survives re-keying the forecast calendar.
+
+    Twelve monthly seed cells total 120. Forecast cells are defined as the
+    year-ago window times 1.1 — on a monthly calendar in one series and a
+    quarterly calendar in the other. Window queries aggregate whatever cells
+    exist, so both give the same annual totals; positional (unfold-carried)
+    references would silently compound the monthly rate quarterly.
+    """
+    start = date(2025, 12, 31)
+
+    def growth_series(freq: relativedelta, label: str) -> Series[Period, float]:
+        def cells() -> Iterator[tuple[Period, F[float]]]:
+            months = iter(Period.seq(start, MONTHLY))
+            for period, value in zip(months, [10.0] * 12):
+                yield period, Pure(value)
+            for period in Period.seq(start + YEARLY, freq):
+                prior = series.query(period.shift(-YEARLY))
+                yield period, prior.map(lambda x: x * 1.1)
+
+        series = flow(cells, label=label)
+        return series
+
+    monthly = growth_series(MONTHLY, "Monthly")
+    quarterly = growth_series(QUARTERLY, "Quarterly")
+
+    year2 = Period(start + YEARLY, start + relativedelta(years=2))
+    year3 = Period(start + relativedelta(years=2), start + relativedelta(years=3))
+
+    ctx = Context()
+    assert monthly.query(year2).run(ctx) == pytest.approx(132.0)
+    assert quarterly.query(year2).run(ctx) == pytest.approx(132.0)
+    assert monthly.query(year3).run(ctx) == pytest.approx(145.2)
+    assert quarterly.query(year3).run(ctx) == pytest.approx(145.2)
+
+
+def test_generator_state_growth_series_with_window_default() -> None:
+    def cells() -> Iterator[tuple[Period, F[float]]]:
+        cell: F[float] = Pure(100.0)
+        for period in Period.seq(date(2025, 12, 31), YEARLY):
+            yield period, cell
+            cell = cell.map(lambda value: value * 1.1)
+
+    revenue = flow(cells, label="Revenue")
+    periods = list(islice(Period.seq(date(2025, 12, 31), YEARLY), 3))
+
+    ctx = Context()
+    assert revenue.query(periods[2]).run(ctx) == pytest.approx(121.0)
+    # A window before the series starts finds nothing and reduces to 0.0.
+    early = Period(date(2020, 1, 1), date(2021, 1, 1))
+    assert revenue.query(early).run(ctx) == 0.0
+
+
+def test_self_referential_query_cycle_raises() -> None:
+    def cells() -> Iterator[tuple[Period, F[float]]]:
+        for period in Period.seq(date(2025, 12, 31), YEARLY):
+            yield period, series.query(period).map(lambda x: x)
+
+    series = flow(cells, label="Ouroboros")
+
+    ctx = Context()
+    with pytest.raises(RuntimeError, match="cycle detected"):
+        series.query(Period(date(2025, 12, 31), date(2026, 12, 31))).run(ctx)
+
+    assert ctx.frames == []
+    assert ctx.values == []
+    assert ctx.stack == []
+    assert ctx.inflight == set()
+
+
+# ------------------------------------------------------------------ combinators
+
+
 def test_map2_misaligned_keys_raise() -> None:
-    a = Series.from_pairs([(0, 1.0)], label="A")
-    b = Series.from_pairs([(1, 2.0)], label="B")
+    a = Series.from_pairs([(0, 1.0)], exact(), only(), label="A")
+    b = Series.from_pairs([(1, 2.0)], exact(), only(), label="B")
 
     with pytest.raises(ValueError, match="misaligned keys"):
-        Series.map2(a, b, lambda x, y: x + y, label="Sum").at(0).run(Context())
+        Series.map2(a, b, lambda x, y: x + y, label="Sum").query(0).run(Context())
 
 
 def test_merge_outer_combines_equal_keys() -> None:
-    a = Series.from_pairs([(1, 1.0), (2, 2.0)], label="A")
-    b = Series.from_pairs([(2, 20.0), (3, 30.0)], label="B")
+    a = Series.from_pairs([(1, 1.0), (2, 2.0)], exact(), only(), label="A")
+    b = Series.from_pairs([(2, 20.0), (3, 30.0)], exact(), only(), label="B")
     merged = Series.merge([a, b], lambda x, y: x + y, label="Merged")
 
     ctx = Context()
@@ -128,6 +497,8 @@ def test_merge_outer_combines_equal_keys() -> None:
         (2, 22.0),
         (3, 30.0),
     ]
+    # The merged series inherits the first series' conventions.
+    assert merged.query(2).run(ctx) == 22.0
 
 
 def test_items_replays_within_context() -> None:
@@ -139,7 +510,7 @@ def test_items_replays_within_context() -> None:
             pulls += 1
             yield i, Pure(i * 10)
 
-    series = Series.from_cells(cells, label="Input")
+    series = keyed(cells, label="Input")
 
     ctx = Context()
     assert [(k, c.run(ctx)) for k, c in series.items(ctx)] == [(0, 0), (1, 10), (2, 20)]
@@ -148,130 +519,40 @@ def test_items_replays_within_context() -> None:
     assert pulls == 3
 
 
-def test_calendrical_year_ago_self_reference() -> None:
-    """Historicals extended by revenue[q] = revenue[q - 1 year] * 1.1 via self-address."""
-    historicals = [100.0, 110.0, 120.0, 130.0]
+# ------------------------------------------------------------------ convention units
 
-    def cells() -> Iterator[tuple[Period, F[float]]]:
-        quarters = Period.seq(date(2025, 12, 31), relativedelta(months=3))
-        for value, period in zip(historicals, quarters):
-            yield period, Pure(value)
-        for period in quarters:
-            prior = revenue.at(period.shift(relativedelta(years=-1)))
-            yield period, prior.map(lambda x: x * 1.1)
 
-    revenue = Series.from_cells(cells, label="Revenue")
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 12))
+def test_reducers_preserve_single_cell_identity() -> None:
+    cell: F[float] = Pure(1.0)
+    assert only()(((0, cell),)) is cell
+    assert only_or(9.0)(((0, cell),)) is cell
+    assert total()(((0, cell),)) is cell
 
+
+def test_only_rejects_empty_and_ambiguous() -> None:
+    cell: F[float] = Pure(1.0)
+    with pytest.raises(KeyError):
+        only()(())
+    with pytest.raises(ValueError):
+        only()(((0, cell), (1, cell)))
+    with pytest.raises(ValueError):
+        only_or(0.0)(((0, cell), (1, cell)))
+
+
+def test_total_sums_and_defaults_when_empty() -> None:
     ctx = Context()
-    assert revenue.at(quarters[4]).run(ctx) == pytest.approx(110.0)  # 100 * 1.1
-    assert revenue.at(quarters[7]).run(ctx) == pytest.approx(143.0)  # 130 * 1.1
-    assert revenue.at(quarters[11]).run(ctx) == pytest.approx(157.3)  # 130 * 1.1^2
-
-    # Lookback goes through memoized address nodes: one node per (series, key).
-    assert revenue.at(quarters[4]) is revenue.at(quarters[4])
+    assert total(0.0)(()).run(ctx) == 0.0
+    pairs = ((0, Pure(1.0)), (1, Pure(2.0)), (2, Pure(3.5)))
+    assert total()(pairs).run(ctx) == pytest.approx(6.5)
 
 
-def test_positional_year_ago_with_deque() -> None:
-    """Same model with a positional 4-quarter lag carried in generator state."""
-    from collections import deque
+def test_replay_iter_from_bisects_to_first_key_not_less_than_probe() -> None:
+    def pairs() -> Iterator[tuple[int, F[int]]]:
+        for i in [1, 3, 5]:
+            yield i, Pure(i)
 
-    historicals = [100.0, 110.0, 120.0, 130.0]
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 12))
-
-    def cells() -> Iterator[tuple[Period, F[float]]]:
-        window: deque[F[float]] = deque(maxlen=4)
-        values = iter(historicals)
-        for period in quarters:
-            value = next(values, None)
-            cell: F[float] = Pure(value) if value is not None else window[0].map(lambda x: x * 1.1)
-            window.append(cell)
-            yield period, cell
-
-    revenue = Series.from_cells(cells, label="Revenue")
-
-    ctx = Context()
-    assert revenue.at(quarters[4]).run(ctx) == pytest.approx(110.0)
-    assert revenue.at(quarters[11]).run(ctx) == pytest.approx(157.3)
-
-
-def test_between_spanning_multiple_periods() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    ctx = Context()
-    assert revenue.between(date(2025, 12, 31), date(2026, 12, 31)).run(ctx) == pytest.approx(460.0)
-
-
-def test_between_exactly_one_period() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    ctx = Context()
-    assert revenue.between(date(2025, 12, 31), date(2026, 3, 31)).run(ctx) == pytest.approx(100.0)
-
-
-def test_between_part_of_one_period() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    # 30 days of Q1's 90: 100 * 30 / 90
-    ctx = Context()
-    assert revenue.between(date(2026, 1, 15), date(2026, 2, 14)).run(ctx) == pytest.approx(
-        100.0 * 30 / 90
-    )
-
-
-def test_between_straddling_two_periods() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    # 30 tail days of Q1 (90 days) + 30 head days of Q2 (91 days)
-    expected = 100.0 * 30 / 90 + 110.0 * 30 / 91
-    ctx = Context()
-    assert revenue.between(date(2026, 3, 1), date(2026, 4, 30)).run(ctx) == pytest.approx(expected)
-
-
-def test_between_touching_no_periods() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    ctx = Context()
-    assert revenue.between(date(2020, 1, 1), date(2020, 12, 31)).run(ctx) == 0.0
-    assert revenue.between(date(2030, 1, 1), date(2030, 12, 31)).run(ctx) == 0.0
-
-
-def test_between_window_past_series_end_sums_covered_part() -> None:
-    quarters = list(islice(Period.seq(date(2025, 12, 31), relativedelta(months=3)), 4))
-    revenue = Series.from_pairs(zip(quarters, [100.0, 110.0, 120.0, 130.0]), label="Revenue")
-
-    ctx = Context()
-    assert revenue.between(date(2026, 9, 30), date(2027, 12, 31)).run(ctx) == pytest.approx(130.0)
-
-
-def test_between_terminates_on_infinite_series() -> None:
-    def cells() -> Iterator[tuple[Period, F[float]]]:
-        for period in Period.seq(date(2025, 12, 31), relativedelta(months=3)):
-            yield period, Pure(100.0)
-
-    revenue = Series.from_cells(cells, label="Revenue")
-
-    ctx = Context()
-    assert revenue.between(date(2026, 3, 31), date(2026, 9, 30)).run(ctx) == pytest.approx(200.0)
-
-
-def test_period_keyed_growth_series() -> None:
-    def cells() -> Iterator[tuple[Period, F[float]]]:
-        cell: F[float] = Pure(100.0)
-        for period in Period.seq(date(2025, 12, 31), relativedelta(years=1)):
-            yield period, cell
-            cell = cell.map(lambda value: value * 1.1)
-
-    revenue = Series.from_cells(cells, label="Revenue")
-    periods = list(islice(Period.seq(date(2025, 12, 31), relativedelta(years=1)), 3))
-
-    ctx = Context()
-    assert revenue.at(periods[2]).run(ctx) == pytest.approx(121.0)
-    # A period before the series starts falls back to the default (uses ordering).
-    early = Period(date(2020, 1, 1), date(2021, 1, 1))
-    assert revenue.get(early, 0.0).run(ctx) == 0.0
+    replay = ReplayIter(pairs())
+    assert [k for k, _ in replay.iter_from(3)] == [3, 5]
+    assert [k for k, _ in replay.iter_from(0)] == [1, 3, 5]
+    assert [k for k, _ in replay.iter_from(4)] == [5]
+    assert [k for k, _ in replay.iter_from(9)] == []

@@ -155,7 +155,7 @@ def test_context_usable_after_cycle_error() -> None:
 
 def test_nested_run_unwinds_to_inner_mark_on_exception() -> None:
     ctx = Context()
-    failing = Pure(0, label="failing").map(lambda _: 1 // 0)
+    failing = Pure(0, label="failing").map(lambda _: 1 // 0)  # type: ignore[zero_division]
 
     def thunk() -> int:
         try:
