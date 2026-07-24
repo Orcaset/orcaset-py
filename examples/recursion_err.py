@@ -1,12 +1,15 @@
 # Deep F evaluation example
 #
-# Previously ``F`` was forced recursively, so chains deeper than ~1000 raised
-# RecursionError. Evaluation is now an iterative Free interpreter, so arbitrary
+# ``F`` chains are evaluated by an iterative Free interpreter, so arbitrary
 # Map/Bind depth is fine.
 #
-# The Seq ``nth`` performance issue remains.
+# Recursive line items are defined as cell streams: the previous cell is
+# carried in generator state, so each cell references its predecessor
+# directly (a linear graph) instead of rebuilding a lookup spine per access.
 
-from orcaset import Cons, Context, F, Pure, Seq, print_deps
+from collections.abc import Iterator
+
+from orcaset import Context, F, Pure, Series, print_deps
 
 # -------------------------------------------------------------------------------------------------
 # Deep Map chain — used to blow the call stack; now evaluates iteratively.
@@ -15,48 +18,30 @@ value: F[int] = Pure(1)
 for _ in range(10_000):
     value = value.map(lambda x: x + 1)
 
-ctx = Context()
-print("Value of 10,000th mapped value: ", value.run(ctx))
+print("Value of 10,000th mapped value: ", value.run(Context()))
 
 
 # -------------------------------------------------------------------------------------------------
-# Sequence lookback example (construction footgun; not a recursion-limit issue anymore)
-def nth[T](s: Seq[F[T]], n: int) -> F[T]:
-    """Return the nth F-headed element, forcing tails through the F cache."""
-    if n < 0:
-        raise IndexError(f"sequence has no item at index {n}")
-
-    if not isinstance(s, Cons):
-        raise IndexError(f"sequence has no item at index {n}")
-
-    if n == 0:
-        return s.head
-
-    return s.tail.bind(lambda rest: nth(rest, n - 1))
+# Recursive series: counter[n] = counter[n - 1] + 1
+def counter_cells() -> Iterator[tuple[int, F[int]]]:
+    cell: F[int] = Pure(1, label="Counter seed")
+    n = 0
+    while True:
+        yield n, cell
+        cell = cell.map(lambda x: x + 1)
+        n += 1
 
 
-def next_cons(index: int) -> F[Seq[F[int]]]:
-    return F.delay(
-        lambda: Cons(head=nth(seq, index - 1).map(lambda x: x + 1), tail=next_cons(index + 1))
-    )
+counter = Series.from_cells(counter_cells, label="Counter")
 
-
-def make_seq() -> Seq[F[int]]:
-    return Cons(head=Pure(1), tail=next_cons(1))
-
-
-seq = make_seq()
-
-# ``nth`` still builds a Bind chain of length n (large graphs / quadratic lookback).
+ctx = Context()
 print("\nSequence elements:")
-print(nth(seq, 0).run(Context()))
-print(nth(seq, 1).run(Context()))
-print(nth(seq, 2).run(Context()))
+print(counter.at(0).run(ctx))
+print(counter.at(1).run(ctx))
+print(counter.at(2).run(ctx))
 
-print("\nSequence element deps:")
-print("\nNode 0 deps:")
-print_deps(ctx, nth(seq, 0))
-print("\nNode 1 deps:")
-print_deps(ctx, nth(seq, 1))
+print("\nDeep lookback (element 9,999):")
+print(counter.at(9_999).run(ctx))
+
 print("\nNode 2 deps:")
-print_deps(ctx, nth(seq, 2))
+print_deps(ctx, counter.at(2))

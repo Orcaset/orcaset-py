@@ -61,7 +61,13 @@ class Context:
     """Iterative Free interpreter with id-keyed result cache.
 
     Cache keys are ``F.id`` values, not object identity, so shared subgraphs
-    and re-forced sequence tails reuse the same computed results.
+    reuse the same computed results. A context is the unit of memoization:
+    there is no invalidation; to recompute, evaluate in a fresh ``Context``.
+    Correctness assumes node functions are deterministic.
+
+    ``run`` is re-entrant (a ``Delay`` thunk may call ``run`` on the same
+    context) and exception-safe: if evaluation raises, in-progress state is
+    unwound so the context remains usable.
     """
 
     stack: list[F[Any]] = field(default_factory=list)
@@ -69,13 +75,25 @@ class Context:
     values: list[Any] = field(default_factory=list)
     edges: set[tuple[F[Any], F[Any]]] = field(default_factory=set)
     cache: dict[int, Any] = field(default_factory=dict)
+    inflight: set[int] = field(default_factory=set)
 
     def run[A](self, node: F[A]) -> A:
+        frames_len = len(self.frames)
+        values_len = len(self.values)
+        stack_len = len(self.stack)
         mark = _Mark()
         self.frames.append(mark)
         self.frames.append(_Eval(node))
-        while self.frames[-1] is not mark:
-            self._step()
+        try:
+            while self.frames[-1] is not mark:
+                self._step()
+        except BaseException:
+            del self.frames[frames_len:]
+            del self.values[values_len:]
+            for stale in self.stack[stack_len:]:
+                self.inflight.discard(stale.id)
+            del self.stack[stack_len:]
+            raise
         self.frames.pop()
         return self.values.pop()
 
@@ -105,7 +123,7 @@ class Context:
                 self.frames.append(_Done(node))
             case _Done(node):
                 self.cache[node.id] = self.values[-1]
-                self.stack.pop()
+                self.inflight.discard(self.stack.pop().id)
             case _Mark():
                 raise RuntimeError("internal error: mark frame reached _step")
             case _:
@@ -119,10 +137,11 @@ class Context:
             self.values.append(self.cache[node.id])
             return
 
-        if any(frame.id == node.id for frame in self.stack):
+        if node.id in self.inflight:
             raise RuntimeError(f"cycle detected: {node!r}")
 
         self.stack.append(node)
+        self.inflight.add(node.id)
         match node:
             case Pure(value=v):
                 self.values.append(v)
@@ -207,7 +226,8 @@ def print_deps(ctx: Context, root: F[Any]) -> None:
     _render(ctx, root, prefix="", is_last=True, is_root=True, seen=set())
 
 
-def print_edges(ctx: Context) -> None:
+def print_edges(ctx: Context) -> list[str]:
+    edges: list[str] = []
     for parent, child in sorted(ctx.edges, key=lambda e: (_fmt(e[0]), _fmt(e[1]))):
-        print("--------------------------------")
-        print(f"{_fmt(child)} -> {_fmt(parent)}")
+        edges.append(f"{_fmt(child)} -> {_fmt(parent)}")
+    return edges

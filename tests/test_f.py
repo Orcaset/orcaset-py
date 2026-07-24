@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from orcaset import Apply, Bind, Context, F, Pure
+from orcaset import Apply, Context, F, Pure
 
 
 def test_deep_map_chain() -> None:
@@ -119,3 +119,51 @@ def test_nested_run_from_delay_thunk() -> None:
     outer = F.delay(lambda: inner.run(ctx) * 2, label="outer")
     assert outer.run(ctx) == 42
     assert inner.id in ctx.cache
+
+
+def test_run_unwinds_state_after_exception() -> None:
+    def boom(x: int) -> int:
+        raise ValueError("boom")
+
+    ctx = Context()
+    node = Pure(1).map(lambda x: x + 1).map(boom)
+
+    with pytest.raises(ValueError, match="boom"):
+        node.run(ctx)
+
+    assert ctx.frames == []
+    assert ctx.values == []
+    assert ctx.stack == []
+    assert ctx.inflight == set()
+    assert Pure(21).map(lambda x: x * 2).run(ctx) == 42
+
+
+def test_context_usable_after_cycle_error() -> None:
+    cells: list[F[int]] = []
+    node: F[int] = Pure(0).bind(lambda _: cells[0])
+    cells.append(node)
+
+    ctx = Context()
+    with pytest.raises(RuntimeError, match="cycle detected"):
+        node.run(ctx)
+
+    assert ctx.frames == []
+    assert ctx.stack == []
+    assert ctx.inflight == set()
+    assert Pure(5).run(ctx) == 5
+
+
+def test_nested_run_unwinds_to_inner_mark_on_exception() -> None:
+    ctx = Context()
+    failing = Pure(0, label="failing").map(lambda _: 1 // 0)
+
+    def thunk() -> int:
+        try:
+            failing.run(ctx)
+        except ZeroDivisionError:
+            return 7
+        raise AssertionError("expected ZeroDivisionError")
+
+    outer = F.delay(thunk, label="outer")
+    assert outer.run(ctx) == 7
+    assert outer.id in ctx.cache

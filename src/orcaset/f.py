@@ -24,6 +24,14 @@ class F[A]:
 
     Equality and hashing are by ``id`` only so deep Map/Bind chains do not
     recurse when recorded in ``Context.edges``.
+
+    Sharing contract: results are cached per ``Context`` keyed by ``id``, and
+    ids are assigned at construction, so two nodes are "the same computation"
+    only if they are the same object. Anything that should be computed once
+    must be shared by reference (or addressed through the series layer);
+    structural equality of closures is not attempted. Subgraphs built inside a
+    ``bind`` continuation are private to that (cached) node. Functions passed
+    to ``map``/``apply``/``bind``/``delay`` must be deterministic.
     """
 
     label: str | None = field(default=None, kw_only=True)

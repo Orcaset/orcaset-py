@@ -4,8 +4,7 @@
 from .context import Context, print_deps, print_edges
 from .f import Apply, Bind, Delay, F, Map, Pure
 from .period import Period
-from .seq import Cons, Empty, Seq, empty
-from .cell import Point, Span
+from .series import ReplayIter, Series
 
 __all__ = [
     "Apply",
@@ -14,14 +13,10 @@ __all__ = [
     "Delay",
     "F",
     "Map",
-    "Pure",
     "Period",
-    "Point",
-    "Span",
-    "Cons",
-    "Empty",
-    "Seq",
-    "empty",
+    "Pure",
+    "ReplayIter",
+    "Series",
     "print_deps",
     "print_edges",
 ]
