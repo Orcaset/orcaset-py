@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from .context import Context, print_deps, print_edges
-from .conventions import clip_daily, exact, flow, keyed, only, only_or, total
+from .conventions import clip_daily, exact, flow, keyed, only, only_or, sum_cells
 from .f import Apply, Bind, Delay, F, Map, Pure
 from .period import Period
 from .series import Reduce, ReplayIter, Select, Series
@@ -28,5 +28,5 @@ __all__ = [
     "only_or",
     "print_deps",
     "print_edges",
-    "total",
+    "sum_cells",
 ]

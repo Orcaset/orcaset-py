@@ -23,7 +23,7 @@ from orcaset import (
     keyed,
     only,
     only_or,
-    total,
+    sum_cells,
 )
 
 MONTHLY = relativedelta(months=1)
@@ -37,7 +37,7 @@ def quarterly_revenue() -> Series[Period, float]:
     return Series.from_pairs(
         zip(QUARTERS, [100.0, 110.0, 120.0, 130.0]),
         clip_daily(),
-        total(0.0),
+        sum_cells(0.0),
         label="Revenue",
     )
 
@@ -114,7 +114,7 @@ def test_select_and_reduce_run_once_per_context_per_query() -> None:
     sel_calls = 0
     red_calls = 0
     base_sel = clip_daily()
-    base_red = total(0.0)
+    base_red = sum_cells(0.0)
 
     def counting_sel(
         replay: ReplayIter[Period, float], q: Period
@@ -274,7 +274,7 @@ def test_select_preserves_cell_identity_when_unclipped() -> None:
 
 def test_clip_daily_fill_materializes_gaps() -> None:
     q2 = Period(date(2026, 3, 31), date(2026, 6, 30))
-    revenue = Series.from_pairs([(q2, 90.0)], clip_daily(fill=0.0), total(0.0), label="Revenue")
+    revenue = Series.from_pairs([(q2, 90.0)], clip_daily(fill=0.0), sum_cells(0.0), label="Revenue")
     window = Period(date(2026, 1, 1), date(2027, 1, 1))
 
     ctx = Context()
@@ -526,7 +526,7 @@ def test_reducers_preserve_single_cell_identity() -> None:
     cell: F[float] = Pure(1.0)
     assert only()(((0, cell),)) is cell
     assert only_or(9.0)(((0, cell),)) is cell
-    assert total()(((0, cell),)) is cell
+    assert sum_cells()(((0, cell),)) is cell
 
 
 def test_only_rejects_empty_and_ambiguous() -> None:
@@ -539,11 +539,11 @@ def test_only_rejects_empty_and_ambiguous() -> None:
         only_or(0.0)(((0, cell), (1, cell)))
 
 
-def test_total_sums_and_defaults_when_empty() -> None:
+def test_sum_cells_sums_and_defaults_when_empty() -> None:
     ctx = Context()
-    assert total(0.0)(()).run(ctx) == 0.0
+    assert sum_cells(0.0)(()).run(ctx) == 0.0
     pairs = ((0, Pure(1.0)), (1, Pure(2.0)), (2, Pure(3.5)))
-    assert total()(pairs).run(ctx) == pytest.approx(6.5)
+    assert sum_cells()(pairs).run(ctx) == pytest.approx(6.5)
 
 
 def test_replay_iter_from_bisects_to_first_key_not_less_than_probe() -> None:
