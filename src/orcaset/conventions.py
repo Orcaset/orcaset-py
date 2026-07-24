@@ -27,7 +27,7 @@ from .f import F, Pure
 from .period import Period
 from .series import Reduce, ReplayIter, Select, Series, _lift2
 
-# ------------------------------------------------------------------ selects
+# ---- selects ----
 
 
 def exact[K, V]() -> Select[K, V, K]:
@@ -96,7 +96,7 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
     return sel
 
 
-# ------------------------------------------------------------------ reduces
+# ---- reduces ----
 
 
 def only[K, V]() -> Reduce[K, V]:
@@ -129,7 +129,7 @@ def only_or[K, V](default: V) -> Reduce[K, V]:
     return red
 
 
-def total[K](empty: float = 0.0) -> Reduce[K, float]:
+def sum_cells[K](empty: float = 0.0) -> Reduce[K, float]:
     """Sum the selected cells; ``empty`` when nothing is selected.
 
     A fold of one returns the cell untouched.
@@ -146,7 +146,7 @@ def total[K](empty: float = 0.0) -> Reduce[K, float]:
     return red
 
 
-# ------------------------------------------------------------------ presets
+# ---- presets ----
 
 
 def flow(
@@ -157,7 +157,7 @@ def flow(
     Queries are windows: overlapping cells are prorated by day count and
     summed; a window touching no periods evaluates to ``0.0``.
     """
-    return Series.from_cells(cells, clip_daily(), total(0.0), label=label)
+    return Series.from_cells(cells, clip_daily(), sum_cells(0.0), label=label)
 
 
 def keyed[K, V](cells: Callable[[], Iterable[tuple[K, F[V]]]], *, label: str) -> Series[K, V, K]:

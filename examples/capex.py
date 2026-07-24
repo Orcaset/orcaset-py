@@ -17,7 +17,7 @@ from itertools import islice
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, F, Period, Series, clip_daily, flow, print_deps, total
+from orcaset import Context, F, Period, Series, clip_daily, flow, print_deps, sum_cells
 
 timeline: list[Period] = list(islice(Period.seq(date(2025, 12, 31), relativedelta(years=1)), 4))
 
@@ -26,7 +26,7 @@ timeline: list[Period] = list(islice(Period.seq(date(2025, 12, 31), relativedelt
 capex = Series.from_pairs(
     [(timeline[0], 100.0), (timeline[1], 200.0)],
     clip_daily(),
-    total(0.0),
+    sum_cells(0.0),
     label="Capex",
 )
 
