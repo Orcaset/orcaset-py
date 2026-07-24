@@ -129,15 +129,15 @@ def only_or[K, V](default: V) -> Reduce[K, V]:
     return red
 
 
-def sum_cells[K](empty: float = 0.0) -> Reduce[K, float]:
-    """Sum the selected cells; ``empty`` when nothing is selected.
+def sum_cells[K](fill: float = 0.0) -> Reduce[K, float]:
+    """Sum the selected cells; ``fill`` when nothing is selected.
 
     A fold of one returns the cell untouched.
     """
 
     def red(pairs: tuple[tuple[K, F[float]], ...]) -> F[float]:
         if not pairs:
-            return Pure(empty)
+            return Pure(fill)
         acc = pairs[0][1]
         for _, cell in pairs[1:]:
             acc = _lift2(lambda a, b: a + b, acc, cell)
