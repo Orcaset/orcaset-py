@@ -52,24 +52,6 @@ class Period:
             return False
         return NotImplemented
 
-    def __le__(self, other: object) -> bool:
-        if not isinstance(other, Period):
-            return NotImplemented
-        if self == other or self.end <= other.start:
-            return True
-        if self.start >= other.end:
-            return False
-        return NotImplemented
-
-    def __ge__(self, other: object) -> bool:
-        if not isinstance(other, Period):
-            return NotImplemented
-        if self == other or self.start >= other.end:
-            return True
-        if self.end <= other.start:
-            return False
-        return NotImplemented
-
     def __hash__(self) -> int:
         return hash((self.start, self.end))
 

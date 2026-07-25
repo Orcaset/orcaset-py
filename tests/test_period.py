@@ -40,8 +40,6 @@ def test_non_overlapping_order() -> None:
 
     assert a < c
     assert c > a
-    assert a <= c
-    assert c >= a
     assert sorted([c, a]) == [a, c]
 
 
@@ -52,8 +50,6 @@ def test_equal_periods_compare_equal_not_ordered() -> None:
     assert a == b
     assert not (a < b)
     assert not (a > b)
-    assert a <= b
-    assert a >= b
 
 
 def test_overlapping_periods_are_incomparable() -> None:
@@ -67,7 +63,5 @@ def test_overlapping_periods_are_incomparable() -> None:
         _ = a > b
     with pytest.raises(TypeError):
         _ = b < c
-    with pytest.raises(TypeError):
-        _ = a <= b
     with pytest.raises(TypeError):
         _ = sorted([c, b, a])
