@@ -64,7 +64,9 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
     def sel(replay: ReplayIter[Period, float], q: Period) -> tuple[tuple[Period, F[float]], ...]:
         out: list[tuple[Period, F[float]]] = []
         cursor = q.start
-        for period, cell in replay.iter_from(q):
+        # Walk by endpoint dates rather than Period ordering: a query window
+        # often overlaps cells, and overlapping Periods are incomparable.
+        for period, cell in replay:
             if period.start >= q.end:
                 break
             lo = max(period.start, q.start)

@@ -24,13 +24,11 @@ Identity is what makes caching correct:
   fresh context re-runs the cell factory from scratch.
 
 Key discipline (assumed by the machinery, enforced by convention): keys are
-hashable and ordered, each series yields its keys in strictly increasing
-order, and queries are hashable and immutable. Keys may form a partial order
-(as with :class:`~orcaset.period.Period`); seeking treats incomparable pairs
-as not-less / not-greater. Select and reduce functions must be deterministic,
-must never evaluate nodes (no ``run``), and should return original cell nodes
-on trivial paths (an unclipped pair, a fold of one) so shared cells stay
-shared graph nodes.
+hashable and totally ordered, each series yields its keys in strictly
+increasing order, and queries are hashable and immutable. Select and reduce
+functions must be deterministic, must never evaluate nodes (no ``run``), and
+should return original cell nodes on trivial paths (an unclipped pair, a
+fold of one) so shared cells stay shared graph nodes.
 
 Recursive definitions query the series being defined: a cell references
 ``series.query(prior_window)`` for whatever it depends on, so dependencies
@@ -42,6 +40,7 @@ are stated in key terms rather than stream positions and survive re-keying
 from __future__ import annotations
 
 import heapq
+from bisect import bisect_left
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from itertools import groupby
 from typing import Any, cast
@@ -55,27 +54,6 @@ def _lift2[A, B, W](
 ) -> F[W]:
     """Combine two cells pointwise. Parameters keep closures loop-safe."""
     return fa.bind(lambda a: fb.map(lambda b: f(a, b)), label=label)
-
-
-def _is_lt(a: Any, b: Any) -> bool:
-    """Return whether ``a < b``, treating incomparable pairs as not less."""
-    try:
-        return bool(a < b)
-    except TypeError:
-        return False
-
-
-def _bisect_left_keys[K, V](items: list[tuple[K, F[V]]], key: K) -> int:
-    """Index of the first item whose key is not strictly less than ``key``."""
-    lo = 0
-    hi = len(items)
-    while lo < hi:
-        mid = (lo + hi) // 2
-        if _is_lt(items[mid][0], key):
-            lo = mid + 1
-        else:
-            hi = mid
-    return lo
 
 
 class ReplayIter[K, V]:
@@ -117,7 +95,7 @@ class ReplayIter[K, V]:
             kk, _ = self._items[-1]
             if kk == key:
                 return self._index[key]
-            if not _is_lt(kk, key):
+            if kk > key:  # type: ignore[operator]
                 break
         raise KeyError(key)
 
@@ -126,14 +104,12 @@ class ReplayIter[K, V]:
 
         Relies on keys arriving in increasing order: pulls the stream until it
         reaches or passes ``key``, then bisects the buffer, so window selects
-        skip the prefix instead of rescanning it on every query. Incomparable
-        keys (partial orders) are treated as not-less, so an overlapping probe
-        still lands on the first overlapping or later cell.
+        skip the prefix instead of rescanning it on every query.
         """
-        while not self._items or _is_lt(self._items[-1][0], key):
+        while not self._items or self._items[-1][0] < key:  # type: ignore[operator]
             if not self._pull():
                 break
-        i = _bisect_left_keys(self._items, key)
+        i = bisect_left(self._items, key, key=lambda item: item[0])  # type: ignore[bad-argument-type]
         while True:
             if i >= len(self._items) and not self._pull():
                 return
