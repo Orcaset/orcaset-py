@@ -91,30 +91,12 @@ class ReplayIter[K, V]:
         cell = self._index.get(key)
         if cell is not None:
             return cell
-        while self._pull():
-            kk, _ = self._items[-1]
-            if kk == key:
-                return self._index[key]
-            if kk > key:  # type: ignore[operator]
-                break
-        raise KeyError(key)
-
-    def iter_from(self, key: K) -> Iterator[tuple[K, F[V]]]:
-        """Iterate pairs from the first key not strictly less than ``key``.
-
-        Relies on keys arriving in increasing order: pulls the stream until it
-        reaches or passes ``key``, then bisects the buffer, so window selects
-        skip the prefix instead of rescanning it on every query.
-        """
-        while not self._items or self._items[-1][0] < key:  # type: ignore[operator]
+        while not self._items or key > self._items[-1][0]:  # type: ignore[operator]
             if not self._pull():
                 break
-        i = bisect_left(self._items, key, key=lambda item: item[0])  # type: ignore[bad-argument-type]
-        while True:
-            if i >= len(self._items) and not self._pull():
-                return
-            yield self._items[i]
-            i += 1
+            if self._items[-1][0] == key:
+                return self._index[key]
+        raise KeyError(key)
 
     def _pull(self) -> bool:
         if self._exhausted:
@@ -204,7 +186,7 @@ class Series[K, V, Q = K]:
         return cast(
             Series[K, V, Q],
             Series(
-                Delay(lambda: ReplayIter(cells()), label=f"{label} stream"),
+                Delay(lambda: ReplayIter(cells()), label=f"{label}"),
                 select,
                 reduce,
                 label=label,

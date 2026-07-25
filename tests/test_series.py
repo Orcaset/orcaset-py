@@ -546,18 +546,6 @@ def test_sum_cells_sums_and_defaults_when_empty() -> None:
     assert sum_cells()(pairs).run(ctx) == pytest.approx(6.5)
 
 
-def test_replay_iter_from_bisects_to_first_key_not_less_than_probe() -> None:
-    def pairs() -> Iterator[tuple[int, F[int]]]:
-        for i in [1, 3, 5]:
-            yield i, Pure(i)
-
-    replay = ReplayIter(pairs())
-    assert [k for k, _ in replay.iter_from(3)] == [3, 5]
-    assert [k for k, _ in replay.iter_from(0)] == [1, 3, 5]
-    assert [k for k, _ in replay.iter_from(4)] == [5]
-    assert [k for k, _ in replay.iter_from(9)] == []
-
-
 def test_replay_iter_rejects_non_increasing_keys() -> None:
     replay = ReplayIter([(1, Pure(1)), (0, Pure(0))])
     it = iter(replay)
