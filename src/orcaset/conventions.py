@@ -27,7 +27,7 @@ from .f import F, Pure
 from .period import Period
 from .series import Reduce, ReplayIter, Select, Series, _lift2
 
-# ------------------------------------------------------------------ selects
+# Selects ------------------------------------------------------------------
 
 
 def exact[K, V]() -> Select[K, V, K]:
@@ -98,7 +98,7 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
     return sel
 
 
-# ------------------------------------------------------------------ reduces
+# Reduces ------------------------------------------------------------------
 
 
 def only[K, V]() -> Reduce[K, V]:
@@ -148,7 +148,7 @@ def sum_cells[K](fill: float = 0.0) -> Reduce[K, float]:
     return red
 
 
-# ------------------------------------------------------------------ presets
+# Presets ------------------------------------------------------------------
 
 
 def flow(

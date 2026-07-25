@@ -42,7 +42,7 @@ def quarterly_revenue() -> Series[Period, float]:
     )
 
 
-# ------------------------------------------------------------------ query basics
+# Query basics --------------------------------------------------------------
 
 
 def test_query_exact_key_lookup() -> None:
@@ -107,7 +107,7 @@ def test_only_or_defaults_on_missing_gap_and_past_end() -> None:
     assert series.query(9).run(ctx) == 0.0
 
 
-# ------------------------------------------------------------------ caching
+# Caching -------------------------------------------------------------------
 
 
 def test_select_and_reduce_run_once_per_context_per_query() -> None:
@@ -242,7 +242,7 @@ def test_cross_series_shared_cells_compute_once() -> None:
     assert calls == 1
 
 
-# ------------------------------------------------------------------ select audit
+# Select audit --------------------------------------------------------------
 
 
 def test_select_audits_clipping_and_reproduces_query_value() -> None:
@@ -288,7 +288,7 @@ def test_clip_daily_fill_materializes_gaps() -> None:
     assert revenue.query(window).run(ctx) == pytest.approx(90.0)
 
 
-# ------------------------------------------------------------------ window queries
+# Window queries ------------------------------------------------------------
 
 
 def test_window_spanning_multiple_periods() -> None:
@@ -355,7 +355,7 @@ def test_window_terminates_on_infinite_series() -> None:
     assert revenue.query(window).run(ctx) == pytest.approx(200.0)
 
 
-# ------------------------------------------------------------------ recursion
+# Recursion -----------------------------------------------------------------
 
 
 def test_calendrical_year_ago_self_reference() -> None:
@@ -475,7 +475,7 @@ def test_self_referential_query_cycle_raises() -> None:
     assert ctx.inflight == set()
 
 
-# ------------------------------------------------------------------ combinators
+# Combinators ---------------------------------------------------------------
 
 
 def test_map2_misaligned_keys_raise() -> None:
@@ -519,7 +519,7 @@ def test_items_replays_within_context() -> None:
     assert pulls == 3
 
 
-# ------------------------------------------------------------------ convention units
+# Convention units ----------------------------------------------------------
 
 
 def test_reducers_preserve_single_cell_identity() -> None:
@@ -556,3 +556,29 @@ def test_replay_iter_from_bisects_to_first_key_not_less_than_probe() -> None:
     assert [k for k, _ in replay.iter_from(0)] == [1, 3, 5]
     assert [k for k, _ in replay.iter_from(4)] == [5]
     assert [k for k, _ in replay.iter_from(9)] == []
+
+
+def test_replay_iter_rejects_non_increasing_keys() -> None:
+    replay = ReplayIter([(1, Pure(1)), (0, Pure(0))])
+    it = iter(replay)
+    assert next(it)[0] == 1
+    with pytest.raises(ValueError, match="strictly increasing"):
+        next(it)
+
+
+def test_replay_iter_rejects_duplicate_keys() -> None:
+    replay = ReplayIter([(1, Pure(1)), (1, Pure(2))])
+    it = iter(replay)
+    next(it)
+    with pytest.raises(ValueError, match="strictly increasing"):
+        next(it)
+
+
+def test_replay_iter_rejects_incomparable_period_keys() -> None:
+    a = Period(date(2026, 1, 1), date(2026, 4, 1))
+    b = Period(date(2026, 1, 1), date(2026, 7, 1))
+    replay = ReplayIter([(a, Pure(1.0)), (b, Pure(2.0))])
+    it = iter(replay)
+    next(it)
+    with pytest.raises(ValueError, match="comparable"):
+        next(it)

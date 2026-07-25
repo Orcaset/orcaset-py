@@ -23,12 +23,12 @@ Identity is what makes caching correct:
 - Values are cached per :class:`~orcaset.context.Context`. Evaluating in a
   fresh context re-runs the cell factory from scratch.
 
-Key discipline (assumed by the machinery, enforced by convention): keys are
-hashable and totally ordered, each series yields its keys in strictly
-increasing order, and queries are hashable and immutable. Select and reduce
-functions must be deterministic, must never evaluate nodes (no ``run``), and
-should return original cell nodes on trivial paths (an unclipped pair, a
-fold of one) so shared cells stay shared graph nodes.
+Key discipline (enforced as the stream is pulled): keys are hashable and
+totally ordered, each series yields its keys in strictly increasing order,
+and queries are hashable and immutable. Select and reduce functions must be
+deterministic, must never evaluate nodes (no ``run``), and should return
+original cell nodes on trivial paths (an unclipped pair, a fold of one) so
+shared cells stay shared graph nodes.
 
 Recursive definitions query the series being defined: a cell references
 ``series.query(prior_window)`` for whatever it depends on, so dependencies
@@ -124,6 +124,17 @@ class ReplayIter[K, V]:
         except StopIteration:
             self._exhausted = True
             return False
+        if self._items:
+            prev = self._items[-1][0]
+            try:
+                ordered = kk > prev  # type: ignore[operator]
+            except TypeError:
+                raise ValueError(
+                    f"series keys must be strictly increasing and comparable: "
+                    f"{prev!r} not comparable to {kk!r}"
+                ) from None
+            if not ordered:
+                raise ValueError(f"series keys must be strictly increasing: {prev!r} then {kk!r}")
         self._items.append((kk, fv))
         if kk not in self._index:
             self._index[kk] = fv
