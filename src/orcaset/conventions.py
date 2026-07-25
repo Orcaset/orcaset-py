@@ -64,7 +64,9 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
     def sel(replay: ReplayIter[Period, float], q: Period) -> tuple[tuple[Period, F[float]], ...]:
         out: list[tuple[Period, F[float]]] = []
         cursor = q.start
-        for period, cell in replay.iter_from(q):
+        # Walk by endpoint dates rather than Period ordering: a query window
+        # often overlaps cells, and overlapping Periods are incomparable.
+        for period, cell in replay:
             if period.start >= q.end:
                 break
             lo = max(period.start, q.start)
@@ -129,15 +131,15 @@ def only_or[K, V](default: V) -> Reduce[K, V]:
     return red
 
 
-def total[K](empty: float = 0.0) -> Reduce[K, float]:
-    """Sum the selected cells; ``empty`` when nothing is selected.
+def sum_cells[K](fill: float = 0.0) -> Reduce[K, float]:
+    """Sum the selected cells; ``fill`` when nothing is selected.
 
     A fold of one returns the cell untouched.
     """
 
     def red(pairs: tuple[tuple[K, F[float]], ...]) -> F[float]:
         if not pairs:
-            return Pure(empty)
+            return Pure(fill)
         acc = pairs[0][1]
         for _, cell in pairs[1:]:
             acc = _lift2(lambda a, b: a + b, acc, cell)
@@ -157,7 +159,7 @@ def flow(
     Queries are windows: overlapping cells are prorated by day count and
     summed; a window touching no periods evaluates to ``0.0``.
     """
-    return Series.from_cells(cells, clip_daily(), total(0.0), label=label)
+    return Series.from_cells(cells, clip_daily(), sum_cells(0.0), label=label)
 
 
 def keyed[K, V](cells: Callable[[], Iterable[tuple[K, F[V]]]], *, label: str) -> Series[K, V, K]:
