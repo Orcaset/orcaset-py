@@ -16,11 +16,11 @@ There are two kinds of series:
   exists only where data exists, so absence is positional and ``reduce`` must
   be total: an empty selection still has to produce an answer (usually
   ``MISSING``).
-- :class:`MapSeries` and :class:`Map2Series` are *views*: they have no cells
-  and no convention. They transform and combine complete answers, so their
-  provenance is the child query nodes rather than selected cells. Evidence —
-  the ``select`` audit view — exists only at leaves, which is exactly where
-  the arithmetic on cells happens.
+- :class:`MapSeries`, :class:`Map2Series` and :class:`MapNSeries` are
+  *views*: they have no cells and no convention. They transform and combine
+  complete answers, so their provenance is the child query nodes rather than
+  selected cells. Evidence — the ``select`` audit view — exists only at
+  leaves, which is exactly where the arithmetic on cells happens.
 
 :func:`resample` bridges back: it tabulates any series at a new key grid,
 producing a leaf whose cells are the source's query nodes. That is how a
@@ -451,13 +451,13 @@ class Map2Series[K: Key, A, B, W, Q = K](Series[K, W, Q]):
     coverage, so ``fn`` sees ``MISSING`` on either side and states the policy
     — see :func:`~orcaset.maybe.strict`, :func:`~orcaset.maybe.propagate` and
     :func:`~orcaset.maybe.fill`. Keys are the ordered union of the sources'
-    keys unless ``merge_keys`` says otherwise.
+    keys.
 
     Both sources must interpret ``Q`` the same way: combining a windowed flow
     with a point balance at the same query is type-correct and meaningless.
     """
 
-    __slots__ = ("_a", "_b", "_fn", "_merge_keys")
+    __slots__ = ("_a", "_b", "_fn")
 
     def __init__(
         self,
@@ -465,19 +465,16 @@ class Map2Series[K: Key, A, B, W, Q = K](Series[K, W, Q]):
         b: Series[K, B, Q],
         fn: Callable[[Maybe[A], Maybe[B]], Maybe[W]],
         *,
-        merge_keys: Callable[[Iterable[K], Iterable[K]], Iterable[K]] | None = None,
         label: str,
     ) -> None:
         super().__init__(label=label)
         self._a = a
         self._b = b
         self._fn = fn
-        self._merge_keys = merge_keys if merge_keys is not None else ordered_union
 
     def _keys_node(self) -> Keys[K]:
-        merge_keys = self._merge_keys
         return self._a.keys().bind(
-            lambda ka: self._b.keys().map(lambda kb: Replay(merge_keys(ka, kb))),
+            lambda ka: self._b.keys().map(lambda kb: Replay(ordered_union((ka, kb)))),
             label=f"{self.label}.keys",
         )
 
@@ -498,6 +495,98 @@ class Map2Series[K: Key, A, B, W, Q = K](Series[K, W, Q]):
         )
 
 
+class MapNSeries[K: Key, V, W, Q = K](Series[K, W, Q]):
+    """A view combining any number of same-typed series' answers pointwise.
+
+    The n-ary counterpart to :class:`Map2Series`: sources share one key and
+    value type, and ``fn`` receives every source's answer as a positional
+    tuple, in source order, and returns the combined answer. Every source is
+    asked *every* query, including where it has no coverage, so ``fn`` sees
+    ``MISSING`` in any position and states the policy — sum a cohort with
+    ``lambda answers: sum(or_else(a, 0.0) for a in answers)``, refuse partial
+    coverage by testing for :class:`~orcaset.maybe.Missing` yourself. Keys are
+    produced by one n-way ordered sweep over the sources' key runs.
+
+    All sources must interpret ``Q`` the same way, as with
+    :class:`Map2Series`. ``fn`` must also be total on the empty tuple: an
+    empty source list is a valid series with no keys whose every answer is
+    ``fn(())``, so a summing combine merges to zero and a strict one to
+    ``MISSING``.
+
+    Source nodes are gathered as a balanced tree, so bind depth is
+    ``O(log n)``. The source sequence is copied at construction: node identity
+    is object identity, so the merged graph must not change under a caller's
+    later mutation.
+    """
+
+    __slots__ = ("_fn", "_sources")
+
+    def __init__(
+        self,
+        sources: Sequence[Series[K, V, Q]],
+        fn: Callable[[tuple[Maybe[V], ...]], Maybe[W]],
+        *,
+        label: str,
+    ) -> None:
+        super().__init__(label=label)
+        self._sources: tuple[Series[K, V, Q], ...] = tuple(sources)
+        self._fn = fn
+
+    def _keys_node(self) -> Keys[K]:
+        sources = self._sources
+        label = f"{self.label}.keys"
+
+        if not sources:
+            return Delay(lambda: Replay[K](()), label=label)
+        if len(sources) == 1:
+            return sources[0].keys()
+
+        def gather(lo: int, hi: int) -> F[tuple[Replay[K], ...]]:
+            if hi - lo == 1:
+                return sources[lo].keys().map(lambda keys: (keys,), label=f"{label} @{lo}")
+            mid = (lo + hi) // 2
+            left, right = gather(lo, mid), gather(mid, hi)
+            return left.bind(
+                lambda left_keys: right.map(
+                    lambda right_keys: left_keys + right_keys,
+                    label=f"{label} [{mid}:{hi}]",
+                ),
+                label=label if lo == 0 and hi == len(sources) else f"{label}[{lo}:{hi}]",
+            )
+
+        return gather(0, len(sources)).map(
+            lambda key_runs: Replay(ordered_union(key_runs)),
+            label=label,
+        )
+
+    def _query_node(self, q: Q) -> F[Maybe[W]]:
+        fn = self._fn
+        sources = self._sources
+        label = f"{self.label}[{q}]"
+
+        def combine(answers: tuple[Maybe[V], ...]) -> Maybe[W]:
+            try:
+                return fn(answers)
+            except Exception as err:
+                err.add_note(f"while combining {label}")
+                raise
+
+        if not sources:
+            return Delay(lambda: combine(()), label=label)
+
+        def gather(lo: int, hi: int) -> F[tuple[Maybe[V], ...]]:
+            if hi - lo == 1:
+                return sources[lo].query(q).map(lambda a: (a,), label=f"{label} @{lo}")
+            mid = (lo + hi) // 2
+            left, right = gather(lo, mid), gather(mid, hi)
+            return left.bind(
+                lambda la: right.map(lambda ra: la + ra, label=f"{label} [{mid}:{hi}]"),
+                label=f"{label} [{lo}:{hi}]",
+            )
+
+        return gather(0, len(sources)).map(combine, label=label)
+
+
 class _End:
     """Sentinel for an exhausted key iterator."""
 
@@ -507,48 +596,34 @@ class _End:
 _END = _End()
 
 
-def ordered_union[K: Key](left: Iterable[K], right: Iterable[K]) -> Iterator[K]:
-    """Lazily merge two strictly increasing key runs into their ordered union.
+def ordered_union[K: Key](runs: Iterable[Iterable[K]]) -> Iterator[K]:
+    """Lazily sweep strictly increasing key runs into their ordered union.
 
-    Equal keys collapse to one. Laziness matters: a merged view over infinite
-    series must still be enumerable up to a point.
+    Equivalent heads across any number of runs collapse to one key. Laziness
+    matters: a merged view over infinite series must still be enumerable up to
+    a point.
     """
-    ia, ib = iter(left), iter(right)
-    a: K | _End = next(ia, _END)
-    b: K | _End = next(ib, _END)
-    while not isinstance(a, _End) and not isinstance(b, _End):
-        if a < b:
-            yield a
-            a = next(ia, _END)
-        elif b < a:
-            yield b
-            b = next(ib, _END)
-        else:
-            yield a
-            a = next(ia, _END)
-            b = next(ib, _END)
-    if not isinstance(a, _End):
-        yield a
-        yield from ia
-    elif not isinstance(b, _End):
-        yield b
-        yield from ib
+    iterators = tuple(iter(run) for run in runs)
+    heads: list[K | _End] = [next(iterator, _END) for iterator in iterators]
 
+    while True:
+        first = next(
+            (index for index, head in enumerate(heads) if not isinstance(head, _End)),
+            None,
+        )
+        if first is None:
+            return
 
-def ordered_intersection[K: Key](left: Iterable[K], right: Iterable[K]) -> Iterator[K]:
-    """Lazily yield the keys present in both strictly increasing runs."""
-    ia, ib = iter(left), iter(right)
-    a: K | _End = next(ia, _END)
-    b: K | _End = next(ib, _END)
-    while not isinstance(a, _End) and not isinstance(b, _End):
-        if a < b:
-            a = next(ia, _END)
-        elif b < a:
-            b = next(ib, _END)
-        else:
-            yield a
-            a = next(ia, _END)
-            b = next(ib, _END)
+        minimum = heads[first]
+        assert not isinstance(minimum, _End)
+        for head in heads[first + 1 :]:
+            if not isinstance(head, _End) and head < minimum:
+                minimum = head
+
+        yield minimum
+        for index, head in enumerate(heads):
+            if not isinstance(head, _End) and not head < minimum and not minimum < head:
+                heads[index] = next(iterators[index], _END)
 
 
 def map2[K: Key, A, B, W, Q](
@@ -556,18 +631,16 @@ def map2[K: Key, A, B, W, Q](
     b: Series[K, B, Q],
     fn: Callable[[Maybe[A], Maybe[B]], Maybe[W]],
     *,
-    merge_keys: Callable[[Iterable[K], Iterable[K]], Iterable[K]] | None = None,
     label: str,
 ) -> Series[K, W, Q]:
     """Combine two series' answers pointwise. See :class:`Map2Series`."""
-    return Map2Series(a, b, fn, merge_keys=merge_keys, label=label)
+    return Map2Series(a, b, fn, label=label)
 
 
 def merge[K: Key, V, Q](
     sources: Sequence[Series[K, V, Q]],
     combine: Callable[[Maybe[V], Maybe[V]], Maybe[V]],
     *,
-    merge_keys: Callable[[Iterable[K], Iterable[K]], Iterable[K]] | None = None,
     label: str,
 ) -> Series[K, V, Q]:
     """Combine several series' answers pointwise, folded as a balanced tree.
@@ -588,7 +661,6 @@ def merge[K: Key, V, Q](
             fold(items[:mid], f"{name} [0:{mid}]"),
             fold(items[mid:], f"{name} [{mid}:{len(items)}]"),
             combine,
-            merge_keys=merge_keys,
             label=name,
         )
 

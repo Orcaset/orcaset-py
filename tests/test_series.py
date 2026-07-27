@@ -17,6 +17,8 @@ from orcaset import (
     Context,
     F,
     LeafSeries,
+    MapNSeries,
+    Maybe,
     Missing,
     MissingError,
     Period,
@@ -31,7 +33,6 @@ from orcaset import (
     only,
     only_or,
     or_else,
-    ordered_intersection,
     ordered_union,
     propagate,
     rekey,
@@ -639,6 +640,126 @@ def test_merge_requires_at_least_one_series() -> None:
         merge(empty, fill(0.0, operator.add), label="Total")
 
 
+def sum_answers(answers: tuple[Maybe[float], ...]) -> Maybe[float]:
+    return sum(or_else(answer, 0.0) for answer in answers)
+
+
+def test_mapn_combines_all_answers_over_the_union_grid() -> None:
+    a = LeafSeries.from_pairs([(1, 1.0), (2, 2.0)], exact(), only(), label="A")
+    b = LeafSeries.from_pairs([(2, 20.0), (3, 30.0)], exact(), only(), label="B")
+    c = LeafSeries.from_pairs([(3, 300.0), (4, 400.0)], exact(), only(), label="C")
+    total = MapNSeries([a, b, c], sum_answers, label="Total")
+
+    ctx = Context()
+    assert list(total.keys().run(ctx)) == [1, 2, 3, 4]
+    assert [(key, cell.run(ctx)) for key, cell in total.items(ctx)] == [
+        (1, 1.0),
+        (2, 22.0),
+        (3, 330.0),
+        (4, 400.0),
+    ]
+
+
+def test_mapn_hands_the_combine_every_source_in_order() -> None:
+    a = LeafSeries.from_pairs([(1, 1.0)], exact(), only(), label="A")
+    b = LeafSeries.from_pairs([(2, 2.0)], exact(), only(), label="B")
+    c = LeafSeries.from_pairs([(1, 3.0)], exact(), only(), label="C")
+    seen: list[tuple[Maybe[float], ...]] = []
+
+    def record(answers: tuple[Maybe[float], ...]) -> Maybe[float]:
+        seen.append(answers)
+        return sum_answers(answers)
+
+    ctx = Context()
+    assert MapNSeries([a, b, c], record, label="Total").query(1).run(ctx) == 4.0
+    assert seen == [(1.0, MISSING, 3.0)]
+
+
+def test_mapn_can_refuse_partial_coverage() -> None:
+    a = LeafSeries.from_pairs([(1, 1.0)], exact(), only(), label="A")
+    b = LeafSeries.from_pairs([(2, 2.0)], exact(), only(), label="B")
+
+    def strict_sum(answers: tuple[Maybe[float], ...]) -> Maybe[float]:
+        return sum(unwrap(answer) for answer in answers)
+
+    ctx = Context()
+    with pytest.raises(MissingError):
+        MapNSeries([a, b], strict_sum, label="Strict").query(1).run(ctx)
+
+
+def test_mapn_over_no_sources_has_no_keys_and_answers_from_the_combine() -> None:
+    empty: list[Series[int, float, int]] = []
+    ctx = Context()
+
+    def strict_sum(answers: tuple[Maybe[float], ...]) -> Maybe[float]:
+        return sum(unwrap(answer) for answer in answers) if answers else MISSING
+
+    nothing = MapNSeries(empty, strict_sum, label="None")
+    assert list(nothing.keys().run(ctx)) == []
+    assert nothing.query(1).run(ctx) is MISSING
+    assert list(nothing.items(ctx)) == []
+
+    # A combine that is total on the empty tuple decides what "no sources" means.
+    zero = MapNSeries(empty, sum_answers, label="Zero")
+    assert zero.query(1).run(ctx) == 0.0
+
+
+def test_mapn_query_and_keys_nodes_are_memoized() -> None:
+    sources = [
+        LeafSeries.from_pairs([(i, float(i))], exact(), only(), label=f"S{i}") for i in range(4)
+    ]
+    total = MapNSeries(sources, sum_answers, label="Total")
+
+    assert total.query(2) is total.query(2)
+    assert total.keys() is total.keys()
+
+    empty = MapNSeries([], sum_answers, label="Empty")
+    assert empty.query(0) is empty.query(0)
+    assert empty.keys() is empty.keys()
+
+
+def test_mapn_copies_its_source_sequence() -> None:
+    sources = [LeafSeries.from_pairs([(1, 1.0)], exact(), only(), label="A")]
+    total = MapNSeries(sources, sum_answers, label="Total")
+    sources.append(LeafSeries.from_pairs([(1, 100.0)], exact(), only(), label="Late"))
+
+    ctx = Context()
+    assert total.query(1).run(ctx) == 1.0
+
+
+def test_mapn_folds_as_a_balanced_tree() -> None:
+    sources = [
+        LeafSeries.from_pairs([(i, float(i))], exact(), only(), label=f"S{i}") for i in range(8)
+    ]
+    total = MapNSeries(sources, sum_answers, label="Total")
+
+    ctx = Context()
+    assert total.query(5).run(ctx) == 5.0
+    assert list(total.keys().run(ctx)) == list(range(8))
+
+    # One node per source plus a balanced spine (7 internal nodes over 8 leaves,
+    # each an eight-way bind/map pair) rather than a chain.
+    labels = {node.label for _, node in ctx.edges if node.label is not None}
+    assert "Total[5] [0:8]" in labels
+    assert "Total[5] [4:8]" in labels
+    assert "Total[5] @7" in labels
+
+
+def test_mapn_keys_stay_lazy_over_infinite_sources() -> None:
+    def counts(start: int, step: int) -> LeafSeries[int, float, int]:
+        return LeafSeries.from_cells(
+            lambda: ((key, Pure(float(key))) for key in count(start, step)),
+            exact(),
+            only(),
+            label=f"Every {step} from {start}",
+        )
+
+    total = MapNSeries([counts(0, 2), counts(0, 3), counts(0, 5)], sum_answers, label="Total")
+
+    ctx = Context()
+    assert list(islice(total.keys().run(ctx), 7)) == [0, 2, 3, 4, 5, 6, 8]
+
+
 def test_merged_cohorts_total_over_disjoint_spans() -> None:
     """Cohorts covering different spans sum where only one has coverage."""
     timeline = list(islice(Period.seq(date(2025, 12, 31), YEARLY), 4))
@@ -682,25 +803,19 @@ def test_leaf_keys_replay_within_a_context() -> None:
 
 
 def test_ordered_union_is_lazy_and_dedupes() -> None:
-    assert list(islice(ordered_union(count(0, 2), count(0, 3)), 7)) == [0, 2, 3, 4, 6, 8, 9]
-    assert list(ordered_union([1, 2], [2, 3])) == [1, 2, 3]
-    assert list(ordered_union([], [1, 2])) == [1, 2]
-    assert list(ordered_union([1, 2], [])) == [1, 2]
-
-
-def test_ordered_intersection() -> None:
-    assert list(ordered_intersection([1, 2, 3], [2, 3, 4])) == [2, 3]
-    assert list(ordered_intersection([1], [2])) == []
-
-
-def test_map2_can_intersect_keys() -> None:
-    a = LeafSeries.from_pairs([(1, 1.0), (2, 2.0)], exact(), only(), label="A")
-    b = LeafSeries.from_pairs([(2, 20.0), (3, 30.0)], exact(), only(), label="B")
-    inner = map2(a, b, strict(operator.add), merge_keys=ordered_intersection, label="Inner")
-
-    ctx = Context()
-    assert list(inner.keys().run(ctx)) == [2]
-    assert inner.query(2).run(ctx) == 22.0
+    assert list(islice(ordered_union((count(0, 2), count(0, 3), count(0, 5))), 7)) == [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+    ]
+    assert list(ordered_union(([1, 2], [2, 3], [1, 3, 4]))) == [1, 2, 3, 4]
+    assert list(ordered_union(([], [1, 2]))) == [1, 2]
+    assert list(ordered_union(([1, 2],))) == [1, 2]
+    assert list(ordered_union(())) == []
 
 
 # Resampling ----------------------------------------------------------------
