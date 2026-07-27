@@ -4,8 +4,17 @@ from itertools import islice
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, F, Period, Pure, flow, print_deps
-
+from orcaset import (
+    Context,
+    F,
+    LeafSeries,
+    Period,
+    Pure,
+    clip_daily,
+    print_deps,
+    sum_cells,
+    unwrap,
+)
 
 # Forward recursion variant
 #  - Values for periods on or after 2027 are equal to 100.0
@@ -20,14 +29,14 @@ def target_cells() -> Iterator[tuple[Period, F[float]]]:
             yield period, Pure(100.0, label=f"Terminal@{period.start.year}")
         else:
             nxt = target.query(period.shift(YEARLY))  # forward self-reference
-            yield period, nxt.map(lambda x: x - 1.0, label=f"Backsolve@{period.start.year}")
+            yield period, nxt.map(lambda a: unwrap(a) - 1.0, label=f"Backsolve@{period.start.year}")
 
 
-target = flow(target_cells, label="Target")
+target = LeafSeries.from_cells(target_cells, clip_daily(), sum_cells(0.0), label="Target")
 
 ctx = Context()
 for period in islice(Period.seq(date(2023, 1, 1), YEARLY), 7):
-    print(f"{period.start.year}: {target.query(period).run(ctx)}")
+    print(f"{period.start.year}: {unwrap(target.query(period).run(ctx))}")
 
 
 print_deps(ctx, target.query(Period(date(2023, 1, 1), date(2027, 1, 1))))
@@ -46,11 +55,11 @@ def quadrupled_q4_cells() -> Iterator[tuple[Period, F[float]]]:
     yield next(years), Pure(100.0, label="CY2027 seed")
     for period in years:
         q4 = target.query(Period(period.start - relativedelta(months=3), period.start))
-        yield period, q4.map(lambda x: x * 4.0, label=f"CY{period.start.year} = Q4 x 4")
+        yield period, q4.map(lambda a: unwrap(a) * 4.0, label=f"CY{period.start.year} = Q4 x 4")
 
 
-target = flow(quadrupled_q4_cells, label="Target")
+target = LeafSeries.from_cells(quadrupled_q4_cells, clip_daily(), sum_cells(0.0), label="Target")
 
 ctx = Context()
 for period in islice(Period.seq(date(2027, 1, 1), YEARLY), 5):
-    print(f"{period.start.year}: {target.query(period).run(ctx)}")
+    print(f"{period.start.year}: {unwrap(target.query(period).run(ctx))}")

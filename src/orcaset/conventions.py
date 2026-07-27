@@ -1,45 +1,48 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Select and reduce conventions for :class:`~orcaset.series.Series`.
+"""Select and reduce conventions for :class:`~orcaset.series.LeafSeries`.
 
-A convention pair defines how a series answers queries: ``select`` narrows
-the ordered cell stream to the (possibly clipped) ``(key, cell)`` pairs
-relevant to a query, and ``reduce`` collapses those pairs to one value. Both
-are pure: they may construct nodes as data but never evaluate them, and they
-preserve node identity on trivial paths so shared cells stay shared graph
-nodes.
+A convention pair defines how a leaf answers queries: ``select`` narrows the
+ordered cell stream to the (possibly clipped) cells relevant to a query, and
+``reduce`` collapses those cells to one answer. Both are pure: they may
+construct nodes as data but never evaluate them, and they preserve node
+identity on trivial paths so shared cells stay shared graph nodes.
 
-Presets:
+``select`` never raises for want of coverage — it returns ``()`` — and
+``reduce`` is total, so the empty selection is where a convention states what
+"nothing here" means. Two answers are principled:
 
-- :func:`flow` — ``Period``-keyed flow line items: cells overlapping a query
-  window are prorated by day count and summed; uncovered time contributes
-  zero.
-- :func:`keyed` — exact-keyed line items: the query is the key and exactly
-  one cell answers it.
+- :data:`~orcaset.maybe.MISSING`, for point-valued lines where a key either
+  has data or does not (:func:`only`).
+- a declared neutral value, for lines where emptiness has a meaning: no
+  activity in a window is zero flow (:func:`sum_cells` with ``empty=0.0``).
+
+Compose a leaf with ``LeafSeries.from_cells`` (or ``from_pairs``): a common
+flow line is ``clip_daily()`` with ``sum_cells(0.0)``; an exact-keyed line is
+``exact()`` with ``only()``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-
 from .f import F, Pure
+from .maybe import MISSING, MISSING_NODE, Maybe, Missing
 from .period import Period
-from .series import Reduce, ReplayIter, Select, Series, _lift2
+from .series import Cell, CellReplay, Key, Reduce, Select, lift2
 
 # Selects ------------------------------------------------------------------
 
 
-def exact[K, V]() -> Select[K, V, K]:
+def exact[K: Key, V]() -> Select[K, V, K]:
     """Select the single cell whose key equals the query; nothing when absent.
 
     Uses the stream's hash index, so repeated exact queries cost O(1) once
     the stream has been pulled through the key. A missing key selects the
-    empty tuple — pair with :func:`only` to raise or :func:`only_or` to
-    default.
+    empty tuple — pair with :func:`only` to answer ``MISSING`` or
+    :func:`only_or` to default.
     """
 
-    def sel(replay: ReplayIter[K, V], q: K) -> tuple[tuple[K, F[V]], ...]:
+    def sel(replay: CellReplay[K, V], q: K) -> tuple[Cell[K, V], ...]:
         try:
             return ((q, replay.find(q)),)
         except KeyError:
@@ -61,8 +64,8 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
     terminate.
     """
 
-    def sel(replay: ReplayIter[Period, float], q: Period) -> tuple[tuple[Period, F[float]], ...]:
-        out: list[tuple[Period, F[float]]] = []
+    def sel(replay: CellReplay[Period, float], q: Period) -> tuple[Cell[Period, float], ...]:
+        out: list[Cell[Period, float]] = []
         cursor = q.start
         # Walk by endpoint dates rather than Period ordering: a query window
         # often overlaps cells, and overlapping Periods are incomparable.
@@ -102,26 +105,32 @@ def clip_daily(fill: float | None = None) -> Select[Period, float, Period]:
 
 
 def only[K, V]() -> Reduce[K, V]:
-    """Exactly one selected cell answers the query: return it untouched.
+    """At most one selected cell answers the query.
 
-    Raises ``KeyError`` when nothing was selected and ``ValueError`` when the
-    selection is ambiguous.
+    Returns the cell untouched when exactly one was selected,
+    :data:`~orcaset.maybe.MISSING` when none was, and raises ``ValueError``
+    when the selection is ambiguous.
     """
 
-    def red(pairs: tuple[tuple[K, F[V]], ...]) -> F[V]:
+    def red(pairs: tuple[Cell[K, V], ...]) -> F[Maybe[V]]:
         if len(pairs) == 1:
             return pairs[0][1]
         if not pairs:
-            raise KeyError("no cell selected")
-        raise ValueError(f"expected exactly one selected cell, got {len(pairs)}")
+            return MISSING_NODE
+        raise ValueError(f"expected at most one selected cell, got {len(pairs)}")
 
     return red
 
 
 def only_or[K, V](default: V) -> Reduce[K, V]:
-    """Like :func:`only`, but an empty selection evaluates to ``default``."""
+    """Like :func:`only`, but an empty selection answers ``default``.
 
-    def red(pairs: tuple[tuple[K, F[V]], ...]) -> F[V]:
+    Use where a line item genuinely has a neutral value outside its cells;
+    otherwise leave the answer ``MISSING`` and fill at the point of use, so
+    the gap stays visible.
+    """
+
+    def red(pairs: tuple[Cell[K, V], ...]) -> F[Maybe[V]]:
         if len(pairs) == 1:
             return pairs[0][1]
         if not pairs:
@@ -131,37 +140,20 @@ def only_or[K, V](default: V) -> Reduce[K, V]:
     return red
 
 
-def sum_cells[K](fill: float = 0.0) -> Reduce[K, float]:
-    """Sum the selected cells; ``fill`` when nothing is selected.
+def sum_cells[K](empty: Maybe[float] = MISSING) -> Reduce[K, float]:
+    """Sum the selected cells; answer ``empty`` when nothing was selected.
 
-    A fold of one returns the cell untouched.
+    A fold of one returns the cell untouched. The default leaves an
+    uncovered query ``MISSING``; pass ``0.0`` for flow-like lines where no
+    coverage means no activity.
     """
 
-    def red(pairs: tuple[tuple[K, F[float]], ...]) -> F[float]:
+    def red(pairs: tuple[Cell[K, float], ...]) -> F[Maybe[float]]:
         if not pairs:
-            return Pure(fill)
+            return MISSING_NODE if isinstance(empty, Missing) else Pure(empty)
         acc = pairs[0][1]
         for _, cell in pairs[1:]:
-            acc = _lift2(lambda a, b: a + b, acc, cell)
+            acc = lift2(lambda a, b: a + b, acc, cell)
         return acc
 
     return red
-
-
-# Presets ------------------------------------------------------------------
-
-
-def flow(
-    cells: Callable[[], Iterable[tuple[Period, F[float]]]], *, label: str
-) -> Series[Period, float, Period]:
-    """A ``Period``-keyed flow line item.
-
-    Queries are windows: overlapping cells are prorated by day count and
-    summed; a window touching no periods evaluates to ``0.0``.
-    """
-    return Series.from_cells(cells, clip_daily(), sum_cells(0.0), label=label)
-
-
-def keyed[K, V](cells: Callable[[], Iterable[tuple[K, F[V]]]], *, label: str) -> Series[K, V, K]:
-    """An exact-keyed line item: the query is the key; missing keys raise."""
-    return Series.from_cells(cells, exact(), only(), label=label)

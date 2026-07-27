@@ -10,7 +10,7 @@
 
 from collections.abc import Iterator
 
-from orcaset import Context, F, Pure, keyed, print_deps
+from orcaset import Context, F, LeafSeries, Pure, exact, only, print_deps, unwrap
 
 # -------------------------------------------------------------------------------------------------
 # Deep Map chain — used to blow the call stack; now evaluates iteratively.
@@ -28,11 +28,11 @@ def counter_cells() -> Iterator[tuple[int, F[int]]]:
     yield 0, Pure(1, label="Counter seed")
     n = 1
     while True:
-        yield n, counter.query(n - 1).map(lambda x: x + 1, label=f"Counter@{n}")
+        yield n, counter.query(n - 1).map(lambda a: unwrap(a) + 1, label=f"Counter@{n}")
         n += 1
 
 
-counter = keyed(counter_cells, label="Counter")
+counter = LeafSeries.from_cells(counter_cells, exact(), only(), label="Counter")
 
 ctx = Context()
 print("\nSequence elements:")
