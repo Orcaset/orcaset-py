@@ -20,7 +20,8 @@ identity on trivial paths so shared cells stay shared graph nodes.
 
 Compose a leaf with ``LeafSeries.from_cells`` (or ``from_pairs``): a common
 flow line is ``clip_daily()`` with ``sum_cells(0.0)``; an exact-keyed line is
-``exact()`` with ``only()``.
+``exact()`` with ``only()``; a stock carried forward is ``last()`` with
+``only()``.
 """
 
 from __future__ import annotations
@@ -47,6 +48,26 @@ def exact[K: Key, V]() -> Select[K, V, K]:
             return ((q, replay.find(q)),)
         except KeyError:
             return ()
+
+    return sel
+
+
+def last[K: Key, V]() -> Select[K, V, K]:
+    """Select the last cell whose key is at or before the query.
+
+    Scans until a key past the query and keeps the preceding cell (original
+    node). An empty stream or every key past the query selects ``()`` — pair
+    with :func:`only` to answer ``MISSING``. Infinite series terminate once
+    keys pass the query.
+    """
+
+    def sel(replay: CellReplay[K, V], q: K) -> tuple[Cell[K, V], ...]:
+        found: Cell[K, V] | None = None
+        for key, cell in replay:
+            if q < key:
+                break
+            found = (key, cell)
+        return () if found is None else (found,)
 
     return sel
 

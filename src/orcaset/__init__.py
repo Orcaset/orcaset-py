@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from .context import Context, print_deps, print_edges
-from .conventions import clip_daily, exact, only, only_or, sum_cells
+from .conventions import clip_daily, exact, last, only, only_or, sum_cells
 from .f import Apply, Bind, Delay, F, Map, Pure
 from .maybe import (
     MISSING,
@@ -73,6 +73,7 @@ __all__ = [
     "clip_daily",
     "exact",
     "fill",
+    "last",
     "lift2",
     "map2",
     "merge",

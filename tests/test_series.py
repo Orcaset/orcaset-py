@@ -27,6 +27,7 @@ from orcaset import (
     clip_daily,
     exact,
     fill,
+    last,
     lift2,
     map2,
     merge,
@@ -946,6 +947,37 @@ def test_resample_after_merge_restores_cells_and_evidence() -> None:
 
 
 # Convention units ----------------------------------------------------------
+
+
+def test_last_selects_at_or_before_and_preserves_cell() -> None:
+    c0: F[float] = Pure(10.0)
+    c2: F[float] = Pure(20.0)
+    c5: F[float] = Pure(50.0)
+    series = LeafSeries.from_cells(
+        lambda: [(0, c0), (2, c2), (5, c5)], last(), only(), label="Stock"
+    )
+    ctx = Context()
+
+    assert series.query(2).run(ctx) == 20.0
+    assert series.query(3).run(ctx) == 20.0
+    assert series.query(5).run(ctx) == 50.0
+    assert series.query(100).run(ctx) == 50.0
+    assert series.query(-1).run(ctx) is MISSING
+
+    [(key, cell)] = series.select(3).run(ctx)
+    assert key == 2
+    assert cell is c2
+
+
+def test_last_stops_on_infinite_stream() -> None:
+    def cells() -> Iterator[tuple[int, F[float]]]:
+        for i in count():
+            yield i, Pure(float(i))
+
+    series = LeafSeries.from_cells(cells, last(), only(), label="Infinite")
+    ctx = Context()
+    assert series.query(3).run(ctx) == 3.0
+    assert [key for key, _ in series.select(3).run(ctx)] == [3]
 
 
 def test_reducers_preserve_single_cell_identity() -> None:
