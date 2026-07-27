@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import Any, Hashable, cast
+from typing import Any, cast
 
 from orcaset.rule import Rule
 

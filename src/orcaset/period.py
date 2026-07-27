@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import date
-from typing import Generator, NamedTuple
+from typing import NamedTuple
 
 from dateutil.relativedelta import relativedelta
 
