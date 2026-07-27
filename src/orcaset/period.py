@@ -76,7 +76,7 @@ class Period:
         i = 0
         while True:
             period_start = start + freq * i
-            if end is not None and period_start > end:
+            if end is not None and period_start >= end:
                 return
             period_end = start + freq * (i + 1)
             yield Period(period_start, min(period_end, end) if end is not None else period_end)

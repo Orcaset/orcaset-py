@@ -1,4 +1,4 @@
-project-excludes = ["examples", ".venv", "**/__pycache__"]
+project-excludes = [".venv", "**/__pycache__"]
 search-path = ["src"]
 strict-callable-subtyping = true
 

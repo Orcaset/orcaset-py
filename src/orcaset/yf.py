@@ -3,7 +3,6 @@
 
 import calendar
 from collections.abc import Callable
-
 from datetime import date
 from typing import Self
 

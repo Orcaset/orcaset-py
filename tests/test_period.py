@@ -34,6 +34,20 @@ def test_seq_end_clamps_final_period() -> None:
     assert periods[-1].end == date(2027, 6, 30)
 
 
+def test_seq_end_on_boundary_does_not_yield_empty() -> None:
+    periods = list(
+        Period.seq(
+            date(2025, 12, 31),
+            relativedelta(months=1, day=31),
+            date(2026, 12, 31),
+        )
+    )
+
+    assert periods[0] == Period(date(2025, 12, 31), date(2026, 1, 31))
+    assert periods[-1] == Period(date(2026, 11, 30), date(2026, 12, 31))
+    assert all(p.start < p.end for p in periods)
+
+
 def test_non_overlapping_order() -> None:
     a = Period(date(2026, 1, 1), date(2026, 4, 1))
     c = Period(date(2026, 4, 1), date(2026, 7, 1))

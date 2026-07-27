@@ -39,10 +39,12 @@ from .series import (
     rekey,
     resample,
 )
+from .yf import YF
 
 __all__ = [
     "MISSING",
     "MISSING_NODE",
+    "YF",
     "Apply",
     "Bind",
     "Cell",
