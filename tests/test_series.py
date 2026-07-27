@@ -197,6 +197,31 @@ def test_select_and_reduce_run_once_per_context_per_query() -> None:
     assert (sel_calls, red_calls) == (2, 2)
 
 
+def test_leaf_decorator_self_and_cross_query() -> None:
+    """``@LeafSeries.decorator`` binds the name to the series for recursive factories."""
+
+    @LeafSeries.decorator(exact(), only(), label="Counter")
+    def counter() -> Iterator[tuple[int, F[int]]]:
+        yield 0, Pure(0)
+        n = 1
+        while True:
+            yield n, counter.query(n - 1).map(lambda a: unwrap(a) + 1)
+            n += 1
+
+    @LeafSeries.decorator(exact(), only(), label="Double")
+    def double() -> Iterator[tuple[int, F[int]]]:
+        n = 0
+        while True:
+            yield n, counter.query(n).map(lambda a: unwrap(a) * 2)
+            n += 1
+
+    ctx = Context()
+    assert counter.query(5).run(ctx) == 5
+    assert double.query(5).run(ctx) == 10
+    assert counter.label == "Counter"
+    assert isinstance(counter, LeafSeries)
+
+
 def test_query_recursion_is_linear_and_cached() -> None:
     """counter[n] = counter[n - 1] + 1 via self-query; O(n) evaluations."""
     map_calls = 0

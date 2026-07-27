@@ -344,6 +344,33 @@ class LeafSeries[K: Key, V, Q = K](Series[K, V, Q]):
         )
 
     @classmethod
+    def decorator(
+        cls,
+        select: Select[K, V, Q],
+        reduce: Reduce[K, V],
+        *,
+        label: str,
+    ) -> Callable[[Callable[[], Cells[K, V]]], Self]:
+        """Decorator: turn a cell-factory generator into a :class:`LeafSeries`.
+
+        Equivalent to decorating with :meth:`from_cells`::
+
+            @LeafSeries.decorator(exact(), only(), label="Balance")
+            def balance() -> Iterator[tuple[date, F[float]]]:
+                ...
+                yield key, balance.query(prior)  # self-reference by name
+
+        The decorated name becomes the series, so a recursive or mutually
+        recursive factory closes over that name the same way a post-assigned
+        ``from_cells`` factory does.
+        """
+
+        def decorator(cells: Callable[[], Cells[K, V]]) -> Self:
+            return cls.from_cells(cells, select, reduce, label=label)
+
+        return decorator
+
+    @classmethod
     def from_pairs(
         cls,
         pairs: Iterable[tuple[K, V]],
