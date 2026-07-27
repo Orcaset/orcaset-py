@@ -17,6 +17,7 @@ from orcaset import (
     Context,
     F,
     LeafSeries,
+    Map2Series,
     MapNSeries,
     Maybe,
     Missing,
@@ -29,8 +30,6 @@ from orcaset import (
     fill,
     last,
     lift2,
-    map2,
-    merge,
     only,
     only_or,
     or_else,
@@ -587,7 +586,7 @@ def test_self_referential_query_cycle_raises() -> None:
 def test_map2_combines_answers_over_the_union_grid() -> None:
     a = LeafSeries.from_pairs([(1, 1.0), (2, 2.0)], exact(), only(), label="A")
     b = LeafSeries.from_pairs([(2, 20.0), (3, 30.0)], exact(), only(), label="B")
-    total = map2(a, b, fill(0.0, operator.add), label="Total")
+    total = Map2Series(a, b, fill(0.0, operator.add), label="Total")
 
     ctx = Context()
     assert list(total.keys().run(ctx)) == [1, 2, 3]
@@ -603,42 +602,12 @@ def test_combine_policies_differ_on_partial_coverage() -> None:
     b = LeafSeries.from_pairs([(2, 2.0)], exact(), only(), label="B")
 
     ctx = Context()
-    assert map2(a, b, fill(0.0, operator.add), label="Filled").query(1).run(ctx) == 1.0
-    assert map2(a, b, propagate(operator.add), label="Propagated").query(1).run(ctx) is MISSING
+    assert Map2Series(a, b, fill(0.0, operator.add), label="Filled").query(1).run(ctx) == 1.0
+    assert (
+        Map2Series(a, b, propagate(operator.add), label="Propagated").query(1).run(ctx) is MISSING
+    )
     with pytest.raises(MissingError):
-        map2(a, b, strict(operator.add), label="Strict").query(1).run(ctx)
-
-
-def test_merge_folds_as_a_balanced_tree() -> None:
-    sources = [
-        LeafSeries.from_pairs([(i, float(i))], exact(), only(), label=f"S{i}") for i in range(8)
-    ]
-    total = merge(sources, fill(0.0, operator.add), label="Total")
-
-    ctx = Context()
-    assert total.query(5).run(ctx) == 5.0
-    assert list(total.keys().run(ctx)) == list(range(8))
-    assert total.label == "Total"
-
-    # Balanced: 8 leaves fold to depth 3, not 7.
-    def depth(node: Series[int, float, int]) -> int:
-        children = getattr(node, "_a", None), getattr(node, "_b", None)
-        if children[0] is None:
-            return 0
-        return 1 + max(depth(child) for child in children if child is not None)
-
-    assert depth(total) == 3
-
-
-def test_merge_of_one_returns_the_source() -> None:
-    only_source = LeafSeries.from_pairs([(1, 1.0)], exact(), only(), label="A")
-    assert merge([only_source], fill(0.0, operator.add), label="Total") is only_source
-
-
-def test_merge_requires_at_least_one_series() -> None:
-    empty: list[Series[int, float, int]] = []
-    with pytest.raises(ValueError, match="at least one"):
-        merge(empty, fill(0.0, operator.add), label="Total")
+        Map2Series(a, b, strict(operator.add), label="Strict").query(1).run(ctx)
 
 
 def sum_answers(answers: tuple[Maybe[float], ...]) -> Maybe[float]:
@@ -776,7 +745,7 @@ def test_merged_cohorts_total_over_disjoint_spans() -> None:
         sum_cells(0.0),
         label="Cohort 2",
     )
-    total = merge([cohort1, cohort2], fill(0.0, operator.add), label="Total")
+    total = MapNSeries([cohort1, cohort2], sum_answers, label="Total")
 
     ctx = Context()
     assert [total.query(period).run(ctx) for period in timeline] == [0.0, 50.0, 150.0, 100.0]
@@ -919,7 +888,7 @@ def test_rekey_derives_the_grid_from_source_keys() -> None:
     assert annual.query(keys[0]).run(ctx) == pytest.approx(sum(10.0 + i for i in range(12)))
 
 
-def test_resample_after_merge_restores_cells_and_evidence() -> None:
+def test_resample_after_mapn_restores_cells_and_evidence() -> None:
     timeline = list(islice(Period.seq(date(2025, 12, 31), YEARLY), 3))
     a = LeafSeries.from_cells(
         lambda: [(timeline[0], Pure(10.0)), (timeline[1], Pure(20.0))],
@@ -930,7 +899,7 @@ def test_resample_after_merge_restores_cells_and_evidence() -> None:
     b = LeafSeries.from_cells(
         lambda: [(timeline[1], Pure(5.0))], clip_daily(), sum_cells(0.0), label="B"
     )
-    total = merge([a, b], fill(0.0, operator.add), label="Total")
+    total = MapNSeries([a, b], sum_answers, label="Total")
     materialized = resample(
         total,
         lambda: timeline,

@@ -626,47 +626,6 @@ def ordered_union[K: Key](runs: Iterable[Iterable[K]]) -> Iterator[K]:
                 heads[index] = next(iterators[index], _END)
 
 
-def map2[K: Key, A, B, W, Q](
-    a: Series[K, A, Q],
-    b: Series[K, B, Q],
-    fn: Callable[[Maybe[A], Maybe[B]], Maybe[W]],
-    *,
-    label: str,
-) -> Series[K, W, Q]:
-    """Combine two series' answers pointwise. See :class:`Map2Series`."""
-    return Map2Series(a, b, fn, label=label)
-
-
-def merge[K: Key, V, Q](
-    sources: Sequence[Series[K, V, Q]],
-    combine: Callable[[Maybe[V], Maybe[V]], Maybe[V]],
-    *,
-    label: str,
-) -> Series[K, V, Q]:
-    """Combine several series' answers pointwise, folded as a balanced tree.
-
-    Bind depth per query is ``O(log n)`` rather than ``O(n)``. Every source
-    is asked every query, so ``combine`` must handle absence: outer-merging
-    cohorts that cover disjoint spans wants
-    ``fill(0.0, operator.add)``. A single source is returned unchanged.
-    """
-    if not sources:
-        raise ValueError("merge requires at least one series")
-
-    def fold(items: Sequence[Series[K, V, Q]], name: str) -> Series[K, V, Q]:
-        if len(items) == 1:
-            return items[0]
-        mid = len(items) // 2
-        return Map2Series(
-            fold(items[:mid], f"{name} [0:{mid}]"),
-            fold(items[mid:], f"{name} [{mid}:{len(items)}]"),
-            combine,
-            label=name,
-        )
-
-    return fold(list(sources), label)
-
-
 # Resampling ----------------------------------------------------------------
 
 

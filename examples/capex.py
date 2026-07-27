@@ -5,9 +5,9 @@
 # Total amort: pointwise sum of all cohort series
 #
 # Cohorts cover disjoint spans, so every cohort is asked every period and
-# answers MISSING outside its own. `fill(0.0, add)` states the policy: an
+# answers MISSING outside its own. `or_else(a, 0.0)` states the policy: an
 # absent cohort contributes its additive identity. That is the one thing a
-# query-level merge needs which a stream-level merge got for free.
+# query-level combine needs which a stream-level merge got for free.
 #
 # Output summary:
 # Period end        2026-12-31  2027-12-31  2028-12-31  2029-12-31
@@ -16,7 +16,6 @@
 # Amort cohort 2             0           0         100         100
 # Total amort                0          50         150         100
 
-import operator
 from collections.abc import Callable, Iterator
 from datetime import date
 from itertools import islice
@@ -28,11 +27,11 @@ from orcaset import (
     Context,
     F,
     LeafSeries,
+    MapNSeries,
     Period,
     Series,
     clip_daily,
-    fill,
-    merge,
+    or_else,
     print_deps,
     sum_cells,
     unwrap,
@@ -76,7 +75,11 @@ cohorts: list[Series[Period, float]] = [
 
 
 # TOTAL AMORT — pointwise sum of the cohort schedules
-total_amort = merge(cohorts, fill(0.0, operator.add), label="Total amort")
+total_amort = MapNSeries(
+    cohorts,
+    lambda answers: sum(or_else(a, 0.0) for a in answers),
+    label="Total amort",
+)
 
 
 # OUTPUT
