@@ -55,13 +55,16 @@ class Rule[K: Hashable, V](ABC):
         return self._name
 
     @abstractmethod
-    def compute(self, key: K) -> Step[V] | V:
+    def compute(self, key: K, /) -> Step[V] | V:
         """Compute the value of this rule at `key`.
 
         Rules with dependencies are written as generators: request other cells
         with `value = yield from fetch(rule, key)` and `return` the result.
         Each body runs exactly once per cell; execution suspends at `fetch`
         while dependencies resolve. Leaf rules may return a plain value.
+
+        The parameter is positional-only so overrides may rename it for their
+        key space (e.g. `q` for query-keyed rules).
 
         Note: a plain return value must not itself be a generator, since a
         returned generator is treated as a suspendable computation. Wrap

@@ -14,13 +14,20 @@ class InvalidPeriodError(Exception):
     """Error raised when trying to create a `Period` with `start` on or after `end`."""
 
 
-
 class _Period(NamedTuple):
     start: date
     end: date
 
 
 class Period(_Period):
+    """A period between two dates, `start` strictly before `end`.
+
+    Ordering is "entirely before": `a < b` iff `a.end <= b.start`, so adjacent
+    periods are ordered. This is a partial order — overlapping periods are
+    mutually incomparable — so avoid `sorted()`/`min()`/`max()` over possibly
+    overlapping periods; their results depend on input order.
+    """
+
     def __new__(cls, start: date, end: date):
         if start >= end:
             raise InvalidPeriodError(
@@ -37,6 +44,26 @@ class Period(_Period):
         if not isinstance(other, Period):
             return NotImplemented
         return self.start == other.start and self.end == other.end
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        return self.end <= other.start
+
+    def __le__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        return self == other or self < other
+
+    def __gt__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        return other < self
+
+    def __ge__(self, other: object) -> bool:
+        if not isinstance(other, Period):
+            return NotImplemented
+        return self == other or other < self
 
     def __repr__(self) -> str:
         return f"Period({self.start.isoformat()}, {self.end.isoformat()})"

@@ -21,6 +21,11 @@ wheel-exclude = ["/examples"]
 [tool.ruff]
 line-length = 100
 
+[tool.pyright]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
