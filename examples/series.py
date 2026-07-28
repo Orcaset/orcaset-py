@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from datetime import date
 
-from orcaset import Context, Fetch, Period, Rule
+from orcaset import Context, Period, Rule, Step, fetch
 
 
 class _ReplayableIterator[T](Iterator[T]):
@@ -42,7 +42,7 @@ class ReplayableRule[T](Rule[None, Iterable[T]]):
         super().__init__("ReplayableRule")
         self.iterable = iterable
 
-    def compute(self, fetch: Fetch, key: None) -> Iterable[T]:
+    def compute(self, key: None) -> Iterable[T]:
         return Replayable(self.iterable())
 
 
@@ -59,8 +59,8 @@ class SeriesRule[K: Hashable, V](Rule[K, V]):
         self.select = select
         self.reduce = reduce
 
-    def compute(self, fetch: Fetch, key: K) -> V:
-        series = fetch(self.iterable, None)
+    def compute(self, key: K) -> Step[V]:
+        series = yield from fetch(self.iterable, None)
         items = self.select(series, key)
         return self.reduce(items)
 
@@ -73,10 +73,10 @@ def sum_values(items: Iterable[tuple[Period, float]]) -> float:
     return sum(item[1] for item in items)
 
 
-def revenue_generator():
-    yield Period(date(2025, 12, 31), date(2026, 1, 31)), 100
-    yield Period(date(2026, 1, 31), date(2026, 2, 28)), 200
-    yield Period(date(2026, 2, 28), date(2026, 3, 31)), 300
+def revenue_generator() -> Iterator[tuple[Period, float]]:
+    yield Period(date(2025, 12, 31), date(2026, 1, 31)), 100.0
+    yield Period(date(2026, 1, 31), date(2026, 2, 28)), 200.0
+    yield Period(date(2026, 2, 28), date(2026, 3, 31)), 300.0
 
 
 revenue = SeriesRule(ReplayableRule(revenue_generator), periods_over, sum_values)

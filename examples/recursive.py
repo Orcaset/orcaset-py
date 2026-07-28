@@ -4,7 +4,7 @@ from typing import Any
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, Fetch, Period, Rule
+from orcaset import Context, Period, Rule, Step, fetch
 
 
 class IterableRule(Rule[Any, Iterable[Period]]):
@@ -12,12 +12,10 @@ class IterableRule(Rule[Any, Iterable[Period]]):
         super().__init__("IterableRule")
         self.iterable = iterable
 
-    def compute(self, fetch: Fetch, key: Any) -> Iterable[Period]:
+    def compute(self, key: Any) -> Iterable[Period]:
         # TODO: Wrap this in a something so that the cached version is replayable?
-        # Or pass self to the fetch function, wrap the response in a replayable object/tee and return it?
-        # That would be a bit meta and not sure it would ever resolve since it would just loop infinitely,
-        # but the idea is that you somehow cache the iterable the first time it's called, then everytime after
-        # that you'd return a tee of the cached iterable from the ctx. So wrapping/replaying logic would be defined here.
+        # See Replayable in examples/series.py, which buffers a lazy source so the
+        # cached iterable can be re-iterated safely.
         return self.iterable
 
 
@@ -29,12 +27,12 @@ class Revenue(Rule[Period, float | None]):
         self.freq = freq
         self.growth = growth
 
-    def compute(self, fetch: Fetch, key: Period) -> float | None:
+    def compute(self, key: Period) -> Step[float | None]:
         if key == Period(self.start, self.start + self.freq):
             return self.initial
 
         prior_key = key.shift(-self.freq)
-        prev = fetch(self, prior_key)
+        prev = yield from fetch(self, prior_key)
         if prev is None:
             return None
         return prev * (1 + self.growth)
@@ -45,5 +43,5 @@ revenue = Revenue(start=date(2026, 1, 1), initial=100, freq=relativedelta(months
 
 print(ctx.demand(revenue, Period(date(2026, 1, 1), date(2026, 2, 1))))
 print(ctx.demand(revenue, Period(date(2026, 2, 1), date(2026, 3, 1))))
-print(ctx.demand(revenue, Period(date(2227, 3, 1), date(2227, 4, 1))))
+print(ctx.demand(revenue, Period(date(2527, 3, 1), date(2527, 4, 1))))
 print(ctx.dependencies(revenue, Period(date(2026, 3, 1), date(2026, 4, 1))))

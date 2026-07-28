@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Hashable
+from collections.abc import Generator, Hashable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from orcaset.rule import Rule
+from orcaset.rule import Rule, Step
 
 type RuleKey = tuple[int, Hashable]
 
@@ -15,14 +15,8 @@ type RuleKey = tuple[int, Hashable]
 _MISSING: Any = object()
 
 
-class _PendingDemand(BaseException):
-    def __init__(self, rule: Rule[Any, Any], key: Hashable):
-        self.rule = rule
-        self.key = key
-
-
 class CycleError(RuntimeError):
-    """Raised when a non-circular demand cycle is detected."""
+    """Raised when a demand cycle is detected."""
 
     def __init__(self, path: tuple[RuleKey, ...], *, names: dict[int, str] | None = None) -> None:
         self.path = path
@@ -55,26 +49,10 @@ class DepNode:
         return lines
 
 
-class _Fetch:
-    def __init__(self, context: Context):
-        self._context = context
-
-    def __call__[K: Hashable, V](self, rule: Rule[K, V], key: K) -> V:
-        child = (rule.id, key)
-        self._context._rules[rule.id] = rule
-        if self._context._stack:
-            self._context._record_dep(self._context._stack[-1], child)
-
-        cached = self._context._compute_cache.get(child, _MISSING)
-        if cached is not _MISSING:
-            return cast(V, cached)
-
-        if child in self._context._stack:
-            cycle_start = self._context._stack.index(child)
-            path = tuple(self._context._stack[cycle_start:])
-            raise CycleError(path, names=self._context._rule_names())
-
-        raise _PendingDemand(rule, key)
+def _completed(value: Any) -> Step[Any]:
+    """A step that immediately completes with `value`."""
+    return value
+    yield  # unreachable; makes this function a generator
 
 
 class Context:
@@ -82,41 +60,61 @@ class Context:
         self._compute_cache: dict[RuleKey, Any] = {}
         self._deps: dict[RuleKey, set[RuleKey]] = {}
         self._stack: list[RuleKey] = []
+        self._on_stack: set[RuleKey] = set()
         self._rules: dict[int, Rule[Any, Any]] = {}
 
     def demand[K: Hashable, V](self, rule: Rule[K, V], key: K) -> V:
-        cell = (rule.id, key)
+        cell: RuleKey = (rule.id, key)
         self._rules[rule.id] = rule
 
         # Check for circular dependencies and raise an error if found
-        if cell in self._stack:
-            cycle_start = self._stack.index(cell)
-            path = tuple(self._stack[cycle_start:])
-            raise CycleError(path, names=self._rule_names())
+        if cell in self._on_stack:
+            self._raise_cycle(cell)
 
         # Return cached value if available
         cached = self._compute_cache.get(cell, _MISSING)
         if cached is not _MISSING:
             return cast(V, cached)
 
-        # Otherwise compute and cache values using an explicit dependency stack
-        # TODO: Revise so that it doesn't restart computation by popping by raising an exception to pop from
-        # _Fetch.__call__ back to this while loop
-        # TODO: Consider using a marker object to detect the start of the stack instead of len()
+        # Otherwise run a suspending scheduler: each frame is a paused
+        # `compute` generator. Yielded `Demand`s either resolve from cache
+        # immediately or push a new frame; finished frames send their return
+        # value back into the frame that demanded them. Every `compute` body
+        # runs exactly once per cell and no Python recursion is used, so
+        # arbitrarily deep dependency chains are safe.
         stack_start = len(self._stack)
-        self._stack.append(cell)
+        frames: list[Step[Any]] = []
+        self._push(cell, rule.compute(key), frames)
+        to_send: Any = None
         try:
-            while len(self._stack) > stack_start:
-                current = self._stack[-1]
-                current_rule = self._rules[current[0]]
+            while frames:
                 try:
-                    value = current_rule.compute(_Fetch(self), current[1])
-                except _PendingDemand as pending:
-                    self._stack.append((pending.rule.id, pending.key))
+                    demanded = frames[-1].send(to_send)
+                except StopIteration as stop:
+                    finished = self._stack.pop()
+                    self._on_stack.discard(finished)
+                    frames.pop()
+                    self._compute_cache[finished] = stop.value
+                    to_send = stop.value
                 else:
-                    self._compute_cache[current] = value
-                    self._stack.pop()
+                    dep_rule = demanded.rule
+                    child: RuleKey = (dep_rule.id, demanded.key)
+                    self._rules[dep_rule.id] = dep_rule
+                    self._record_dep(self._stack[-1], child)
+
+                    dep_cached = self._compute_cache.get(child, _MISSING)
+                    if dep_cached is not _MISSING:
+                        to_send = dep_cached
+                    elif child in self._on_stack:
+                        self._raise_cycle(child)
+                    else:
+                        self._push(child, dep_rule.compute(demanded.key), frames)
+                        to_send = None
         finally:
+            for frame in reversed(frames):
+                frame.close()
+            for stale in self._stack[stack_start:]:
+                self._on_stack.discard(stale)
             del self._stack[stack_start:]
 
         return cast(V, self._compute_cache[cell])
@@ -125,6 +123,19 @@ class Context:
         """Demand `rule`/`key`, then return its dependency tree."""
         self.demand(rule, key)
         return self._dep_node((rule.id, key), seen=set())
+
+    def _push(self, cell: RuleKey, result: Step[Any] | Any, frames: list[Step[Any]]) -> None:
+        self._stack.append(cell)
+        self._on_stack.add(cell)
+        if isinstance(result, Generator):
+            frames.append(result)
+        else:
+            frames.append(_completed(result))
+
+    def _raise_cycle(self, cell: RuleKey) -> None:
+        cycle_start = self._stack.index(cell)
+        path = tuple(self._stack[cycle_start:])
+        raise CycleError(path, names=self._rule_names())
 
     def _dep_node(self, cell: RuleKey, *, seen: set[RuleKey]) -> DepNode:
         rule_id, key = cell

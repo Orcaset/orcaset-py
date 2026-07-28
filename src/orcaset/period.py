@@ -13,7 +13,6 @@ from dateutil.relativedelta import relativedelta
 class InvalidPeriodError(Exception):
     """Error raised when trying to create a `Period` with `start` on or after `end`."""
 
-    pass
 
 
 class _Period(NamedTuple):
@@ -59,7 +58,7 @@ class Period(_Period):
     @classmethod
     def seq(
         cls, start: date, freq: relativedelta, end: date | None = None
-    ) -> Generator[Period, None, None]:
+    ) -> Generator[Period]:
         """
         Create a generator of periods with duration `freq`. Infinite if `end` is `None`.
 
