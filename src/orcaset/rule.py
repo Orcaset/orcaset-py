@@ -10,8 +10,8 @@ from typing import Protocol
 from orcaset.ids import next_id
 
 
-class Fetch[K: Hashable, V](Protocol):
-    def __call__(self, rule: Rule[K, V], key: K) -> V: ...
+class Fetch(Protocol):
+    def __call__[DepK: Hashable, DepV](self, rule: Rule[DepK, DepV], key: DepK) -> DepV: ...
 
 
 class Rule[K: Hashable, V](ABC):
@@ -28,4 +28,4 @@ class Rule[K: Hashable, V](ABC):
         return self._name
 
     @abstractmethod
-    def compute(self, fetch: Fetch[K, V], key: K) -> V: ...
+    def compute(self, fetch: Fetch, key: K) -> V: ...

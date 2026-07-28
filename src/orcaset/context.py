@@ -55,11 +55,11 @@ class DepNode:
         return lines
 
 
-class _Fetch[K: Hashable, V]:
+class _Fetch:
     def __init__(self, context: Context):
         self._context = context
 
-    def __call__(self, rule: Rule[K, V], key: K) -> V:
+    def __call__[K: Hashable, V](self, rule: Rule[K, V], key: K) -> V:
         child = (rule.id, key)
         self._context._rules[rule.id] = rule
         if self._context._stack:
