@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator, Sequence
 from typing import Any, ClassVar, Protocol, Self, TypeIs, final
 
@@ -102,51 +102,90 @@ class Replayable[T](Iterable[T]):
 # ---------- series ----------
 
 
-class Series[Q: Hashable, K: Key, V, W](Rule[Q, W], ABC):
-    """A rule with an explicit domain and packaged query semantics.
+class Series[Q: Hashable, K: Key, W](Rule[Q, W], ABC):
+    """The series interface: a demandable rule with an explicit time domain.
 
-    Public surface: ``demand(self, q)`` and ``self.keys``. Values are readable
-    only through queries; the grid is private.
-
-    Law (grid identity): for every k in keys, querying at k returns that
-    cell's value exactly.
+    Public surface: ``demand(self, q)`` and ``self.keys``. How answers are
+    produced is up to the implementation (grid + query semantics, delegation,
+    ...); downstream code should type against this.
     """
 
     def __init__(self, name: str, keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]]):
         super().__init__(name)
-        self.keys: Rule[None, Keys[K]] = (
-            keys if isinstance(keys, Rule) else _KeysCell(name, keys)
-        )  # pass an existing series' keys rule to share a domain definitionally
+        self.keys: Rule[None, Keys[K]] = keys if isinstance(keys, Rule) else _KeysCell(name, keys)
+
+    def map[W2](self, name: str, fn: Callable[[W], W2]) -> MapSeries[Q, K, W, W2]:
+        """Derived series answering ``fn(self answered at q)`` for every query.
+
+        ``fn`` sees the raw answer (typically ``Maybe``) and owns the miss policy.
+        """
+        return MapSeries(name, self, fn)
+
+
+class CellReader[K: Key, V](Protocol):
+    """Narrow view of a grid series handed to value functions."""
+
+    def cell(self, key: K, /) -> Step[Maybe[V]]: ...
+
+
+type ValueFn[K: Key, V] = Callable[[CellReader[K, V], K], Step[V] | V]
+"""Grid definition; may assume key is covered.
+
+Recurrences: ``yield from reader.cell(prior_k)``. Other rules/series: fetch
+their public face. May return a plain value or a generator ``Step``.
+"""
+
+type SelectFn[Q, K: Key] = Callable[[Keys[K], Q], Sequence[K]]
+"""Pure. Grid keys relevant to ``q`` (overlap, bracketing, ...).
+
+Early-terminating scan of an ascending, possibly infinite stream. May return
+keys outside the domain (their cells resolve to ``Na``); whichever convention
+a select picks, its paired ``reduce`` must expect it.
+"""
+
+type ReduceFn[Q, K: Key, V, W] = Callable[[Q, Sequence[tuple[K, Maybe[V]]]], W]
+"""Pure. Combine fetched cells into the answer.
+
+Owns the policy for misses and partial coverage (``q`` not spanned by the
+selected keys).
+"""
+
+
+class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
+    """A series backed by a grid of memoized cells, with packaged query semantics.
+
+    All three ingredients are constructor state: ``value_at`` is the instance
+    data (the grid definition); ``select``/``reduce`` are the query semantics,
+    fixed per series at construction so a series can never be read under a
+    convention other than its own. ``select`` and ``reduce`` are a matched
+    pair — construction helpers are the natural place to pair them.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]],
+        value_at: ValueFn[K, V],
+        *,
+        select: SelectFn[Q, K],
+        reduce: ReduceFn[Q, K, V, W],
+    ):
+        super().__init__(name, keys)
+        self._value_at = value_at
+        self._select = select
+        self._reduce = reduce
         self._cells: Rule[K, Maybe[V]] = _Cells(name, self)
 
-    # ---- subclass contract (per kind: FlowSeries, PointSeries, ...) ----
+    # ---- grid reads ----
 
-    @abstractmethod
-    def _value_at(self, key: K) -> Step[V] | V:
-        """Grid definition; may assume key is covered.
+    def cell(self, key: K, /) -> Step[Maybe[V]]:
+        """Blessed grid read: memoized, total (off-domain -> ``Na``), traced.
 
-        Recurrences: ``fetch(self._cells, prior_k)``. Query-flavored self-reference:
-        ``fetch(self, q)``. Other rules/series: fetch their public face.
+        No query semantics apply; this is an exact-key lookup.
         """
+        return fetch(self._cells, key)
 
-    @abstractmethod
-    def _select(self, keys: Keys[K], q: Q) -> Sequence[K]:
-        """Pure. Grid keys relevant to ``q`` (overlap, bracketing, ...).
-
-        Early-terminating scan of an ascending, possibly infinite stream. May
-        return keys outside the domain (their cells resolve to ``Na``);
-        whichever convention a kind picks, its ``_reduce`` must expect it.
-        """
-
-    @abstractmethod
-    def _reduce(self, q: Q, items: Sequence[tuple[K, Maybe[V]]]) -> W:
-        """Pure. Combine fetched cells into the answer.
-
-        Owns the policy for misses and partial coverage (``q`` not spanned by
-        selected keys).
-        """
-
-    # ---- final template ----
+    # ---- query template ----
 
     def compute(self, q: Q, /) -> Step[W]:
         ks = yield from fetch(self.keys, None)
@@ -155,6 +194,25 @@ class Series[Q: Hashable, K: Key, V, W](Rule[Q, W], ABC):
             v = yield from fetch(self._cells, k)
             items.append((k, v))
         return self._reduce(q, items)
+
+
+class MapSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
+    """A series whose every answer is ``fn(source answered at q)``.
+
+    Query resolution is fully delegated to the source; there is no grid of its
+    own. ``keys`` aliases the source's domain so downstream series can share it
+    and traces show the dependency. ``fn`` sees the source's raw answer
+    (typically ``Maybe``) and owns the miss policy.
+    """
+
+    def __init__(self, name: str, source: Series[Q, K, W], fn: Callable[[W], W2]):
+        super().__init__(name, source.keys)
+        self._source = source
+        self._fn = fn
+
+    def compute(self, q: Q, /) -> Step[W2]:
+        w = yield from fetch(self._source, q)
+        return self._fn(w)
 
 
 # ---------- internal glue ----------
@@ -182,7 +240,7 @@ class _Cells[K: Key, V](Rule[K, Maybe[V]]):
     conventional.
     """
 
-    def __init__(self, name: str, series: Series[Any, K, V, Any]):
+    def __init__(self, name: str, series: GridSeries[Any, K, V, Any]):
         super().__init__(f"{name}.cells")
         self._series = series
 
@@ -190,7 +248,7 @@ class _Cells[K: Key, V](Rule[K, Maybe[V]]):
         ks = yield from fetch(self._series.keys, None)
         if not _covered(ks, key):
             return Na
-        return (yield from _as_step(self._series._value_at(key)))
+        return (yield from _as_step(self._series._value_at(self._series, key)))
 
 
 def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
