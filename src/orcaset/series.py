@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
-from typing import Protocol, Self
+from typing import Any, Protocol, Self
 
 from orcaset.rule import Rule, Step, fetch
 
@@ -24,11 +24,6 @@ class Key(Hashable, Protocol):
     def __lt__(self, other: Self, /) -> bool: ...
 
 
-type Keys[K: Key] = Iterable[K]
-"""Contract: strictly ascending (each key entirely before the next, hence
-disjoint); possibly infinite; replayable (safe to re-iterate)."""
-
-
 type QueryFn[Q, K: Key, V, W] = Callable[
     [Q, Iterable[tuple[K, Step[V] | V]]],
     Step[W] | W,
@@ -38,6 +33,12 @@ type QueryFn[Q, K: Key, V, W] = Callable[
 May scan without forcing every ``Step`` (early-terminate, skip). Fixed per
 series at construction so a series cannot be read under another convention.
 """
+
+type SeriesSources[Q: Hashable, K: Key, W] = tuple[
+    Series[Q, K, W],
+    *tuple[Series[Q, K, W], ...],
+]
+"""A nonempty, homogeneous tuple of series."""
 
 
 # ---------- replayable ----------
@@ -85,9 +86,117 @@ class Series[Q: Hashable, K: Key, W](Rule[Q, W], ABC):
     """
 
     @abstractmethod
-    def keys(self) -> Rule[None, Keys[K]]:
-        """Demandable ascending domain."""
+    def keys(self) -> Rule[None, Iterable[K]]:
+        """Demandable ascending domain (strictly ascending, possibly infinite)."""
         ...
+
+    def map[V](self, name: str, fn: Callable[[W], V]) -> MapSeries[Q, K, W, V]:
+        """Derived series answering ``fn(self answered at q)`` for every query.
+
+        ``fn`` sees the raw answer (typically ``Maybe``) and owns the miss policy.
+        Domain aliases ``self.keys()``.
+        """
+        return MapSeries(name, self, fn)
+
+    def map2[W2, V](
+        self,
+        name: str,
+        other: Series[Q, K, W2],
+        fn: Callable[[W, W2], V],
+        *,
+        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
+    ) -> Map2Series[Q, K, W, W2, V]:
+        """Combine ``self`` and ``other`` at each query via ``fn``.
+
+        Sources may have different answer types. ``merge_keys`` builds the
+        derived domain only.
+        """
+        return Map2Series(name, self, other, fn, merge_keys=merge_keys)
+
+
+class MapSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
+    """A series whose every answer is ``fn(source answered at q)``.
+
+    Query resolution is fully delegated to the source; ``keys()`` returns the
+    source domain rule so both share one buffer per context and traces show the
+    dependency.
+    """
+
+    def __init__(self, name: str, source: Series[Q, K, W], fn: Callable[[W], V]) -> None:
+        super().__init__(name)
+        self._source = source
+        self._fn = fn
+
+    def keys(self) -> Rule[None, Iterable[K]]:
+        return self._source.keys()
+
+    def compute(self, q: Q, /) -> Step[V]:
+        w = yield from fetch(self._source, q)
+        return self._fn(w)
+
+
+class MapNSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
+    """A series whose every answer combines source answers at the same query.
+
+    Query resolution is delegated independently to every source. ``merge_keys``
+    only constructs the derived series' public domain; it is not involved when
+    answering a query.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        sources: SeriesSources[Q, K, W],
+        fn: Callable[[tuple[W, ...]], V],
+        *,
+        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
+    ) -> None:
+        if not sources:
+            raise ValueError("MapNSeries requires at least one source")
+        super().__init__(name)
+        self._sources = sources
+        self._fn = fn
+        self._keys: Rule[None, Iterable[K]] = _MapNKeys(name, sources, merge_keys)
+
+    def keys(self) -> Rule[None, Iterable[K]]:
+        return self._keys
+
+    def compute(self, q: Q, /) -> Step[V]:
+        values: list[W] = []
+        for source in self._sources:
+            values.append((yield from fetch(source, q)))
+        return self._fn(tuple(values))
+
+
+class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
+    """Combine two series at the same query; left and right answer types may differ.
+
+    ``merge_keys`` only constructs the public domain; it is not used when
+    answering a query.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        left: Series[Q, K, W1],
+        right: Series[Q, K, W2],
+        fn: Callable[[W1, W2], V],
+        *,
+        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
+    ) -> None:
+        super().__init__(name)
+        self._left = left
+        self._right = right
+        self._fn = fn
+        self._keys: Rule[None, Iterable[K]] = _MapNKeys(name, (left, right), merge_keys)
+
+    def keys(self) -> Rule[None, Iterable[K]]:
+        return self._keys
+
+    def compute(self, q: Q, /) -> Step[V]:
+        a = yield from fetch(self._left, q)
+        b = yield from fetch(self._right, q)
+        return self._fn(a, b)
 
 
 class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
@@ -106,10 +215,10 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
     ) -> None:
         super().__init__(name)
         self._cells: Rule[None, Iterable[tuple[K, Step[V] | V]]] = _Cells(name, cells)
-        self._keys: Rule[None, Keys[K]] = _GridKeys(name, self._cells)
+        self._keys: Rule[None, Iterable[K]] = _GridKeys(name, self._cells)
         self._query = query
 
-    def keys(self) -> Rule[None, Keys[K]]:
+    def keys(self) -> Rule[None, Iterable[K]]:
         return self._keys
 
     def compute(self, q: Q, /) -> Step[W]:
@@ -135,7 +244,7 @@ class _Cells[K: Key, V](Rule[None, Iterable[tuple[K, Step[V] | V]]]):
         return Replayable(_ascending_pairs(self._cells()))
 
 
-class _GridKeys[K: Key, V](Rule[None, Keys[K]]):
+class _GridKeys[K: Key, V](Rule[None, Iterable[K]]):
     """Domain projected from cells; ``fetch(_cells)`` records the dependency."""
 
     def __init__(
@@ -146,7 +255,7 @@ class _GridKeys[K: Key, V](Rule[None, Keys[K]]):
         super().__init__(f"{name}.keys")
         self._cells = cells
 
-    def compute(self, key: None) -> Step[Keys[K]]:
+    def compute(self, key: None) -> Step[Iterable[K]]:
         pairs = yield from fetch(self._cells, None)
         return _KeyProj(pairs)
 
@@ -160,6 +269,36 @@ class _KeyProj[K: Key, V](Iterable[K]):
     def __iter__(self) -> Iterator[K]:
         for k, _ in self._pairs:
             yield k
+
+
+class _MapNKeys[Q: Hashable, K: Key](Rule[None, Iterable[K]]):
+    """Demandable, replayable domain derived from several source domains."""
+
+    def __init__(
+        self,
+        name: str,
+        sources: tuple[Series[Q, K, Any], *tuple[Series[Q, K, Any], ...]],
+        merge: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
+    ) -> None:
+        super().__init__(f"{name}.keys")
+        self._sources = sources
+        self._merge = merge
+
+    def compute(self, key: None, /) -> Step[Iterable[K]]:
+        domains: list[Iterable[K]] = []
+        for source in self._sources:
+            domains.append((yield from fetch(source.keys(), None)))
+        return Replayable(_ascending(self._merge(tuple(domains))))
+
+
+def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
+    """Yield from ``source``, raising if consecutive keys are not strictly ascending."""
+    prev: K | None = None
+    for k in source:
+        if prev is not None and not prev < k:
+            raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
+        prev = k
+        yield k
 
 
 def _ascending_pairs[K: Key, V](

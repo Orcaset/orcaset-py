@@ -52,9 +52,18 @@ def revenue_cells() -> Iterable[tuple[Period, Step[float] | float]]:
 
 revenue = GridSeries("revenue", revenue_cells, point)
 
+cogs = revenue.map("cogs", lambda r: Na if isna(r) else r * -0.5)
+
+gross_profit = revenue.map2(
+    "gross_profit",
+    cogs,
+    lambda r, c: Na if isna(r) or isna(c) else r + c,
+    merge_keys=lambda domains: domains[0],  # cogs aliases revenue.keys()
+)
+
 ctx = Context()
-print(ctx.demand(revenue, Period(date(2026, 1, 1), date(2026, 2, 1))))
-print(ctx.demand(revenue, Period(date(2026, 2, 1), date(2026, 3, 1))))
-print(ctx.demand(revenue, Period(date(2027, 3, 1), date(2027, 4, 1))))
-print(ctx.demand(revenue, Period(date(2026, 1, 15), date(2026, 2, 15))))
-print(ctx.dependencies(revenue, Period(date(2026, 3, 1), date(2026, 4, 1))))
+q = Period(date(2027, 3, 1), date(2027, 4, 1))
+print(ctx.demand(revenue, q))
+print(ctx.demand(cogs, q))
+print(ctx.demand(gross_profit, q))
+print(ctx.dependencies(gross_profit, q))

@@ -8,10 +8,13 @@ from orcaset.rule import Demand, Rule, Step, fetch
 from orcaset.series import (
     GridSeries,
     Key,
-    Keys,
+    Map2Series,
+    MapNSeries,
+    MapSeries,
     QueryFn,
     Replayable,
     Series,
+    SeriesSources,
 )
 from orcaset.yf import YF
 
@@ -23,7 +26,9 @@ __all__ = [
     "DepNode",
     "GridSeries",
     "Key",
-    "Keys",
+    "Map2Series",
+    "MapNSeries",
+    "MapSeries",
     "Maybe",
     "Na",
     "Period",
@@ -31,6 +36,7 @@ __all__ = [
     "Replayable",
     "Rule",
     "Series",
+    "SeriesSources",
     "Step",
     "fetch",
     "isna",
