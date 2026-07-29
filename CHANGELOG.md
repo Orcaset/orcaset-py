@@ -9,6 +9,14 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added `MapNSeries` for answer-level composition of a nonempty tuple of
+  homogeneous series, with a caller-supplied lazy domain merger.
+- Added `period_union(...)` for lazily merging period domains and
+  `combine_values(...)` and `add_values(...)` for Na-propagating value
+  combination.
+
 ### Changed
 
 - Changed demand resolution to use an explicit stack so deeply dependent rule

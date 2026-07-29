@@ -1,17 +1,17 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from collections.abc import Sequence
-from itertools import count
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from heapq import merge
+from itertools import count, islice
 
 import pytest
-
-from collections.abc import Callable, Iterable
 
 from orcaset import (
     Context,
     GridSeries,
     Keys,
+    MapNSeries,
     MapSeries,
     Maybe,
     Na,
@@ -44,6 +44,14 @@ def PointSeries(
 ) -> GridSeries[int, int, float, Maybe[float]]:
     """Construction helper pairing the point select/reduce semantics."""
     return GridSeries(name, keys, value_at, select=_point_select, reduce=_point_reduce)
+
+
+def _merge_int_keys(domains: tuple[Keys[int], ...]) -> Iterator[int]:
+    previous: int | None = None
+    for key in merge(*domains):
+        if key != previous:
+            yield key
+            previous = key
 
 
 # ---------- grid template ----------
@@ -144,9 +152,7 @@ def test_map_aliases_source_keys():
 
 def test_map_is_a_series_and_composes():
     src = PointSeries("src", lambda: range(3), lambda s, k: float(k))
-    mapped: Series[int, int, Maybe[float]] = src.map(
-        "mapped", lambda w: Na if isna(w) else w + 1
-    )
+    mapped: Series[int, int, Maybe[float]] = src.map("mapped", lambda w: Na if isna(w) else w + 1)
     again = mapped.map("again", lambda w: Na if isna(w) else w * 10)
     assert isinstance(mapped, MapSeries)
     assert Context().demand(again, 2) == 30.0
@@ -174,3 +180,57 @@ def test_map_answers_memoized_per_query():
     ctx.demand(mapped, 1)
     ctx.demand(mapped, 1)
     assert next(hits) == 1
+
+
+# ---------- map n ----------
+
+
+def test_map_n_combines_source_answers_at_the_same_query():
+    left = PointSeries("left", lambda: range(3), lambda s, k: float(k))
+    right = PointSeries("right", lambda: range(1, 4), lambda s, k: float(k * 10))
+    combined = MapNSeries(
+        "combined",
+        (left, right),
+        lambda values: values,
+        merge_keys=_merge_int_keys,
+    )
+    ctx = Context()
+
+    assert ctx.demand(combined, 2) == (2.0, 20.0)
+    assert ctx.demand(combined, 0) == (0.0, Na)
+
+
+def test_map_n_merged_keys_are_lazy_replayable_and_unique():
+    evens = PointSeries("evens", lambda: count(0, 2), lambda s, k: float(k))
+    odds = PointSeries("odds", lambda: count(1, 2), lambda s, k: float(k))
+    combined = MapNSeries(
+        "combined",
+        (evens, odds),
+        lambda values: values,
+        merge_keys=_merge_int_keys,
+    )
+    ctx = Context()
+
+    keys = ctx.demand(combined.keys, None)
+    assert list(islice(keys, 6)) == [0, 1, 2, 3, 4, 5]
+    assert list(islice(keys, 6)) == [0, 1, 2, 3, 4, 5]
+
+
+def test_map_n_keys_trace_dependencies_on_every_source_domain():
+    left = PointSeries("left", lambda: range(2), lambda s, k: float(k))
+    right = PointSeries("right", lambda: range(2), lambda s, k: float(k))
+    combined = MapNSeries(
+        "combined",
+        (left, right),
+        lambda values: values,
+        merge_keys=_merge_int_keys,
+    )
+
+    tree = Context().dependencies(combined.keys, None)
+    assert tree.name == "combined.keys"
+    assert [dependency.name for dependency in tree.deps] == ["left.keys", "right.keys"]
+
+
+def test_map_n_rejects_an_empty_source_tuple_at_runtime():
+    with pytest.raises(ValueError, match="at least one source"):
+        MapNSeries("empty", (), lambda values: values, merge_keys=_merge_int_keys)  # type: ignore

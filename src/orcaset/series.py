@@ -5,9 +5,14 @@ from __future__ import annotations
 
 from abc import ABC
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator, Sequence
-from typing import Any, ClassVar, Protocol, Self, TypeIs, final
+from typing import Any, Protocol, Self
 
+from orcaset.maybe import Maybe, Na
+from orcaset.maybe import isna as _isna
 from orcaset.rule import Rule, Step, fetch
+
+isna = _isna
+"""Compatibility re-export; import new code from ``orcaset.maybe``."""
 
 # ---------- keys ----------
 
@@ -28,41 +33,8 @@ type Keys[K: Key] = Iterable[K]
 """Contract: strictly ascending (each key entirely before the next, hence
 disjoint); possibly infinite; replayable (safe to re-iterate)."""
 
-
-# ---------- missing values ----------
-
-
-@final
-class _NaType:
-    """Type of the `Na` singleton; do not instantiate directly."""
-
-    __slots__: tuple[()] = ()
-    _instance: ClassVar[_NaType | None] = None
-
-    def __new__(cls) -> _NaType:
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __repr__(self) -> str:
-        return "Na"
-
-    def __bool__(self) -> bool:
-        raise TypeError("Na has no boolean value; test with `isna(value)` or `value is Na`")
-
-    def __reduce__(self) -> str:
-        return "Na"  # pickle/copy by module reference, preserving identity
-
-
-Na: _NaType = _NaType()
-"""Singleton 'no value'. Misses are values, never exceptions."""
-
-type Maybe[V] = V | _NaType
-
-
-def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
-    """True if `value` is `Na`; narrows `Maybe[V]` to `V` when false."""
-    return value is Na
+type MergeKeysFn[K: Key] = Callable[[tuple[Keys[K], ...]], Iterable[K]]
+"""Lazily merge a finite tuple of source domains into one ascending domain."""
 
 
 # ---------- replayable keys ----------
@@ -120,6 +92,16 @@ class Series[Q: Hashable, K: Key, W](Rule[Q, W], ABC):
         ``fn`` sees the raw answer (typically ``Maybe``) and owns the miss policy.
         """
         return MapSeries(name, self, fn)
+
+
+type SeriesSources[Q: Hashable, K: Key, W] = tuple[
+    Series[Q, K, W],
+    *tuple[Series[Q, K, W], ...],
+]
+"""A nonempty, homogeneous tuple of series."""
+
+type MapNFn[W, W2] = Callable[[tuple[W, ...]], W2]
+"""Combine the answers from a nonempty tuple of source series."""
 
 
 class CellReader[K: Key, V](Protocol):
@@ -215,6 +197,35 @@ class MapSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
         return self._fn(w)
 
 
+class MapNSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
+    """A series whose every answer combines source answers at the same query.
+
+    Query resolution is delegated independently to every source. ``merge_keys``
+    only constructs the derived series' public domain; it is not involved when
+    answering a query.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        sources: SeriesSources[Q, K, W],
+        fn: MapNFn[W, W2],
+        *,
+        merge_keys: MergeKeysFn[K],
+    ) -> None:
+        if not sources:
+            raise ValueError("MapNSeries requires at least one source")
+        super().__init__(name, _MapNKeys(name, sources, merge_keys))
+        self._sources = sources
+        self._fn = fn
+
+    def compute(self, q: Q, /) -> Step[W2]:
+        values: list[W] = []
+        for source in self._sources:
+            values.append((yield from fetch(source, q)))
+        return self._fn(tuple(values))
+
+
 # ---------- internal glue ----------
 
 
@@ -231,6 +242,26 @@ class _KeysCell[K: Key](Rule[None, Keys[K]]):
 
     def compute(self, key: None) -> Keys[K]:
         return Replayable(_ascending(self._key_iter()))
+
+
+class _MapNKeys[Q: Hashable, K: Key, W](Rule[None, Keys[K]]):
+    """Demandable, replayable domain derived from several source domains."""
+
+    def __init__(
+        self,
+        name: str,
+        sources: SeriesSources[Q, K, W],
+        merge: MergeKeysFn[K],
+    ) -> None:
+        super().__init__(f"{name}.keys")
+        self._sources = sources
+        self._merge = merge
+
+    def compute(self, key: None, /) -> Step[Keys[K]]:
+        domains: list[Keys[K]] = []
+        for source in self._sources:
+            domains.append((yield from fetch(source.keys, None)))
+        return Replayable(_ascending(self._merge(tuple(domains))))
 
 
 class _Cells[K: Key, V](Rule[K, Maybe[V]]):

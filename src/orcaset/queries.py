@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 
+from orcaset.maybe import Maybe, Na, isna
 from orcaset.period import Period
 from orcaset.rule import Rule
-from orcaset.series import GridSeries, Keys, Maybe, Na, ReduceFn, ValueFn, isna
+from orcaset.series import GridSeries, Keys, ReduceFn, ValueFn
 from orcaset.yf import YfType
 
 # ---------- selects ----------

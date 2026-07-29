@@ -39,6 +39,24 @@ Derived series transform *answers*, not cells. `series.map(name, fn)` builds a `
 taxed = revenue.map("taxed", lambda v: Na if isna(v) else v * 0.79)
 ```
 
+`MapNSeries` applies the same answer-level composition to a nonempty tuple of
+homogeneous sources. Every source is queried at the requested `q`; a supplied
+`merge_keys` function lazily constructs the derived series' public domain:
+
+```python
+profit = MapNSeries(
+    "profit",
+    (revenue, cogs, opex),
+    add_values,
+    merge_keys=period_union,
+)
+```
+
+`period_union` is the standard merger for `Period` domains. `add_values`
+adds `Maybe[float]` answers while propagating `Na`; use
+`combine_values(values, operator)` for the same policy with another binary
+operation.
+
 Conventions and guarantees:
 
 - **Misses are values, never exceptions.** Anything outside the domain resolves to the `Na` singleton; results are `Maybe[V]`. Use `isna(v)` to test (it type-narrows); `bool(Na)` raises by design.

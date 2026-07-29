@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Iterable, Iterator
 from datetime import date
 from typing import NamedTuple
 
@@ -83,9 +83,7 @@ class Period(_Period):
         return Period(self.start + offset, self.end + offset)
 
     @classmethod
-    def seq(
-        cls, start: date, freq: relativedelta, end: date | None = None
-    ) -> Generator[Period]:
+    def seq(cls, start: date, freq: relativedelta, end: date | None = None) -> Generator[Period]:
         """
         Create a generator of periods with duration `freq`. Infinite if `end` is `None`.
 
@@ -112,3 +110,32 @@ class Period(_Period):
         by multiplying `freq * period_count`.
         """
         return list(Period.seq(start, freq, end))
+
+
+def period_union(domains: tuple[Iterable[Period], ...]) -> Iterator[Period]:
+    """Lazily split the union of period domains at every source boundary.
+
+    Each input must contain disjoint periods in strictly ascending order. Gaps
+    not covered by any source are omitted.
+    """
+    iterators = tuple(iter(domain) for domain in domains)
+    periods = [next(iterator, None) for iterator in iterators]
+    starts = [period.start for period in periods if period is not None]
+    if not starts:
+        return
+    boundary = min(starts)
+
+    while any(period is not None for period in periods):
+        candidates = [
+            period.end if period.start <= boundary else period.start
+            for period in periods
+            if period is not None
+        ]
+        next_boundary = min(candidates)
+        if any(period is not None and period.start <= boundary < period.end for period in periods):
+            yield Period(boundary, next_boundary)
+        boundary = next_boundary
+
+        for index, period in enumerate(periods):
+            if period is not None and period.end == boundary:
+                periods[index] = next(iterators[index], None)

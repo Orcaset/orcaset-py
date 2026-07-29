@@ -1,47 +1,68 @@
-from collections.abc import Iterable
 from datetime import date
-from typing import Any
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import Context, Period, Rule, Step, fetch
+from orcaset import (
+    YF,
+    CellReader,
+    Context,
+    MapNSeries,
+    Na,
+    Period,
+    Step,
+    add_values,
+    flow,
+    isna,
+    period_union,
+)
+
+MONTHLY = relativedelta(months=1)
+QUARTERLY = relativedelta(months=3)
 
 
-class IterableRule(Rule[Any, Iterable[Period]]):
-    def __init__(self, iterable: Iterable[Period]):
-        super().__init__("IterableRule")
-        self.iterable = iterable
-
-    def compute(self, key: Any) -> Iterable[Period]:
-        # TODO: Wrap this in a something so that the cached version is replayable?
-        # See Replayable in examples/series.py, which buffers a lazy source so the
-        # cached iterable can be re-iterated safely.
-        return self.iterable
+def revenue_at(s: CellReader[Period, float], key: Period) -> Step[float]:
+    """Grid definition as a recurrence: each cell is the prior cell grown."""
+    prior = yield from s.cell(key.shift(-MONTHLY))
+    return 100.0 if isna(prior) else prior * 1.01
 
 
-class Revenue(Rule[Period, float | None]):
-    def __init__(self, start: date, initial: float, freq: relativedelta, growth: float):
-        super().__init__("Revenue")
-        self.start = start
-        self.initial = initial
-        self.freq = freq
-        self.growth = growth
+revenue = flow(
+    "revenue",
+    lambda: Period.seq(date(2026, 1, 1), MONTHLY),
+    revenue_at,
+    yf=YF.cmonthly,
+)
 
-    def compute(self, key: Period) -> Step[float | None]:
-        if key == Period(self.start, self.start + self.freq):
-            return self.initial
+cogs = revenue.map("costs", lambda r: r * -0.5 if not isna(r) else Na)
 
-        prior_key = key.shift(-self.freq)
-        prev = yield from fetch(self, prior_key)
-        if prev is None:
-            return None
-        return prev * (1 + self.growth)
 
+def opex_at(s: CellReader[Period, float], key: Period) -> Step[float]:
+    """Grid definition as a recurrence: each cell is the prior cell grown."""
+    prior = yield from s.cell(key.shift(-QUARTERLY))
+    return -25.0 if isna(prior) else prior * 1.01
+
+
+opex = flow(
+    "opex",
+    lambda: Period.seq(date(2026, 1, 1), QUARTERLY),
+    opex_at,
+    yf=YF.cmonthly,
+)
+
+
+profit = MapNSeries(
+    "profit",
+    (revenue, cogs, opex),
+    add_values,
+    merge_keys=period_union,
+)
 
 ctx = Context()
-revenue = Revenue(start=date(2026, 1, 1), initial=100, freq=relativedelta(months=1), growth=0.01)
-
 print(ctx.demand(revenue, Period(date(2026, 1, 1), date(2026, 2, 1))))
 print(ctx.demand(revenue, Period(date(2026, 2, 1), date(2026, 3, 1))))
-print(ctx.demand(revenue, Period(date(2527, 3, 1), date(2527, 4, 1))))
+print(ctx.demand(revenue, Period(date(2027, 3, 1), date(2027, 4, 1))))
 print(ctx.dependencies(revenue, Period(date(2026, 3, 1), date(2026, 4, 1))))
+
+print(ctx.demand(cogs, Period(date(2027, 3, 1), date(2027, 4, 1))))
+print(ctx.demand(opex, Period(date(2027, 3, 1), date(2027, 4, 1))))
+print(ctx.demand(profit, Period(date(2027, 3, 1), date(2027, 4, 1))))
