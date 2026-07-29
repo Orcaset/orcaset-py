@@ -11,6 +11,8 @@ change between minor releases.
 
 ### Added
 
+- Added the `grid(...)` decorator constructor for defining a `GridSeries`
+  directly from its value function.
 - Added `MapNSeries` for answer-level composition of a nonempty tuple of
   homogeneous series, with a caller-supplied lazy domain merger.
 - Added `period_union(...)` for lazily merging period domains and

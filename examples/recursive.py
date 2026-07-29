@@ -11,43 +11,42 @@ from orcaset import (
     Period,
     Step,
     add_values,
-    flow,
+    grid,
     isna,
+    overlapping,
     period_union,
+    prorated,
 )
 
 MONTHLY = relativedelta(months=1)
 QUARTERLY = relativedelta(months=3)
 
 
-def revenue_at(s: CellReader[Period, float], key: Period) -> Step[float]:
+@grid(
+    lambda: Period.seq(date(2026, 1, 1), MONTHLY),
+    overlapping,
+    prorated(YF.cmonthly),
+    "revenue",
+)
+def revenue(s: CellReader[Period, float], key: Period) -> Step[float]:
     """Grid definition as a recurrence: each cell is the prior cell grown."""
     prior = yield from s.cell(key.shift(-MONTHLY))
     return 100.0 if isna(prior) else prior * 1.01
 
 
-revenue = flow(
-    "revenue",
-    lambda: Period.seq(date(2026, 1, 1), MONTHLY),
-    revenue_at,
-    yf=YF.cmonthly,
-)
-
 cogs = revenue.map("costs", lambda r: r * -0.5 if not isna(r) else Na)
 
 
-def opex_at(s: CellReader[Period, float], key: Period) -> Step[float]:
+@grid(
+    lambda: Period.seq(date(2026, 1, 1), QUARTERLY),
+    overlapping,
+    prorated(YF.cmonthly),
+    "opex",
+)
+def opex(s: CellReader[Period, float], key: Period) -> Step[float]:
     """Grid definition as a recurrence: each cell is the prior cell grown."""
     prior = yield from s.cell(key.shift(-QUARTERLY))
     return -25.0 if isna(prior) else prior * 1.01
-
-
-opex = flow(
-    "opex",
-    lambda: Period.seq(date(2026, 1, 1), QUARTERLY),
-    opex_at,
-    yf=YF.cmonthly,
-)
 
 
 profit = MapNSeries(

@@ -8,6 +8,7 @@ from itertools import count, islice
 import pytest
 
 from orcaset import (
+    CellReader,
     Context,
     GridSeries,
     Keys,
@@ -18,6 +19,7 @@ from orcaset import (
     Rule,
     Series,
     ValueFn,
+    grid,
     isna,
 )
 
@@ -122,6 +124,16 @@ def test_misordered_keys_raise_when_scanned():
     s = PointSeries("s", lambda: [2, 1], lambda s, k: 1.0)
     with pytest.raises(ValueError, match="ascending"):
         Context().demand(s, 3)  # scans past the misordered key (validation is lazy)
+
+
+def test_grid_decorator_constructs_a_series_from_the_value_function():
+    @grid(lambda: range(3), _point_select, _point_reduce, "decorated")
+    def decorated(s: CellReader[int, float], key: int) -> float:
+        return float(key)
+
+    assert isinstance(decorated, GridSeries)
+    assert decorated.name == "decorated"
+    assert Context().demand(decorated, 2) == 2.0
 
 
 # ---------- map ----------

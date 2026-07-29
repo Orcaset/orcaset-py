@@ -178,6 +178,20 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
         return self._reduce(q, items)
 
 
+def grid[Q: Hashable, K: Key, V, W](
+    keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]],
+    select: SelectFn[Q, K],
+    reduce: ReduceFn[Q, K, V, W],
+    label: str,
+) -> Callable[[ValueFn[K, V]], GridSeries[Q, K, V, W]]:
+    """Decorate a value function to construct a ``GridSeries``."""
+
+    def decorate(value_at: ValueFn[K, V]) -> GridSeries[Q, K, V, W]:
+        return GridSeries(label, keys, value_at, select=select, reduce=reduce)
+
+    return decorate
+
+
 class MapSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
     """A series whose every answer is ``fn(source answered at q)``.
 

@@ -33,6 +33,15 @@ Custom semantics are just functions passed to `GridSeries` directly — the gene
 custom = GridSeries("custom", keys, value_at, select=my_select, reduce=my_reduce)
 ```
 
+The same construction can be written as a decorator, with arguments ordered
+as `keys`, `select`, `reduce`, and `label`:
+
+```python
+@grid(keys, my_select, my_reduce, "custom")
+def custom(reader, key):
+    return value_at(reader, key)
+```
+
 Derived series transform *answers*, not cells. `series.map(name, fn)` builds a `MapSeries` that answers `fn(source answered at q)` for every query — resolution is fully delegated to the source, whose query semantics apply before `fn`. `fn` sees the raw answer (typically `Maybe`) and owns the miss policy:
 
 ```python

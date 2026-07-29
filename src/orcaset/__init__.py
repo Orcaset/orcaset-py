@@ -21,6 +21,7 @@ from orcaset.series import (
     Series,
     SeriesSources,
     ValueFn,
+    grid,
 )
 from orcaset.yf import YF
 
@@ -53,6 +54,7 @@ __all__ = [
     "combine_values",
     "fetch",
     "flow",
+    "grid",
     "isna",
     "level",
     "overlapping",
