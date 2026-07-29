@@ -1,7 +1,6 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from collections.abc import Callable
 from typing import ClassVar, TypeIs, final
 
 
@@ -36,34 +35,3 @@ type Maybe[V] = V | _NaType
 def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
     """True if `value` is `Na`; narrows `Maybe[V]` to `V` when false."""
     return value is Na
-
-
-def combine_values[V](
-    values: tuple[Maybe[V], ...],
-    combine: Callable[[V, V], V],
-) -> Maybe[V]:
-    """Fold nonempty values with ``combine``, propagating ``Na``.
-
-    An empty tuple has no value to seed the fold and therefore also returns
-    ``Na``.
-    """
-    iterator = iter(values)
-    first = next(iterator, Na)
-    if isna(first):
-        return Na
-
-    result = first
-    for value in iterator:
-        if isna(value):
-            return Na
-        result = combine(result, value)
-    return result
-
-
-def add_values(values: tuple[Maybe[float], ...]) -> Maybe[float]:
-    """Add float values, propagating ``Na``; an empty tuple returns ``Na``."""
-    return combine_values(values, _add_floats)
-
-
-def _add_floats(left: float, right: float) -> float:
-    return left + right

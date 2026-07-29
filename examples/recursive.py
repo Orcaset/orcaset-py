@@ -1,67 +1,60 @@
+from collections.abc import Generator, Iterable
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import (
-    YF,
-    CellReader,
-    Context,
-    MapNSeries,
-    Na,
-    Period,
-    Step,
-    add_values,
-    grid,
-    isna,
-    overlapping,
-    period_union,
-    prorated,
-)
+from orcaset import Context, GridSeries, Maybe, Na, Period, Step, fetch, isna
 
 MONTHLY = relativedelta(months=1)
-QUARTERLY = relativedelta(months=3)
 
 
-@grid(
-    lambda: Period.seq(date(2026, 1, 1), MONTHLY),
-    overlapping,
-    prorated(YF.cmonthly),
-    "revenue",
-)
-def revenue(s: CellReader[Period, float], key: Period) -> Step[float]:
-    """Grid definition as a recurrence: each cell is the prior cell grown."""
-    prior = yield from s.cell(key.shift(-MONTHLY))
-    return 100.0 if isna(prior) else prior * 1.01
+def point(q: Period, cells: Iterable[tuple[Period, Step[float] | float]]) -> Step[Maybe[float]]:
+    """Overlap ``q`` with cells; scale each by overlap days / cell days.
+
+    Exact-key hits force the cell ``Step`` (base case). Partial / multi-cell
+    queries ``fetch`` the full cell answer so values stay memoized.
+    """
+    total = 0.0
+    hit = False
+    for k, cell in cells:
+        if k < q:
+            continue
+        if q < k:
+            break
+        if k == q:
+            value = (yield from cell) if isinstance(cell, Generator) else cell
+            return value
+        value = yield from fetch(revenue, k)
+        if isna(value):
+            continue
+        overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
+        cell_days = (k.end - k.start).days
+        total += value * (overlap_days / cell_days)
+        hit = True
+    return total if hit else Na
 
 
-cogs = revenue.map("costs", lambda r: r * -0.5 if not isna(r) else Na)
+def revenue_cells() -> Iterable[tuple[Period, Step[float] | float]]:
+    """Each cell is the prior period's answer grown by 1%; seed is 100."""
+    periods = Period.seq(date(2026, 1, 1), MONTHLY)
+    yield (next(periods), 100.0)
+
+    for k in periods:
+
+        def grow(p: Period = k) -> Step[float]:
+            value = yield from fetch(revenue, p.from_start(-MONTHLY))
+            if isna(value):
+                raise ValueError(f"missing prior for {p}")
+            return value * 1.01
+
+        yield k, grow()
 
 
-@grid(
-    lambda: Period.seq(date(2026, 1, 1), QUARTERLY),
-    overlapping,
-    prorated(YF.cmonthly),
-    "opex",
-)
-def opex(s: CellReader[Period, float], key: Period) -> Step[float]:
-    """Grid definition as a recurrence: each cell is the prior cell grown."""
-    prior = yield from s.cell(key.shift(-QUARTERLY))
-    return -25.0 if isna(prior) else prior * 1.01
-
-
-profit = MapNSeries(
-    "profit",
-    (revenue, cogs, opex),
-    add_values,
-    merge_keys=period_union,
-)
+revenue = GridSeries("revenue", revenue_cells, point)
 
 ctx = Context()
 print(ctx.demand(revenue, Period(date(2026, 1, 1), date(2026, 2, 1))))
 print(ctx.demand(revenue, Period(date(2026, 2, 1), date(2026, 3, 1))))
 print(ctx.demand(revenue, Period(date(2027, 3, 1), date(2027, 4, 1))))
+print(ctx.demand(revenue, Period(date(2026, 1, 15), date(2026, 2, 15))))
 print(ctx.dependencies(revenue, Period(date(2026, 3, 1), date(2026, 4, 1))))
-
-print(ctx.demand(cogs, Period(date(2027, 3, 1), date(2027, 4, 1))))
-print(ctx.demand(opex, Period(date(2027, 3, 1), date(2027, 4, 1))))
-print(ctx.demand(profit, Period(date(2027, 3, 1), date(2027, 4, 1))))

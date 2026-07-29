@@ -3,16 +3,11 @@
 
 from __future__ import annotations
 
-from abc import ABC
-from collections.abc import Callable, Generator, Hashable, Iterable, Iterator, Sequence
-from typing import Any, Protocol, Self
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
+from typing import Protocol, Self
 
-from orcaset.maybe import Maybe, Na
-from orcaset.maybe import isna as _isna
 from orcaset.rule import Rule, Step, fetch
-
-isna = _isna
-"""Compatibility re-export; import new code from ``orcaset.maybe``."""
 
 # ---------- keys ----------
 
@@ -33,11 +28,19 @@ type Keys[K: Key] = Iterable[K]
 """Contract: strictly ascending (each key entirely before the next, hence
 disjoint); possibly infinite; replayable (safe to re-iterate)."""
 
-type MergeKeysFn[K: Key] = Callable[[tuple[Keys[K], ...]], Iterable[K]]
-"""Lazily merge a finite tuple of source domains into one ascending domain."""
+
+type QueryFn[Q, K: Key, V, W] = Callable[
+    [Q, Iterable[tuple[K, Step[V] | V]]],
+    Step[W] | W,
+]
+"""Fold a query over a lazy cell stream into an answer.
+
+May scan without forcing every ``Step`` (early-terminate, skip). Fixed per
+series at construction so a series cannot be read under another convention.
+"""
 
 
-# ---------- replayable keys ----------
+# ---------- replayable ----------
 
 
 class _ReplayableIterator[T](Iterator[T]):
@@ -75,249 +78,103 @@ class Replayable[T](Iterable[T]):
 
 
 class Series[Q: Hashable, K: Key, W](Rule[Q, W], ABC):
-    """The series interface: a demandable rule with an explicit time domain.
+    """A demandable rule with an explicit time domain.
 
-    Public surface: ``demand(self, q)`` and ``self.keys``. How answers are
-    produced is up to the implementation (grid + query semantics, delegation,
-    ...); downstream code should type against this.
+    Public surface: ``compute`` (via ``Rule``) and ``keys()``. Values are only
+    reachable through ``compute``, so every answer is dependency-tracked.
     """
 
-    def __init__(self, name: str, keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]]):
-        super().__init__(name)
-        self.keys: Rule[None, Keys[K]] = keys if isinstance(keys, Rule) else _KeysCell(name, keys)
-
-    def map[W2](self, name: str, fn: Callable[[W], W2]) -> MapSeries[Q, K, W, W2]:
-        """Derived series answering ``fn(self answered at q)`` for every query.
-
-        ``fn`` sees the raw answer (typically ``Maybe``) and owns the miss policy.
-        """
-        return MapSeries(name, self, fn)
-
-
-type SeriesSources[Q: Hashable, K: Key, W] = tuple[
-    Series[Q, K, W],
-    *tuple[Series[Q, K, W], ...],
-]
-"""A nonempty, homogeneous tuple of series."""
-
-type MapNFn[W, W2] = Callable[[tuple[W, ...]], W2]
-"""Combine the answers from a nonempty tuple of source series."""
-
-
-class CellReader[K: Key, V](Protocol):
-    """Narrow view of a grid series handed to value functions."""
-
-    def cell(self, key: K, /) -> Step[Maybe[V]]: ...
-
-
-type ValueFn[K: Key, V] = Callable[[CellReader[K, V], K], Step[V] | V]
-"""Grid definition; may assume key is covered.
-
-Recurrences: ``yield from reader.cell(prior_k)``. Other rules/series: fetch
-their public face. May return a plain value or a generator ``Step``.
-"""
-
-type SelectFn[Q, K: Key] = Callable[[Keys[K], Q], Sequence[K]]
-"""Pure. Grid keys relevant to ``q`` (overlap, bracketing, ...).
-
-Early-terminating scan of an ascending, possibly infinite stream. May return
-keys outside the domain (their cells resolve to ``Na``); whichever convention
-a select picks, its paired ``reduce`` must expect it.
-"""
-
-type ReduceFn[Q, K: Key, V, W] = Callable[[Q, Sequence[tuple[K, Maybe[V]]]], W]
-"""Pure. Combine fetched cells into the answer.
-
-Owns the policy for misses and partial coverage (``q`` not spanned by the
-selected keys).
-"""
+    @abstractmethod
+    def keys(self) -> Rule[None, Keys[K]]:
+        """Demandable ascending domain."""
+        ...
 
 
 class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
-    """A series backed by a grid of memoized cells, with packaged query semantics.
+    """Series backed by a lazy stream of ``(K, Step[V] | V)`` cells.
 
-    All three ingredients are constructor state: ``value_at`` is the instance
-    data (the grid definition); ``select``/``reduce`` are the query semantics,
-    fixed per series at construction so a series can never be read under a
-    convention other than its own. ``select`` and ``reduce`` are a matched
-    pair — construction helpers are the natural place to pair them.
+    ``cells`` is called once per context (via the internal cells rule) so each
+    context gets fresh ``Step`` generators. ``query`` scans that stream for a
+    given ``q``, forcing only the steps it needs.
     """
 
     def __init__(
         self,
         name: str,
-        keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]],
-        value_at: ValueFn[K, V],
-        *,
-        select: SelectFn[Q, K],
-        reduce: ReduceFn[Q, K, V, W],
-    ):
-        super().__init__(name, keys)
-        self._value_at = value_at
-        self._select = select
-        self._reduce = reduce
-        self._cells: Rule[K, Maybe[V]] = _Cells(name, self)
+        cells: Callable[[], Iterable[tuple[K, Step[V] | V]]],
+        query: QueryFn[Q, K, V, W],
+    ) -> None:
+        super().__init__(name)
+        self._cells: Rule[None, Iterable[tuple[K, Step[V] | V]]] = _Cells(name, cells)
+        self._keys: Rule[None, Keys[K]] = _GridKeys(name, self._cells)
+        self._query = query
 
-    # ---- grid reads ----
-
-    def cell(self, key: K, /) -> Step[Maybe[V]]:
-        """Blessed grid read: memoized, total (off-domain -> ``Na``), traced.
-
-        No query semantics apply; this is an exact-key lookup.
-        """
-        return fetch(self._cells, key)
-
-    # ---- query template ----
+    def keys(self) -> Rule[None, Keys[K]]:
+        return self._keys
 
     def compute(self, q: Q, /) -> Step[W]:
-        ks = yield from fetch(self.keys, None)
-        items: list[tuple[K, Maybe[V]]] = []
-        for k in self._select(ks, q):
-            v = yield from fetch(self._cells, k)
-            items.append((k, v))
-        return self._reduce(q, items)
-
-
-def grid[Q: Hashable, K: Key, V, W](
-    keys: Rule[None, Keys[K]] | Callable[[], Iterable[K]],
-    select: SelectFn[Q, K],
-    reduce: ReduceFn[Q, K, V, W],
-    label: str,
-) -> Callable[[ValueFn[K, V]], GridSeries[Q, K, V, W]]:
-    """Decorate a value function to construct a ``GridSeries``."""
-
-    def decorate(value_at: ValueFn[K, V]) -> GridSeries[Q, K, V, W]:
-        return GridSeries(label, keys, value_at, select=select, reduce=reduce)
-
-    return decorate
-
-
-class MapSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
-    """A series whose every answer is ``fn(source answered at q)``.
-
-    Query resolution is fully delegated to the source; there is no grid of its
-    own. ``keys`` aliases the source's domain so downstream series can share it
-    and traces show the dependency. ``fn`` sees the source's raw answer
-    (typically ``Maybe``) and owns the miss policy.
-    """
-
-    def __init__(self, name: str, source: Series[Q, K, W], fn: Callable[[W], W2]):
-        super().__init__(name, source.keys)
-        self._source = source
-        self._fn = fn
-
-    def compute(self, q: Q, /) -> Step[W2]:
-        w = yield from fetch(self._source, q)
-        return self._fn(w)
-
-
-class MapNSeries[Q: Hashable, K: Key, W, W2](Series[Q, K, W2]):
-    """A series whose every answer combines source answers at the same query.
-
-    Query resolution is delegated independently to every source. ``merge_keys``
-    only constructs the derived series' public domain; it is not involved when
-    answering a query.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        sources: SeriesSources[Q, K, W],
-        fn: MapNFn[W, W2],
-        *,
-        merge_keys: MergeKeysFn[K],
-    ) -> None:
-        if not sources:
-            raise ValueError("MapNSeries requires at least one source")
-        super().__init__(name, _MapNKeys(name, sources, merge_keys))
-        self._sources = sources
-        self._fn = fn
-
-    def compute(self, q: Q, /) -> Step[W2]:
-        values: list[W] = []
-        for source in self._sources:
-            values.append((yield from fetch(source, q)))
-        return self._fn(tuple(values))
+        cells = yield from fetch(self._cells, None)
+        return (yield from _as_step(self._query(q, cells)))
 
 
 # ---------- internal glue ----------
 
 
-class _KeysCell[K: Key](Rule[None, Keys[K]]):
-    """Demandable domain: one Replayable buffer per context, shared by every
-    consumer (face, cells, external readers, aliasing series).
-
-    Validates the ascending-keys contract lazily as keys are first pulled.
-    """
-
-    def __init__(self, name: str, key_iter: Callable[[], Iterable[K]]):
-        super().__init__(f"{name}.keys")
-        self._key_iter = key_iter
-
-    def compute(self, key: None) -> Keys[K]:
-        return Replayable(_ascending(self._key_iter()))
-
-
-class _MapNKeys[Q: Hashable, K: Key, W](Rule[None, Keys[K]]):
-    """Demandable, replayable domain derived from several source domains."""
+class _Cells[K: Key, V](Rule[None, Iterable[tuple[K, Step[V] | V]]]):
+    """Per-context cell stream: one Replayable buffer of ``(K, Step|V)`` pairs."""
 
     def __init__(
         self,
         name: str,
-        sources: SeriesSources[Q, K, W],
-        merge: MergeKeysFn[K],
+        cells: Callable[[], Iterable[tuple[K, Step[V] | V]]],
+    ) -> None:
+        super().__init__(f"{name}.cells")
+        self._cells = cells
+
+    def compute(self, key: None) -> Iterable[tuple[K, Step[V] | V]]:
+        return Replayable(_ascending_pairs(self._cells()))
+
+
+class _GridKeys[K: Key, V](Rule[None, Keys[K]]):
+    """Domain projected from cells; ``fetch(_cells)`` records the dependency."""
+
+    def __init__(
+        self,
+        name: str,
+        cells: Rule[None, Iterable[tuple[K, Step[V] | V]]],
     ) -> None:
         super().__init__(f"{name}.keys")
-        self._sources = sources
-        self._merge = merge
+        self._cells = cells
 
-    def compute(self, key: None, /) -> Step[Keys[K]]:
-        domains: list[Keys[K]] = []
-        for source in self._sources:
-            domains.append((yield from fetch(source.keys, None)))
-        return Replayable(_ascending(self._merge(tuple(domains))))
+    def compute(self, key: None) -> Step[Keys[K]]:
+        pairs = yield from fetch(self._cells, None)
+        return _KeyProj(pairs)
 
 
-class _Cells[K: Key, V](Rule[K, Maybe[V]]):
-    """Internal grid; total (uncovered -> Na).
+class _KeyProj[K: Key, V](Iterable[K]):
+    """Re-iterable key view over a shared pairs buffer."""
 
-    Reachable only via the owning series object — privacy is structural, not
-    conventional.
-    """
+    def __init__(self, pairs: Iterable[tuple[K, Step[V] | V]]) -> None:
+        self._pairs = pairs
 
-    def __init__(self, name: str, series: GridSeries[Any, K, V, Any]):
-        super().__init__(f"{name}.cells")
-        self._series = series
-
-    def compute(self, key: K) -> Step[Maybe[V]]:
-        ks = yield from fetch(self._series.keys, None)
-        if not _covered(ks, key):
-            return Na
-        return (yield from _as_step(self._series._value_at(self._series, key)))
+    def __iter__(self) -> Iterator[K]:
+        for k, _ in self._pairs:
+            yield k
 
 
-def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
-    """Yield from `source`, raising if consecutive keys are not strictly ascending."""
+def _ascending_pairs[K: Key, V](
+    source: Iterable[tuple[K, Step[V] | V]],
+) -> Iterator[tuple[K, Step[V] | V]]:
     prev: K | None = None
-    for k in source:
+    for k, v in source:
         if prev is not None and not prev < k:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
-        yield k
-
-
-def _covered[K: Key](keys: Keys[K], key: K) -> bool:
-    """Ascending scan: found -> True; passed or exhausted -> False."""
-    for k in keys:
-        if k == key:
-            return True
-        if key < k:
-            return False
-    return False
+        yield (k, v)
 
 
 def _as_step[V](value: Step[V] | V) -> Step[V]:
-    """Normalize plain-vs-generator, same dual ``Rule.compute`` already has."""
+    """Normalize plain-vs-generator return values."""
     if isinstance(value, Generator):
         return value
 
