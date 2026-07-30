@@ -14,7 +14,6 @@ from orcaset.series import (
     QueryFn,
     Replayable,
     Series,
-    SeriesSources,
 )
 from orcaset.yf import YF
 
@@ -36,7 +35,6 @@ __all__ = [
     "Replayable",
     "Rule",
     "Series",
-    "SeriesSources",
     "Step",
     "fetch",
     "isna",

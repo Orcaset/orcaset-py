@@ -34,12 +34,6 @@ May scan without forcing every ``Step`` (early-terminate, skip). Fixed per
 series at construction so a series cannot be read under another convention.
 """
 
-type SeriesSources[Q: Hashable, K: Key, W] = tuple[
-    Series[Q, K, W],
-    *tuple[Series[Q, K, W], ...],
-]
-"""A nonempty, homogeneous tuple of series."""
-
 
 # ---------- replayable ----------
 
@@ -138,21 +132,20 @@ class MapSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
 class MapNSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
     """A series whose every answer combines source answers at the same query.
 
-    Query resolution is delegated independently to every source. ``merge_keys``
-    only constructs the derived series' public domain; it is not involved when
-    answering a query.
+    Query resolution is delegated independently to every source. An empty
+    ``sources`` tuple is allowed: ``compute`` answers ``fn(())`` and
+    ``merge_keys`` receives ``()``. ``merge_keys`` only constructs the derived
+    series' public domain; it is not involved when answering a query.
     """
 
     def __init__(
         self,
         name: str,
-        sources: SeriesSources[Q, K, W],
+        sources: tuple[Series[Q, K, W], ...],
         fn: Callable[[tuple[W, ...]], V],
         *,
         merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
     ) -> None:
-        if not sources:
-            raise ValueError("MapNSeries requires at least one source")
         super().__init__(name)
         self._sources = sources
         self._fn = fn
@@ -277,7 +270,7 @@ class _MapNKeys[Q: Hashable, K: Key](Rule[None, Iterable[K]]):
     def __init__(
         self,
         name: str,
-        sources: tuple[Series[Q, K, Any], *tuple[Series[Q, K, Any], ...]],
+        sources: tuple[Series[Q, K, Any], ...],
         merge: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
     ) -> None:
         super().__init__(f"{name}.keys")
