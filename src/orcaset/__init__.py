@@ -6,9 +6,11 @@ from orcaset.maybe import Maybe, Na, isna
 from orcaset.period import Period
 from orcaset.rule import Demand, Rule, Step, fetch
 from orcaset.series import (
+    CellFactory,
     GridSeries,
     Key,
     Map2Series,
+    MapItemsSeries,
     MapNSeries,
     MapSeries,
     QueryFn,
@@ -19,6 +21,7 @@ from orcaset.yf import YF
 
 __all__ = [
     "YF",
+    "CellFactory",
     "Context",
     "CycleError",
     "Demand",
@@ -26,6 +29,7 @@ __all__ = [
     "GridSeries",
     "Key",
     "Map2Series",
+    "MapItemsSeries",
     "MapNSeries",
     "MapSeries",
     "Maybe",

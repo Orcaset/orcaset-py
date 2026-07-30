@@ -24,14 +24,18 @@ class Key(Hashable, Protocol):
     def __lt__(self, other: Self, /) -> bool: ...
 
 
+type CellFactory[V] = Callable[[], Step[V] | V]
+"""Builds a fresh ``Step`` (or plain value) each time a cell is computed."""
+
 type QueryFn[Q, K: Key, V, W] = Callable[
-    [Q, Iterable[tuple[K, Step[V] | V]]],
+    [Q, Iterable[tuple[K, Rule[None, V]]]],
     Step[W] | W,
 ]
 """Fold a query over a lazy cell stream into an answer.
 
-May scan without forcing every ``Step`` (early-terminate, skip). Fixed per
-series at construction so a series cannot be read under another convention.
+Each cell is a ``Rule[None, V]`` — force with ``yield from fetch(cell, None)``.
+May scan without forcing every cell (early-terminate, skip). Fixed per series
+at construction so a series cannot be read under another convention.
 """
 
 
@@ -193,21 +197,21 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
 
 
 class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
-    """Series backed by a lazy stream of ``(K, Step[V] | V)`` cells.
+    """Series backed by a lazy stream of ``(K, Rule[None, V])`` cells.
 
-    ``cells`` is called once per context (via the internal cells rule) so each
-    context gets fresh ``Step`` generators. ``query`` scans that stream for a
-    given ``q``, forcing only the steps it needs.
+    ``cells`` yields plain values or factories ``() -> Step[V] | V``. Each cell
+    is wrapped as a ``Rule`` so forcing is context-memoized and dependency-
+    tracked. Live generators are rejected — pass a factory instead.
     """
 
     def __init__(
         self,
         name: str,
-        cells: Callable[[], Iterable[tuple[K, Step[V] | V]]],
+        cells: Callable[[], Iterable[tuple[K, V | CellFactory[V]]]],
         query: QueryFn[Q, K, V, W],
     ) -> None:
         super().__init__(name)
-        self._cells: Rule[None, Iterable[tuple[K, Step[V] | V]]] = _Cells(name, cells)
+        self._cells: Rule[None, Iterable[tuple[K, Rule[None, V]]]] = _Cells(name, cells)
         self._keys: Rule[None, Iterable[K]] = _GridKeys(name, self._cells)
         self._query = query
 
@@ -219,22 +223,90 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
         return (yield from _as_step(self._query(q, cells)))
 
 
-# ---------- internal glue ----------
+class MapItemsSeries[Q: Hashable, K: Key, V, W, A](Series[Q, K, A]):
+    """Map each source key via ``fn(k, source)``, then query the derived stream.
 
-
-class _Cells[K: Key, V](Rule[None, Iterable[tuple[K, Step[V] | V]]]):
-    """Per-context cell stream: one Replayable buffer of ``(K, Step|V)`` pairs."""
+    ``source`` must be ``Series[K, K, W]`` so domain keys are valid point queries.
+    ``fn`` receives the key and source series so it can ``fetch`` for deps.
+    ``keys()`` aliases ``source.keys()``.
+    """
 
     def __init__(
         self,
         name: str,
-        cells: Callable[[], Iterable[tuple[K, Step[V] | V]]],
+        source: Series[K, K, W],
+        fn: Callable[[K, Series[K, K, W]], Step[V] | V],
+        query: QueryFn[Q, K, V, A],
+    ) -> None:
+        super().__init__(name)
+        self._source = source
+        self._cells: Rule[None, Iterable[tuple[K, Rule[None, V]]]] = _ItemCells(name, source, fn)
+        self._query = query
+
+    def keys(self) -> Rule[None, Iterable[K]]:
+        return self._source.keys()
+
+    def compute(self, q: Q, /) -> Step[A]:
+        cells = yield from fetch(self._cells, None)
+        return (yield from _as_step(self._query(q, cells)))
+
+
+# ---------- internal glue ----------
+
+
+class _CellRule[V](Rule[None, V]):
+    """One memoized cell value, forced via ``fetch(cell, None)``."""
+
+    def __init__(self, name: str, factory: CellFactory[V]) -> None:
+        super().__init__(name)
+        self._factory = factory
+
+    def compute(self, key: None) -> Step[V]:
+        return (yield from _as_step(self._factory()))
+
+
+class _Cells[K: Key, V](Rule[None, Iterable[tuple[K, Rule[None, V]]]]):
+    """Per-context cell stream: Replayable buffer of ``(K, Rule[None, V])``."""
+
+    def __init__(
+        self,
+        name: str,
+        cells: Callable[[], Iterable[tuple[K, V | CellFactory[V]]]],
     ) -> None:
         super().__init__(f"{name}.cells")
+        self._series_name = name
         self._cells = cells
 
-    def compute(self, key: None) -> Iterable[tuple[K, Step[V] | V]]:
-        return Replayable(_ascending_pairs(self._cells()))
+    def compute(self, key: None) -> Iterable[tuple[K, Rule[None, V]]]:
+        return Replayable(_cell_pairs(self._series_name, self._cells()))
+
+
+class _ItemCells[K: Key, W, V](Rule[None, Iterable[tuple[K, Rule[None, V]]]]):
+    """Cell stream: for each source key, a rule that runs ``fn(k, source)``."""
+
+    def __init__(
+        self,
+        name: str,
+        source: Series[K, K, W],
+        fn: Callable[[K, Series[K, K, W]], Step[V] | V],
+    ) -> None:
+        super().__init__(f"{name}.cells")
+        self._series_name = name
+        self._source = source
+        self._fn = fn
+
+    def compute(self, key: None) -> Step[Iterable[tuple[K, Rule[None, V]]]]:
+        keys = yield from fetch(self._source.keys(), None)
+
+        def factories() -> Iterator[tuple[K, CellFactory[V]]]:
+            for k in keys:
+
+                def factory(src: K = k) -> Step[V]:
+                    return (yield from _as_step(self._fn(src, self._source)))
+
+                yield k, factory
+
+        return Replayable(_cell_pairs(self._series_name, factories()))
 
 
 class _GridKeys[K: Key, V](Rule[None, Iterable[K]]):
@@ -243,7 +315,7 @@ class _GridKeys[K: Key, V](Rule[None, Iterable[K]]):
     def __init__(
         self,
         name: str,
-        cells: Rule[None, Iterable[tuple[K, Step[V] | V]]],
+        cells: Rule[None, Iterable[tuple[K, Rule[None, V]]]],
     ) -> None:
         super().__init__(f"{name}.keys")
         self._cells = cells
@@ -256,7 +328,7 @@ class _GridKeys[K: Key, V](Rule[None, Iterable[K]]):
 class _KeyProj[K: Key, V](Iterable[K]):
     """Re-iterable key view over a shared pairs buffer."""
 
-    def __init__(self, pairs: Iterable[tuple[K, Step[V] | V]]) -> None:
+    def __init__(self, pairs: Iterable[tuple[K, Rule[None, V]]]) -> None:
         self._pairs = pairs
 
     def __iter__(self) -> Iterator[K]:
@@ -294,15 +366,27 @@ def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
         yield k
 
 
-def _ascending_pairs[K: Key, V](
-    source: Iterable[tuple[K, Step[V] | V]],
-) -> Iterator[tuple[K, Step[V] | V]]:
+def _cell_pairs[K: Key, V](
+    series_name: str,
+    source: Iterable[tuple[K, V | CellFactory[V]]],
+) -> Iterator[tuple[K, Rule[None, V]]]:
     prev: K | None = None
     for k, v in source:
         if prev is not None and not prev < k:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
-        yield (k, v)
+        yield k, _CellRule(f"{series_name}@{k}", _as_factory(v))
+
+
+def _as_factory[V](value: V | CellFactory[V]) -> CellFactory[V]:
+    if isinstance(value, Generator):
+        raise TypeError(
+            "cell values must be plain values or factories () -> Step[V] | V, "
+            "not live generators; use lambda: my_step() instead"
+        )
+    if callable(value):
+        return value  # type: ignore[return-value]
+    return lambda v=value: v
 
 
 def _as_step[V](value: Step[V] | V) -> Step[V]:
