@@ -7,36 +7,18 @@ from orcaset import (
     CellFactory,
     Context,
     GridSeries,
-    Maybe,
-    Na,
-    Node,
     Period,
     Step,
-    ask,
+    accrual,
     fetch,
     isna,
+    map2_some,
+    map_some,
 )
 
 MONTHLY = relativedelta(months=1)
 
-
-def point(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
-    """Overlap ``q`` with cells; scale each by overlap days / cell days."""
-    total = 0.0
-    hit = False
-    for k, cell in cells:
-        if k < q:
-            continue
-        if q < k:
-            break
-        value = yield from ask(cell)
-        if k == q:
-            return value
-        overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
-        cell_days = (k.end - k.start).days
-        total += value * (overlap_days / cell_days)
-        hit = True
-    return total if hit else Na
+by_days = accrual(lambda d1, d2: (d2 - d1).days)
 
 
 def revenue_cells() -> Iterable[tuple[Period, float | CellFactory[float]]]:
@@ -55,14 +37,14 @@ def revenue_cells() -> Iterable[tuple[Period, float | CellFactory[float]]]:
         yield k, factory
 
 
-revenue = GridSeries("revenue", revenue_cells, point)
+revenue = GridSeries("revenue", revenue_cells, by_days)
 
-cogs = revenue.map("cogs", lambda r: Na if isna(r) else r * -0.5)
+cogs = revenue.map("cogs", map_some(lambda r: r * -0.5))
 
 gross_profit = revenue.map2(
     "gross_profit",
     cogs,
-    lambda r, c: Na if isna(r) or isna(c) else r + c,
+    map2_some(lambda r, c: r + c),
     merge_keys=lambda domains: domains[0],
 )
 

@@ -11,12 +11,12 @@ from orcaset import (
     GridSeries,
     MapItemsSeries,
     Maybe,
-    Na,
-    Node,
     Period,
     Series,
     Step,
+    accrual,
     ask,
+    exact,
     fetch,
     isna,
 )
@@ -24,35 +24,8 @@ from orcaset import (
 YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
 
-
-def accrual(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
-    """Day-weighted accrual over memoized cell nodes."""
-    total = 0.0
-    hit = False
-    for k, cell in cells:
-        if k < q:
-            continue
-        if q < k:
-            break
-        value = yield from ask(cell)
-        if k == q:
-            return value
-        overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
-        cell_days = (k.end - k.start).days
-        total += value * (overlap_days / cell_days)
-        hit = True
-    return total if hit else Na
-
-
-def exact(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
-    for k, cell in cells:
-        if k < q:
-            continue
-        if q < k:
-            break
-        if k == q:
-            return (yield from ask(cell))
-    return Na
+# Weight overlaps by actual calendar days (same as days / days).
+by_days = accrual(lambda d1, d2: (d2 - d1).days)
 
 
 # ---------- Capex ----------
@@ -63,23 +36,12 @@ def capex_cells() -> Iterable[tuple[Period, float]]:
         yield period, 100.0
 
 
-capex = GridSeries("capex", capex_cells, accrual)
+capex = GridSeries("capex", capex_cells, by_days)
 
 
 # ---------- Cohort schedules ----------
 
 type Cohort = GridSeries[Period, Period, float, Maybe[float]]
-
-
-def exact_cohort(q: Period, cells: Iterable[tuple[Period, Node[Cohort]]]) -> Step[Maybe[Cohort]]:
-    for k, cell in cells:
-        if k < q:
-            continue
-        if q < k:
-            break
-        if k == q:
-            return (yield from ask(cell))
-    return Na
 
 
 def build_cohort(
@@ -115,7 +77,7 @@ cohort_schedules = MapItemsSeries(
     "cohort_schedules",
     capex,
     to_schedule,
-    exact_cohort,
+    exact,
 )
 
 
@@ -145,7 +107,7 @@ total_depreciation = MapItemsSeries(
     "total_depreciation",
     cohort_schedules,
     sum_cohorts_at_period,
-    accrual,
+    by_days,
 )
 
 

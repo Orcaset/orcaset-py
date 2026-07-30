@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from collections.abc import Callable
 from typing import ClassVar, TypeIs, final
 
 
@@ -35,3 +36,23 @@ type Maybe[V] = V | _NaType
 def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
     """True if `value` is `Na`; narrows `Maybe[V]` to `V` when false."""
     return value is Na
+
+
+def map_some[A, B](fn: Callable[[A], B]) -> Callable[[Maybe[A]], Maybe[B]]:
+    """Lift ``fn`` over ``Maybe``: ``Na`` stays ``Na``."""
+
+    def apply(a: Maybe[A]) -> Maybe[B]:
+        return Na if isna(a) else fn(a)
+
+    return apply
+
+
+def map2_some[A, B, C](
+    fn: Callable[[A, B], C],
+) -> Callable[[Maybe[A], Maybe[B]], Maybe[C]]:
+    """Lift ``fn`` over two ``Maybe``s: ``Na`` if either side is ``Na``."""
+
+    def apply(a: Maybe[A], b: Maybe[B]) -> Maybe[C]:
+        return Na if isna(a) or isna(b) else fn(a, b)
+
+    return apply
