@@ -12,10 +12,11 @@ from orcaset import (
     MapItemsSeries,
     Maybe,
     Na,
+    Node,
     Period,
-    Rule,
     Series,
     Step,
+    ask,
     fetch,
     isna,
 )
@@ -24,8 +25,8 @@ YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
 
 
-def accrual(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Step[Maybe[float]]:
-    """Day-weighted accrual over memoized cell rules."""
+def accrual(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
+    """Day-weighted accrual over memoized cell nodes."""
     total = 0.0
     hit = False
     for k, cell in cells:
@@ -33,7 +34,7 @@ def accrual(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Ste
             continue
         if q < k:
             break
-        value = yield from fetch(cell, None)
+        value = yield from ask(cell)
         if k == q:
             return value
         overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
@@ -43,14 +44,14 @@ def accrual(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Ste
     return total if hit else Na
 
 
-def exact(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Step[Maybe[float]]:
+def exact(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
     for k, cell in cells:
         if k < q:
             continue
         if q < k:
             break
         if k == q:
-            return (yield from fetch(cell, None))
+            return (yield from ask(cell))
     return Na
 
 
@@ -70,16 +71,14 @@ capex = GridSeries("capex", capex_cells, accrual)
 type Cohort = GridSeries[Period, Period, float, Maybe[float]]
 
 
-def exact_cohort(
-    q: Period, cells: Iterable[tuple[Period, Rule[None, Cohort]]]
-) -> Step[Maybe[Cohort]]:
+def exact_cohort(q: Period, cells: Iterable[tuple[Period, Node[Cohort]]]) -> Step[Maybe[Cohort]]:
     for k, cell in cells:
         if k < q:
             continue
         if q < k:
             break
         if k == q:
-            return (yield from fetch(cell, None))
+            return (yield from ask(cell))
     return Na
 
 
@@ -129,7 +128,7 @@ def sum_cohorts_at_period(
 ) -> Step[float]:
     """Annual total dep in ``k``: sum every eligible cohort's answer at ``k``."""
     total = 0.0
-    keys = yield from fetch(source.keys(), None)
+    keys = yield from ask(source.keys())
     for spend_key in keys:
         if spend_key.end > k.end:
             break

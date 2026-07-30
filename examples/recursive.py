@@ -9,9 +9,10 @@ from orcaset import (
     GridSeries,
     Maybe,
     Na,
+    Node,
     Period,
-    Rule,
     Step,
+    ask,
     fetch,
     isna,
 )
@@ -19,7 +20,7 @@ from orcaset import (
 MONTHLY = relativedelta(months=1)
 
 
-def point(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Step[Maybe[float]]:
+def point(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
     """Overlap ``q`` with cells; scale each by overlap days / cell days."""
     total = 0.0
     hit = False
@@ -28,7 +29,7 @@ def point(q: Period, cells: Iterable[tuple[Period, Rule[None, float]]]) -> Step[
             continue
         if q < k:
             break
-        value = yield from fetch(cell, None)
+        value = yield from ask(cell)
         if k == q:
             return value
         overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days

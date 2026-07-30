@@ -9,40 +9,14 @@ from typing import Any, cast
 
 from orcaset.ids import next_id
 
-
-class Demand[K: Hashable, V]:
-    """A request for another cell's value, yielded from `Rule.compute`.
-
-    Yielding a `Demand` suspends the current computation until the requested
-    cell has been resolved; the resolved value is sent back into the generator
-    as the result of the `yield` expression. Prefer the typed `fetch` helper
-    (`value = yield from fetch(rule, key)`) over yielding `Demand` directly.
-    """
-
-    __slots__ = ("key", "rule")
-
-    def __init__(self, rule: Rule[K, V], key: K) -> None:
-        self.rule = rule
-        self.key = key
+# Sentinel cache key for unkeyed ``Node`` demands. Not a valid user key space.
+_UNIT: Hashable = object()
 
 
-type Step[V] = Generator[Demand[Any, Any], Any, V]
-"""A suspendable computation that yields `Demand`s and returns a `V`."""
+class _Identity:
+    """Shared id/name for ``Rule`` and ``Node``."""
 
-
-def fetch[K: Hashable, V](rule: Rule[K, V], key: K) -> Step[V]:
-    """Request the value of `rule` at `key` from within `Rule.compute`.
-
-    Use with `yield from` so the resolved value keeps its type:
-
-        prev = yield from fetch(self, prior_key)
-    """
-    value = yield Demand(rule, key)
-    return cast(V, value)
-
-
-class Rule[K: Hashable, V](ABC):
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self._name = name
         self._id = next_id()
 
@@ -54,20 +28,80 @@ class Rule[K: Hashable, V](ABC):
     def name(self) -> str:
         return self._name
 
+
+class Demand[V]:
+    """A request for another computation's value, yielded from ``compute``.
+
+    Yielding a ``Demand`` suspends the current computation until the requested
+    value has been resolved; the resolved value is sent back into the generator
+    as the result of the ``yield`` expression. Prefer ``fetch`` / ``ask`` over
+    yielding ``Demand`` directly.
+    """
+
+    __slots__ = ("key", "target")
+
+    def __init__(self, target: Rule[Any, V] | Node[V], key: Hashable) -> None:
+        self.target = target
+        self.key = key
+
+
+type Step[V] = Generator[Demand[Any], Any, V]
+"""A suspendable computation that yields ``Demand``s and returns a ``V``."""
+
+
+def fetch[K: Hashable, V](rule: Rule[K, V], key: K) -> Step[V]:
+    """Request the value of ``rule`` at ``key`` from within ``compute``.
+
+    Use with ``yield from`` so the resolved value keeps its type:
+
+        prev = yield from fetch(self, prior_key)
+    """
+    value = yield Demand(rule, key)
+    return cast(V, value)
+
+
+def ask[V](node: Node[V]) -> Step[V]:
+    """Request the value of an unkeyed ``Node`` from within ``compute``.
+
+    Use with ``yield from``:
+
+        cells = yield from ask(self._cells)
+    """
+    value = yield Demand(node, _UNIT)
+    return cast(V, value)
+
+
+class Rule[K: Hashable, V](_Identity, ABC):
+    """A keyed family of memoized computations."""
+
     @abstractmethod
     def compute(self, key: K, /) -> Step[V] | V:
-        """Compute the value of this rule at `key`.
+        """Compute the value of this rule at ``key``.
 
         Rules with dependencies are written as generators: request other cells
-        with `value = yield from fetch(rule, key)` and `return` the result.
-        Each body runs exactly once per cell; execution suspends at `fetch`
-        while dependencies resolve. Leaf rules may return a plain value.
+        with ``value = yield from fetch(rule, key)`` or ``ask(node)`` and
+        ``return`` the result. Each body runs exactly once per cell; execution
+        suspends at ``fetch``/``ask`` while dependencies resolve. Leaf rules
+        may return a plain value.
 
         The parameter is positional-only so overrides may rename it for their
-        key space (e.g. `q` for query-keyed rules).
+        key space (e.g. ``q`` for query-keyed rules).
 
         Note: a plain return value must not itself be a generator, since a
         returned generator is treated as a suspendable computation. Wrap
         generator-valued data in a replayable container instead.
+        """
+        ...
+
+
+class Node[V](_Identity, ABC):
+    """A single memoized computation (no key)."""
+
+    @abstractmethod
+    def compute(self) -> Step[V] | V:
+        """Compute this node's value.
+
+        Same generator conventions as ``Rule.compute``, but with no key
+        argument. Request dependencies with ``fetch`` / ``ask``.
         """
         ...
