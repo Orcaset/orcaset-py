@@ -27,26 +27,34 @@ YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
 
 
-def accrual(q: Period, cells: Iterable[tuple[Period, Step[float] | float]]) -> Step[Maybe[float]]:
-    """Overlap ``q`` with cells; scale each by overlap days / cell days."""
-    total = 0.0
-    hit = False
-    for k, cell in cells:
-        if k < q:
-            continue
-        if q < k:
-            break
-        if k == q:
-            value = (yield from cell) if isinstance(cell, Generator) else cell
-            return value
-        value = (yield from cell) if isinstance(cell, Generator) else cell
-        if isna(value):
-            continue
-        overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
-        cell_days = (k.end - k.start).days
-        total += value * (overlap_days / cell_days)
-        hit = True
-    return total if hit else Na
+def make_accrual(
+    series: Series[Period, Period, Maybe[float] | float],
+) -> QueryFn[Period, Period, float, Maybe[float]]:
+    """Day-weighted accrual; exact hits force the cell, overlaps ``fetch`` the series."""
+
+    def accrual(
+        q: Period, cells: Iterable[tuple[Period, Step[float] | float]]
+    ) -> Step[Maybe[float]]:
+        total = 0.0
+        hit = False
+        for k, cell in cells:
+            if k < q:
+                continue
+            if q < k:
+                break
+            if k == q:
+                value = (yield from cell) if isinstance(cell, Generator) else cell
+                return value
+            value = yield from fetch(series, k)
+            if isna(value):
+                continue
+            overlap_days = (min(k.end, q.end) - max(k.start, q.start)).days
+            cell_days = (k.end - k.start).days
+            total += value * (overlap_days / cell_days)
+            hit = True
+        return total if hit else Na
+
+    return accrual
 
 
 def exact(q: Period, cells: Iterable[tuple[Period, Step[float] | float]]) -> Step[Maybe[float]]:
@@ -133,7 +141,13 @@ def capex_cells() -> Iterable[tuple[Period, float]]:
         yield period, 100.0
 
 
-capex = GridSeries("capex", capex_cells, accrual)
+def _capex_accrual(
+    q: Period, cells: Iterable[tuple[Period, Step[float] | float]]
+) -> Step[Maybe[float]]:
+    return (yield from _as_step(make_accrual(capex)(q, cells)))
+
+
+capex = GridSeries("capex", capex_cells, _capex_accrual)
 
 
 # ---------- Cohort schedules via MapItemsSeries ----------
@@ -194,22 +208,84 @@ cohort_schedules = MapItemsSeries(
 )
 
 
+# ---------- Total depreciation ----------
+
+
+def sum_cohorts_at_period(
+    k: Period,
+    source: Series[Period, Period, Maybe[Cohort]],
+) -> Step[float]:
+    """Annual total dep in ``k``: sum every eligible cohort's answer at ``k``.
+
+    Includes cohorts with ``spend_key.end <= k.end`` (same-period spend allowed;
+    today those contribute ``Na``/0 because dep starts after the spend year).
+    """
+    total = 0.0
+    keys = yield from fetch(source.keys(), None)
+    for spend_key in keys:
+        if spend_key.end > k.end:
+            break
+        cohort = yield from fetch(source, spend_key)
+        if isna(cohort):
+            continue
+        value = yield from fetch(cohort, k)
+        if not isna(value):
+            total += value
+    return total
+
+
+def _total_dep_accrual(
+    q: Period, cells: Iterable[tuple[Period, Step[float] | float]]
+) -> Step[Maybe[float]]:
+    return (yield from _as_step(make_accrual(total_depreciation)(q, cells)))
+
+
+total_depreciation = MapItemsSeries(
+    "total_depreciation",
+    cohort_schedules,
+    sum_cohorts_at_period,
+    _total_dep_accrual,
+)
+
+
 # ---------- Demo ----------
 
 ctx = Context()
-capex_q = Period(date(2025, 12, 31), date(2027, 6, 30))
-first = Period(date(2025, 12, 31), date(2026, 12, 31))
-dep_year = Period(date(2026, 12, 31), date(2027, 12, 31))
+years = [
+    Period(date(2025, 12, 31), date(2026, 12, 31)),
+    Period(date(2026, 12, 31), date(2027, 12, 31)),
+    Period(date(2027, 12, 31), date(2028, 12, 31)),
+    Period(date(2028, 12, 31), date(2029, 12, 31)),
+]
+partial = Period(date(2025, 12, 31), date(2027, 6, 30))
 
-print(f"Capex @ {capex_q}: {ctx.demand(capex, capex_q)}")
 
-schedule = ctx.demand(cohort_schedules, first)
-print(f"cohort_schedules @ {first}: {schedule}")
-assert not isna(schedule)
-print(f"schedule @ {dep_year}: {ctx.demand(schedule, dep_year)}")
+def show(value: Maybe[float] | float) -> str:
+    return "0.0" if isna(value) else f"{value}"
 
-print(f"\nDeps: cohort_schedules @ {first}\n")
-print(ctx.dependencies(cohort_schedules, first))
 
-print(f"\nDeps: schedule @ {dep_year}\n")
-print(ctx.dependencies(schedule, dep_year))
+# Cohorts indexed by the first three spend years (enough to cover the table).
+cohort_rows: list[tuple[str, Cohort]] = []
+for spend_key in years[:3]:
+    schedule = ctx.demand(cohort_schedules, spend_key)
+    if isna(schedule):
+        raise RuntimeError(f"missing cohort for {spend_key}")
+    cohort_rows.append((schedule.name, schedule))
+
+print("Period end".ljust(22) + "".join(str(y.end).rjust(12) for y in years))
+print("Capex".ljust(22) + "".join(f"{show(ctx.demand(capex, y)):>12}" for y in years))
+for name, schedule in cohort_rows:
+    print(name.ljust(22) + "".join(f"{show(ctx.demand(schedule, y)):>12}" for y in years))
+print(
+    "Total depreciation".ljust(22)
+    + "".join(f"{show(ctx.demand(total_depreciation, y)):>12}" for y in years)
+)
+print(f"\nCapex @ partial {partial}: {ctx.demand(capex, partial)}")
+print(f"Total dep @ partial {partial}: {ctx.demand(total_depreciation, partial)}")
+
+first, dep_year = years[0], years[1]
+print(f"\nDeps: {cohort_rows[0][0]} @ {dep_year}\n")
+print(ctx.dependencies(cohort_rows[0][1], dep_year))
+
+print(f"\nDeps: total_depreciation @ {years[2]}\n")
+print(ctx.dependencies(total_depreciation, years[2]))
