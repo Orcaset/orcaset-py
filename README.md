@@ -1,78 +1,93 @@
 # Orcaset — Financial Models for Computers
 
-## Series
+`orcaset` builds financial statement models as code, making it easy for agents to build verifiable, open, and scalable analysis.
 
-A `Series` is a `KeyedRule` with an explicit time domain: a demandable answer (`ctx.get_at(series, q)`) plus a public key stream (`series.keys`) — a lazy, strictly ascending, possibly infinite stream of keys (dates, periods, ...), buffered per `Context` so it can be re-scanned cheaply. Iterating keys never forces values.
+The framework helps agents write correct models quickly. Strong typing surfaces incorrect relationships at write time rather than silently failing or raising exceptions at runtime. It also gives formulas clear semantic meaning by building dependencies from named `get_at(line_item, period)` effect handlers rather than anonymous `A1:B2` address references.
 
-`GridSeries` is the workhorse implementation. It separates three things:
+Install with `uv` or `pip`:
 
-- **Cells** (private) — the value at each domain key, memoized per key. Recurrences live here: a cell may read the prior cell ("last value × growth") or get_at any other rule.
-- **Selection** — which grid keys are relevant to a query.
-- **Reduction** — how fetched cells combine into an answer (prorate, interpolate, aggregate).
-
-Query semantics are fixed per *series*, not per call — a 30/360 accrual stream can't accidentally be read with actual/actual. All three ingredients are constructor state: `value_at` is the instance data, `select`/`reduce` are the (matched) query semantics. Construction helpers pair them so line items compose conventions inline instead of importing a class per combination:
-
-```python
-def revenue_at(s, key):  # grid definition; `s.cell(k)` reads this series' own grid
-    prior = yield from s.cell(key.shift(months=-1))
-    return 100.0 if isna(prior) else prior * 1.02
-
-
-revenue = flow("revenue", monthly_keys, revenue_at, yf=YF.cmonthly)  # calendar-month flow
-rent = flow("rent", quarterly_keys, rent_at, yf=YF.cmonthly)  # quarter = 1/4 year
-accrual = flow("accrual", accrual_keys, accrual_at, yf=YF.thirty360)  # 30/360 proration
-balance = level("balance", monthly_keys, bal_at, yf=YF.act360)  # time-weighted average
-
-ctx = Context()
-ctx.get_at(revenue, Period(date(2026, 1, 31), date(2026, 3, 15)))  # prorates across cells
+```sh
+uv add git+https://github.com/orcaset/orcaset-py
 ```
 
-Custom semantics are just functions passed to `GridSeries` directly — the generics tie `select` and `reduce` together over `[Q, K, V, W]`:
-
-```python
-custom = GridSeries("custom", keys, value_at, select=my_select, reduce=my_reduce)
+```sh
+pip install git+https://github.com/orcaset/orcaset-py
 ```
 
-The same construction can be written as a decorator, with arguments ordered
-as `keys`, `select`, `reduce`, and `label`:
+*This library has experimental status and the API is subject to breaking changes.*
 
-```python
-@grid(keys, my_select, my_reduce, "custom")
-def custom(reader, key):
-    return value_at(reader, key)
-```
+## Overview
 
-Derived series transform *answers*, not cells. `series.map(name, fn)` builds a `MapSeries` that answers `fn(source answered at q)` for every query — resolution is fully delegated to the source, whose query semantics apply before `fn`. `fn` sees the raw answer (typically `Maybe`) and owns the miss policy:
+The code block below builds a simple model with revenue, costs, and profit.
 
-```python
-taxed = revenue.map("taxed", lambda v: Na if isna(v) else v * 0.79)
-```
+> *This code block is complete and can be run standalone.*
 
-`MapNSeries` applies the same answer-level composition to a nonempty tuple of
-homogeneous sources. Every source is queried at the requested `q`; a supplied
-`merge_keys` function lazily constructs the derived series' public domain:
-
-```python
-profit = MapNSeries(
-    "profit",
-    (revenue, cogs, opex),
-    add_values,
-    merge_keys=period_union,
+<!-- fmt: off -->
+```py
+from datetime import date
+from dateutil.relativedelta import relativedelta
+from itertools import islice
+from orcaset import (
+    YF, Context, GridSeries, Map2Series, Maybe, Period, accrual, get_at, isna, map2_some, period_union,
 )
+
+# MODEL DEFINITION
+@GridSeries.define("revenue", accrual(YF.cmonthly))
+def revenue():
+    # Define a generator of (Period, value) pairs over time
+    def cells():
+        for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
+
+            def factory(p: Period = k):
+                # Get the prior month's revenue
+                prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
+                # Return the prior month's revenue * 10% growth rate, or initial revenue of 100 if prior is Na
+                return prior * 1.10 if not isna(prior) else 100.0
+
+            yield k, factory
+
+    return cells()
+
+costs = revenue.map("Costs", lambda r: r * -0.50 if not isna(r) else r)
+profit = Map2Series(
+    "Profit", revenue, costs, map2_some(lambda r, c: r + c), merge_keys=period_union
+)
+
+# MATERIALIZE AND PRINT OUTPUTS
+ctx = Context()
+
+def maybe_fmt(val: Maybe[float]) -> str:
+    return "Na" if isna(val) else f"{val:.2f}"
+
+
+for p in islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4):
+    rev = ctx.get_at(revenue, p)
+    cst = ctx.get_at(costs, p)
+    prf = ctx.get_at(profit, p)
+    print(f"{p}: revenue={maybe_fmt(rev)}, costs={maybe_fmt(cst)}, profit={maybe_fmt(prf)}")
+
+# Period(2026-01-01, 2026-02-01): revenue=100.00, costs=-50.00, profit=50.00
+# Period(2026-02-01, 2026-03-01): revenue=110.00, costs=-55.00, profit=55.00
+# Period(2026-03-01, 2026-04-01): revenue=121.00, costs=-60.50, profit=60.50
+# Period(2026-04-01, 2026-05-01): revenue=133.10, costs=-66.55, profit=66.55
+```
+<!-- fmt: on -->
+
+`orcaset` uses effect handlers to trace calculation dependencies and memoize values.
+
+```py
+# Print the dependency tree for January 2026 costs
+print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
+
+# Costs@Period(2026-01-01, 2026-02-01) = -50.0
+#   revenue@Period(2026-01-01, 2026-02-01) = 100.0
+#     revenue.cells = <orcaset.series.Replayable object at 0x1017bcec0>
+#     revenue@Period(2026-01-01, 2026-02-01) = 100.0
+#       revenue@Period(2025-12-01, 2026-01-01) = Na
+#         revenue.cells = <orcaset.series.Replayable object at 0x1017bcec0>
 ```
 
-`period_union` is the standard merger for `Period` domains. `add_values`
-adds `Maybe[float]` answers while propagating `Na`; use
-`combine_values(values, operator)` for the same policy with another binary
-operation.
-
-Conventions and guarantees:
-
-- **Misses are values, never exceptions.** Anything outside the domain resolves to the `Na` singleton; results are `Maybe[V]`. Use `isna(v)` to test (it type-narrows); `bool(Na)` raises by design.
-- **Shared domains:** pass another series' `keys` rule to a constructor (`MySeries("costs", revenue.keys, ...)`) when the grid is definitionally the same; both series then share one key buffer per context and traces show the shared dependency.
-- **Ascending keys are enforced** lazily as the stream is first pulled; misordered domains raise `ValueError`.
-
-Every cross-layer read goes through `get_at`, so `ctx.dependencies(series, q)` shows exactly which grid cells (and upstream rules) produced a number.
+See the demo scripts in the [examples](./examples) folder.
 
 ## License
 
