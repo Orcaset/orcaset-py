@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
-from typing import Any, Protocol, Self
+from typing import Any, Protocol, Self, cast
 
 from orcaset.rule import Node, Rule, Step, ask, fetch
 
@@ -26,6 +27,19 @@ class Key(Hashable, Protocol):
 
 type CellFactory[V] = Callable[[], Step[V] | V]
 """Builds a fresh ``Step`` (or plain value) each time a cell is computed."""
+
+type CellsFn[K: Key, V] = Callable[
+    [],
+    Step[Iterable[tuple[K, V | CellFactory[V]]]]
+    | Iterable[tuple[K, V | CellFactory[V]]],
+]
+"""Builds the cell stream for a ``GridSeries``.
+
+Ordinary functions return an iterable of ``(key, value | factory)`` pairs.
+Generator functions are ``Step``s: ``ask``/``fetch`` then **return** that
+iterable. Do not ``yield`` the pairs from the outer function — ``yield`` means
+``Demand``. Use an inner generator (or list) and ``return`` it.
+"""
 
 type QueryFn[Q, K: Key, V, W] = Callable[
     [Q, Iterable[tuple[K, Node[V]]]],
@@ -199,15 +213,18 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
 class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
     """Series backed by a lazy stream of ``(K, Node[V])`` cells.
 
-    ``cells`` yields plain values or factories ``() -> Step[V] | V``. Each cell
-    is wrapped as a ``Node`` so forcing is context-memoized and dependency-
-    tracked. Live generators are rejected — pass a factory instead.
+    ``cells`` is a zero-arg factory. Ordinary callables return an iterable of
+    plain values or factories ``() -> Step[V] | V``; generator functions are
+    ``Step``s that demand other rules/nodes and then return that iterable.
+    Each cell is wrapped as a ``Node`` so forcing is context-memoized and
+    dependency-tracked. Live generators as cell *values* are rejected — pass a
+    factory instead.
     """
 
     def __init__(
         self,
         name: str,
-        cells: Callable[[], Iterable[tuple[K, V | CellFactory[V]]]],
+        cells: CellsFn[K, V],
         query: QueryFn[Q, K, V, W],
     ) -> None:
         super().__init__(name)
@@ -268,17 +285,27 @@ class _CellNode[V](Node[V]):
 class _Cells[K: Key, V](Node[Iterable[tuple[K, Node[V]]]]):
     """Per-context cell stream: Replayable buffer of ``(K, Node[V])``."""
 
-    def __init__(
-        self,
-        name: str,
-        cells: Callable[[], Iterable[tuple[K, V | CellFactory[V]]]],
-    ) -> None:
+    def __init__(self, name: str, cells: CellsFn[K, V]) -> None:
         super().__init__(f"{name}.cells")
         self._series_name = name
         self._cells = cells
 
-    def compute(self) -> Iterable[tuple[K, Node[V]]]:
-        return Replayable(_cell_pairs(self._series_name, self._cells()))
+    def compute(self) -> Step[Iterable[tuple[K, Node[V]]]]:
+        # Generator functions are Steps (may ask/fetch). Ordinary callables
+        # return the spine directly — including generators of pairs, which must
+        # not be driven as Steps. isgeneratorfunction is invisible to the type
+        # checker, so cast the narrowed branch results.
+        if inspect.isgeneratorfunction(self._cells):
+            raw = yield from cast(
+                Callable[[], Step[Iterable[tuple[K, V | CellFactory[V]]]]],
+                self._cells,
+            )()
+        else:
+            raw = cast(
+                Iterable[tuple[K, V | CellFactory[V]]],
+                self._cells(),
+            )
+        return Replayable(_cell_pairs(self._series_name, raw))
 
 
 class _ItemCells[K: Key, W, V](Node[Iterable[tuple[K, Node[V]]]]):

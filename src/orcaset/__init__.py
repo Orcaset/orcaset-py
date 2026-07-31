@@ -8,6 +8,7 @@ from orcaset.query import DayCount, accrual, exact
 from orcaset.rule import Demand, Node, Rule, Step, ask, fetch
 from orcaset.series import (
     CellFactory,
+    CellsFn,
     GridSeries,
     Key,
     Map2Series,
@@ -23,6 +24,7 @@ from orcaset.yf import YF
 __all__ = [
     "YF",
     "CellFactory",
+    "CellsFn",
     "Context",
     "CycleError",
     "DayCount",

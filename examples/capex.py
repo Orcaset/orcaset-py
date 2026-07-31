@@ -1,6 +1,6 @@
 """Capex → cohort schedules → total depreciation."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
@@ -32,8 +32,11 @@ by_days = accrual(lambda d1, d2: (d2 - d1).days)
 
 
 def capex_cells() -> Iterable[tuple[Period, float]]:
-    for period in Period.seq(START, YEAR):
-        yield period, 100.0
+    def pairs() -> Iterator[tuple[Period, float]]:
+        for period in Period.seq(START, YEAR):
+            yield period, 100.0
+
+    return pairs()
 
 
 capex = GridSeries("capex", capex_cells, by_days)
@@ -51,17 +54,20 @@ def build_cohort(
     """Depreciation schedule that re-fetches ``source`` at ``source_key`` when read."""
 
     def cells() -> Iterable[tuple[Period, CellFactory[float]]]:
-        period = Period(source_key.end, source_key.end + YEAR)
-        for _ in range(2):
+        def pairs() -> Iterator[tuple[Period, CellFactory[float]]]:
+            period = Period(source_key.end, source_key.end + YEAR)
+            for _ in range(2):
 
-            def factory(capex_period: Period = source_key) -> Step[float]:
-                spend = yield from fetch(source, capex_period)
-                if isna(spend):
-                    raise ValueError(f"missing capex for {capex_period}")
-                return spend / 2
+                def factory(capex_period: Period = source_key) -> Step[float]:
+                    spend = yield from fetch(source, capex_period)
+                    if isna(spend):
+                        raise ValueError(f"missing capex for {capex_period}")
+                    return spend / 2
 
-            yield period, factory
-            period = Period(period.end, period.end + YEAR)
+                yield period, factory
+                period = Period(period.end, period.end + YEAR)
+
+        return pairs()
 
     return GridSeries(f"Depreciation@{source_key.end}", cells, exact)
 
