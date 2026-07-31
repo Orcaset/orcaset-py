@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from orcaset.context import Context, CycleError, DepNode
-from orcaset.maybe import Maybe, Na, isna, map2_some, map_some
-from orcaset.period import Period
+from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
+from orcaset.period import Period, period_union
 from orcaset.query import DayCount, accrual, exact
 from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 from orcaset.series import (
@@ -46,10 +46,13 @@ __all__ = [
     "Series",
     "Step",
     "accrual",
+    "add_values",
+    "combine_values",
     "exact",
     "get",
     "get_at",
     "isna",
     "map2_some",
     "map_some",
+    "period_union",
 ]

@@ -231,6 +231,35 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
         self._keys: Rule[Iterable[K]] = _GridKeys(name, self._cells)
         self._query = query
 
+    @classmethod
+    def define[
+        Q2: Hashable,
+        K2: Key,
+        V2,
+        W2,
+    ](
+        cls,
+        name: str,
+        query: QueryFn[Q2, K2, V2, W2],
+    ) -> Callable[[CellsFn[K2, V2]], GridSeries[Q2, K2, V2, W2]]:
+        """Decorator: build a ``GridSeries`` from a cells factory.
+
+        Arguments are ``name`` then ``query``. The decorated function becomes
+        the series value (not the cells callable).
+        """
+
+        def decorator(cells: CellsFn[K2, V2]) -> GridSeries[Q2, K2, V2, W2]:
+            build = cast(
+                Callable[
+                    [str, CellsFn[K2, V2], QueryFn[Q2, K2, V2, W2]],
+                    GridSeries[Q2, K2, V2, W2],
+                ],
+                cls,
+            )
+            return build(name, cells, query)
+
+        return decorator
+
     def keys(self) -> Rule[Iterable[K]]:
         return self._keys
 
