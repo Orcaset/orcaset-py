@@ -7,10 +7,10 @@ from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from orcaset.rule import _UNIT, Node, Rule, Step
+from orcaset.rule import _UNIT, KeyedRule, Rule, Step
 
 type RuleKey = tuple[int, Hashable]
-type Target = Rule[Any, Any] | Node[Any]
+type Target = KeyedRule[Any, Any] | Rule[Any]
 
 
 _MISSING: Any = object()
@@ -72,21 +72,21 @@ class Context:
         self._on_stack: set[RuleKey] = set()
         self._targets: dict[int, Target] = {}
 
-    def demand[K: Hashable, V](self, rule: Rule[K, V], key: K) -> V:
+    def get_at[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> V:
         return self._resolve(rule, key, lambda: rule.compute(key))
 
-    def ask[V](self, node: Node[V]) -> V:
-        return self._resolve(node, _UNIT, lambda: node.compute())
+    def get[V](self, rule: Rule[V]) -> V:
+        return self._resolve(rule, _UNIT, lambda: rule.compute())
 
-    def dependencies[K: Hashable, V](self, rule: Rule[K, V], key: K) -> DepNode:
-        """Demand ``rule``/``key``, then return its dependency tree."""
-        self.demand(rule, key)
+    def dependencies[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> DepNode:
+        """Resolve ``rule``/``key``, then return its dependency tree."""
+        self.get_at(rule, key)
         return self._dep_node((rule.id, key), seen=set())
 
-    def node_dependencies[V](self, node: Node[V]) -> DepNode:
-        """Ask ``node``, then return its dependency tree."""
-        self.ask(node)
-        return self._dep_node((node.id, _UNIT), seen=set())
+    def rule_dependencies[V](self, rule: Rule[V]) -> DepNode:
+        """Resolve ``rule``, then return its dependency tree."""
+        self.get(rule)
+        return self._dep_node((rule.id, _UNIT), seen=set())
 
     def _resolve[V](
         self,
@@ -186,6 +186,6 @@ class Context:
 
 
 def _start(target: Target, key: Hashable) -> Step[Any] | Any:
-    if isinstance(target, Node):
+    if isinstance(target, Rule):
         return target.compute()
     return target.compute(key)

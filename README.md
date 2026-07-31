@@ -2,11 +2,11 @@
 
 ## Series
 
-A `Series` is a `Rule` with an explicit time domain: a demandable answer (`ctx.demand(series, q)`) plus a public key stream (`series.keys`) — a lazy, strictly ascending, possibly infinite stream of keys (dates, periods, ...), buffered per `Context` so it can be re-scanned cheaply. Iterating keys never forces values.
+A `Series` is a `KeyedRule` with an explicit time domain: a demandable answer (`ctx.get_at(series, q)`) plus a public key stream (`series.keys`) — a lazy, strictly ascending, possibly infinite stream of keys (dates, periods, ...), buffered per `Context` so it can be re-scanned cheaply. Iterating keys never forces values.
 
 `GridSeries` is the workhorse implementation. It separates three things:
 
-- **Cells** (private) — the value at each domain key, memoized per key. Recurrences live here: a cell may read the prior cell ("last value × growth") or fetch any other rule.
+- **Cells** (private) — the value at each domain key, memoized per key. Recurrences live here: a cell may read the prior cell ("last value × growth") or get_at any other rule.
 - **Selection** — which grid keys are relevant to a query.
 - **Reduction** — how fetched cells combine into an answer (prorate, interpolate, aggregate).
 
@@ -24,7 +24,7 @@ accrual = flow("accrual", accrual_keys, accrual_at, yf=YF.thirty360)  # 30/360 p
 balance = level("balance", monthly_keys, bal_at, yf=YF.act360)  # time-weighted average
 
 ctx = Context()
-ctx.demand(revenue, Period(date(2026, 1, 31), date(2026, 3, 15)))  # prorates across cells
+ctx.get_at(revenue, Period(date(2026, 1, 31), date(2026, 3, 15)))  # prorates across cells
 ```
 
 Custom semantics are just functions passed to `GridSeries` directly — the generics tie `select` and `reduce` together over `[Q, K, V, W]`:
@@ -72,7 +72,7 @@ Conventions and guarantees:
 - **Shared domains:** pass another series' `keys` rule to a constructor (`MySeries("costs", revenue.keys, ...)`) when the grid is definitionally the same; both series then share one key buffer per context and traces show the shared dependency.
 - **Ascending keys are enforced** lazily as the stream is first pulled; misordered domains raise `ValueError`.
 
-Every cross-layer read goes through `fetch`, so `ctx.dependencies(series, q)` shows exactly which grid cells (and upstream rules) produced a number.
+Every cross-layer read goes through `get_at`, so `ctx.dependencies(series, q)` shows exactly which grid cells (and upstream rules) produced a number.
 
 ## License
 

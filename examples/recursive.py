@@ -10,7 +10,7 @@ from orcaset import (
     Period,
     Step,
     accrual,
-    fetch,
+    get_at,
     isna,
     map2_some,
     map_some,
@@ -31,7 +31,7 @@ def revenue_cells() -> Iterable[tuple[Period, float | CellFactory[float]]]:
         for k in periods:
 
             def factory(p: Period = k) -> Step[float]:
-                value = yield from fetch(revenue, p.from_start(-MONTHLY))
+                value = yield from get_at(revenue, p.from_start(-MONTHLY))
                 if isna(value):
                     raise ValueError(f"missing prior for {p}")
                 return value * 1.01
@@ -54,7 +54,7 @@ gross_profit = revenue.map2(
 
 ctx = Context()
 q = Period(date(2027, 3, 1), date(2027, 4, 1))
-print(ctx.demand(revenue, q))
-print(ctx.demand(cogs, q))
-print(ctx.demand(gross_profit, q))
+print(ctx.get_at(revenue, q))
+print(ctx.get_at(cogs, q))
+print(ctx.get_at(gross_profit, q))
 print(ctx.dependencies(gross_profit, q))

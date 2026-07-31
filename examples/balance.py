@@ -20,9 +20,9 @@ from orcaset import (
     Period,
     Step,
     accrual,
-    ask,
     exact,
-    fetch,
+    get,
+    get_at,
     isna,
 )
 
@@ -37,7 +37,7 @@ def interest_cells() -> Iterable[tuple[Period, CellFactory[float]]]:
         for p in Period.seq(SEED, MONTHLY):
 
             def factory(period: Period = p) -> Step[float]:
-                bal = yield from fetch(balance, period.start)
+                bal = yield from get_at(balance, period.start)
                 if isna(bal):
                     return 0.0
                 return bal * RATE
@@ -51,15 +51,15 @@ interest = GridSeries("interest", interest_cells, by_days)
 
 
 def balance_cells() -> Step[Iterable[tuple[date, float | CellFactory[float]]]]:
-    periods = yield from ask(interest.keys())
+    periods = yield from get(interest.keys())
 
     def pairs() -> Iterator[tuple[date, float | CellFactory[float]]]:
         yield SEED, 100.0
         for p in periods:
 
             def factory(period: Period = p) -> Step[float]:
-                bal = yield from fetch(balance, period.start)
-                interest_amt = yield from fetch(interest, period)
+                bal = yield from get_at(balance, period.start)
+                interest_amt = yield from get_at(interest, period)
                 if isna(bal) or isna(interest_amt):
                     raise ValueError(f"missing inputs for balance at {period.end}")
                 return bal + interest_amt
@@ -77,9 +77,9 @@ periods = list(islice(Period.seq(SEED, MONTHLY), 4))
 dates = [SEED, *(p.end for p in periods)]
 
 print("Date".ljust(16) + "".join(str(d).rjust(12) for d in dates))
-print("Balance".ljust(16) + "".join(f"{ctx.demand(balance, d):12.2f}" for d in dates))
+print("Balance".ljust(16) + "".join(f"{ctx.get_at(balance, d):12.2f}" for d in dates))
 print(
     "Interest".ljust(16)
     + "—".rjust(12)
-    + "".join(f"{ctx.demand(interest, p):12.2f}" for p in periods)
+    + "".join(f"{ctx.get_at(interest, p):12.2f}" for p in periods)
 )

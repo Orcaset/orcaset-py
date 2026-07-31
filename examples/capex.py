@@ -15,9 +15,9 @@ from orcaset import (
     Series,
     Step,
     accrual,
-    ask,
     exact,
-    fetch,
+    get,
+    get_at,
     isna,
 )
 
@@ -59,7 +59,7 @@ def build_cohort(
             for _ in range(2):
 
                 def factory(capex_period: Period = source_key) -> Step[float]:
-                    spend = yield from fetch(source, capex_period)
+                    spend = yield from get_at(source, capex_period)
                     if isna(spend):
                         raise ValueError(f"missing capex for {capex_period}")
                     return spend / 2
@@ -96,14 +96,14 @@ def sum_cohorts_at_period(
 ) -> Step[float]:
     """Annual total dep in ``k``: sum every eligible cohort's answer at ``k``."""
     total = 0.0
-    keys = yield from ask(source.keys())
+    keys = yield from get(source.keys())
     for spend_key in keys:
         if spend_key.end > k.end:
             break
-        cohort = yield from fetch(source, spend_key)
+        cohort = yield from get_at(source, spend_key)
         if isna(cohort):
             continue
-        value = yield from fetch(cohort, k)
+        value = yield from get_at(cohort, k)
         if not isna(value):
             total += value
     return total
@@ -135,21 +135,21 @@ def show(value: Maybe[float] | float) -> str:
 
 cohort_rows: list[tuple[str, Cohort]] = []
 for spend_key in years[:3]:
-    schedule = ctx.demand(cohort_schedules, spend_key)
+    schedule = ctx.get_at(cohort_schedules, spend_key)
     if isna(schedule):
         raise RuntimeError(f"missing cohort for {spend_key}")
     cohort_rows.append((schedule.name, schedule))
 
 print("Period end".ljust(22) + "".join(str(y.end).rjust(12) for y in years))
-print("Capex".ljust(22) + "".join(f"{show(ctx.demand(capex, y)):>12}" for y in years))
+print("Capex".ljust(22) + "".join(f"{show(ctx.get_at(capex, y)):>12}" for y in years))
 for name, schedule in cohort_rows:
-    print(name.ljust(22) + "".join(f"{show(ctx.demand(schedule, y)):>12}" for y in years))
+    print(name.ljust(22) + "".join(f"{show(ctx.get_at(schedule, y)):>12}" for y in years))
 print(
     "Total depreciation".ljust(22)
-    + "".join(f"{show(ctx.demand(total_depreciation, y)):>12}" for y in years)
+    + "".join(f"{show(ctx.get_at(total_depreciation, y)):>12}" for y in years)
 )
-print(f"\nCapex @ partial {partial}: {ctx.demand(capex, partial)}")
-print(f"Total dep @ partial {partial}: {ctx.demand(total_depreciation, partial)}")
+print(f"\nCapex @ partial {partial}: {ctx.get_at(capex, partial)}")
+print(f"Total dep @ partial {partial}: {ctx.get_at(total_depreciation, partial)}")
 
 dep_year = years[1]
 print(f"\nDeps: {cohort_rows[0][0]} @ {dep_year}\n")

@@ -10,14 +10,14 @@ from datetime import date
 
 from orcaset.maybe import Maybe, Na
 from orcaset.period import Period
-from orcaset.rule import Node, Step, ask
+from orcaset.rule import Rule, Step, get
 from orcaset.series import Key, QueryFn
 
 type DayCount = Callable[[date, date], float]
 """Maps an ordered date pair to a length (year fraction, days, …)."""
 
 
-def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Node[V]]]) -> Step[Maybe[V]]:
+def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:
     """Point lookup: return the cell at ``q``, or ``Na`` if missing.
 
     Scans an ascending key stream; overlapping but non-equal keys are skipped
@@ -29,7 +29,7 @@ def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Node[V]]]) -> Step[Maybe[V]]
         if q < k:
             break
         if k == q:
-            return (yield from ask(cell))
+            return (yield from get(cell))
     return Na
 
 
@@ -42,7 +42,7 @@ def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:
     ``YF.cmonthly``, or ``lambda a, b: (b - a).days``.
     """
 
-    def query(q: Period, cells: Iterable[tuple[Period, Node[float]]]) -> Step[Maybe[float]]:
+    def query(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[Maybe[float]]:
         total = 0.0
         hit = False
         for k, cell in cells:
@@ -50,7 +50,7 @@ def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:
                 continue
             if q < k:
                 break
-            value = yield from ask(cell)
+            value = yield from get(cell)
             if k == q:
                 return value
             overlap_start = max(k.start, q.start)

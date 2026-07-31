@@ -5,7 +5,7 @@ from orcaset.context import Context, CycleError, DepNode
 from orcaset.maybe import Maybe, Na, isna, map2_some, map_some
 from orcaset.period import Period
 from orcaset.query import DayCount, accrual, exact
-from orcaset.rule import Demand, Node, Rule, Step, ask, fetch
+from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 from orcaset.series import (
     CellFactory,
     CellsFn,
@@ -32,13 +32,13 @@ __all__ = [
     "DepNode",
     "GridSeries",
     "Key",
+    "KeyedRule",
     "Map2Series",
     "MapItemsSeries",
     "MapNSeries",
     "MapSeries",
     "Maybe",
     "Na",
-    "Node",
     "Period",
     "QueryFn",
     "Replayable",
@@ -46,9 +46,9 @@ __all__ = [
     "Series",
     "Step",
     "accrual",
-    "ask",
     "exact",
-    "fetch",
+    "get",
+    "get_at",
     "isna",
     "map2_some",
     "map_some",
