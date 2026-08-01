@@ -16,8 +16,8 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     CellFactory,
     Context,
-    GridSeries,
     Period,
+    Series,
     Step,
     accrual,
     exact,
@@ -47,7 +47,7 @@ def interest_cells() -> Iterable[tuple[Period, CellFactory[float]]]:
     return pairs()
 
 
-interest = GridSeries("interest", interest_cells, by_days)
+interest = Series("interest", interest_cells, by_days)
 
 
 def balance_cells() -> Step[Iterable[tuple[date, float | CellFactory[float]]]]:
@@ -69,7 +69,7 @@ def balance_cells() -> Step[Iterable[tuple[date, float | CellFactory[float]]]]:
     return pairs()
 
 
-balance = GridSeries("balance", balance_cells, exact)
+balance = Series("balance", balance_cells, exact)
 
 
 ctx = Context()

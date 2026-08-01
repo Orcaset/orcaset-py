@@ -11,18 +11,23 @@ change between minor releases.
 
 ### Added
 
-- Added the `grid(...)` decorator constructor for defining a `GridSeries`
+- Added the `Series.define(...)` decorator constructor for defining a `Series`
   directly from its value function.
 - Added `MapNSeries` for answer-level composition of a nonempty tuple of
   homogeneous series, with a caller-supplied lazy domain merger.
 - Added `period_union(...)` for lazily merging period domains and
   `combine_values(...)` and `add_values(...)` for Na-propagating value
   combination.
+- Restored statement views for composing period- and date-keyed series and
+  fixed-width, CSV, and Markdown table formatters for statement results.
 
 ### Changed
 
+- Renamed `Series` to `BaseSeries` and `GridSeries` to `Series`.
 - Changed demand resolution to use an explicit stack so deeply dependent rule
   chains do not exhaust Python's call stack.
+- Renamed the recursive income example to `income.py`, added its quarterly
+  statement output, and added a projection example with quarterly output.
 
 ## [0.4.0] - 2026-06-18
 

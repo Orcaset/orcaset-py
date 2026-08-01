@@ -6,9 +6,9 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
+    BaseSeries,
     CellFactory,
     Context,
-    GridSeries,
     MapItemsSeries,
     Maybe,
     Period,
@@ -39,17 +39,17 @@ def capex_cells() -> Iterable[tuple[Period, float]]:
     return pairs()
 
 
-capex = GridSeries("capex", capex_cells, by_days)
+capex = Series("capex", capex_cells, by_days)
 
 
 # ---------- Cohort schedules ----------
 
-type Cohort = GridSeries[Period, Period, float, Maybe[float]]
+type Cohort = Series[Period, Period, float, Maybe[float]]
 
 
 def build_cohort(
     source_key: Period,
-    source: Series[Period, Period, Maybe[float]],
+    source: BaseSeries[Period, Period, Maybe[float]],
 ) -> Cohort:
     """Depreciation schedule that re-fetches ``source`` at ``source_key`` when read."""
 
@@ -69,12 +69,12 @@ def build_cohort(
 
         return pairs()
 
-    return GridSeries(f"Depreciation@{source_key.end}", cells, exact)
+    return Series(f"Depreciation@{source_key.end}", cells, exact)
 
 
 def to_schedule(
     k: Period,
-    source: Series[Period, Period, Maybe[float]],
+    source: BaseSeries[Period, Period, Maybe[float]],
 ) -> Cohort:
     return build_cohort(k, source)
 
@@ -92,7 +92,7 @@ cohort_schedules = MapItemsSeries(
 
 def sum_cohorts_at_period(
     k: Period,
-    source: Series[Period, Period, Maybe[Cohort]],
+    source: BaseSeries[Period, Period, Maybe[Cohort]],
 ) -> Step[float]:
     """Annual total dep in ``k``: sum every eligible cohort's answer at ``k``."""
     total = 0.0

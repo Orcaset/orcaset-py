@@ -8,12 +8,15 @@ from orcaset import (
     YF,
     CellFactory,
     Context,
-    GridSeries,
     MapNSeries,
     Period,
+    Series,
     Step,
+    Stmt,
+    Total,
     accrual,
     add_values,
+    fixed_width_table,
     get_at,
     isna,
     map2_some,
@@ -24,7 +27,7 @@ from orcaset import (
 MONTHLY = relativedelta(months=1)
 
 
-@GridSeries.define("revenue", accrual(YF.cmonthly))
+@Series.define("revenue", accrual(YF.cmonthly))
 def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     """Each cell is the prior period's answer grown by 1%; seed is 100."""
 
@@ -52,12 +55,12 @@ gross_profit = revenue.map2(
     merge_keys=period_union,
 )
 
-rd = GridSeries(
+rd = Series(
     "r&d",
     lambda: zip(Period.seq(date(2026, 1, 1), MONTHLY), repeat(-10.0)),
     accrual(YF.cmonthly),
 )
-sga = GridSeries(
+sga = Series(
     "sga",
     lambda: zip(Period.seq(date(2026, 1, 1), MONTHLY), repeat(-10.0)),
     accrual(YF.cmonthly),
@@ -78,4 +81,19 @@ print(ctx.get_at(gross_profit, q))
 print(ctx.get_at(rd, q))
 print(ctx.get_at(sga, q))
 print(ctx.get_at(income, q))
+
+quarters = Period.list(
+    date(2026, 1, 1),
+    relativedelta(months=3),
+    date(2027, 1, 1),
+)
+quarterly_statement = Stmt(
+    Total(
+        income,
+        [Total(gross_profit, [revenue, cogs]), rd, sga],
+    )
+).values_for_periods(ctx, quarters)
+
+print("\nQuarterly statement")
+print(fixed_width_table(quarterly_statement))
 # print(ctx.dependencies(gross_profit, q))

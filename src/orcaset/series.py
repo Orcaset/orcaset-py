@@ -32,7 +32,7 @@ type CellsFn[K: Key, V] = Callable[
     [],
     Step[Iterable[tuple[K, V | CellFactory[V]]]] | Iterable[tuple[K, V | CellFactory[V]]],
 ]
-"""Builds the cell stream for a ``GridSeries``.
+"""Builds the cell stream for a ``Series``.
 
 Ordinary functions return an iterable of ``(key, value | factory)`` pairs.
 Generator functions are ``Step``s: ``get``/``get_at`` then **return** that
@@ -89,7 +89,7 @@ class Replayable[T](Iterable[T]):
 # ---------- series ----------
 
 
-class Series[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
+class BaseSeries[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
     """A demandable rule with an explicit time domain.
 
     Public surface: ``compute`` (via ``KeyedRule``) and ``keys()``. Values are only
@@ -112,7 +112,7 @@ class Series[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
     def map2[W2, V](
         self,
         name: str,
-        other: Series[Q, K, W2],
+        other: BaseSeries[Q, K, W2],
         fn: Callable[[W, W2], V],
         *,
         merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
@@ -125,7 +125,7 @@ class Series[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
         return Map2Series(name, self, other, fn, merge_keys=merge_keys)
 
 
-class MapSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
+class MapSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
     """A series whose every answer is ``fn(source answered at q)``.
 
     Query resolution is fully delegated to the source; ``keys()`` returns the
@@ -133,7 +133,7 @@ class MapSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
     dependency.
     """
 
-    def __init__(self, name: str, source: Series[Q, K, W], fn: Callable[[W], V]) -> None:
+    def __init__(self, name: str, source: BaseSeries[Q, K, W], fn: Callable[[W], V]) -> None:
         super().__init__(name)
         self._source = source
         self._fn = fn
@@ -146,7 +146,7 @@ class MapSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
         return self._fn(w)
 
 
-class MapNSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
+class MapNSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
     """A series whose every answer combines source answers at the same query.
 
     Query resolution is delegated independently to every source. An empty
@@ -158,7 +158,7 @@ class MapNSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
     def __init__(
         self,
         name: str,
-        sources: tuple[Series[Q, K, W], ...],
+        sources: tuple[BaseSeries[Q, K, W], ...],
         fn: Callable[[tuple[W, ...]], V],
         *,
         merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
@@ -178,7 +178,7 @@ class MapNSeries[Q: Hashable, K: Key, W, V](Series[Q, K, V]):
         return self._fn(tuple(values))
 
 
-class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
+class Map2Series[Q: Hashable, K: Key, W1, W2, V](BaseSeries[Q, K, V]):
     """Combine two series at the same query; left and right answer types may differ.
 
     ``merge_keys`` only constructs the public domain; it is not used when
@@ -188,8 +188,8 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
     def __init__(
         self,
         name: str,
-        left: Series[Q, K, W1],
-        right: Series[Q, K, W2],
+        left: BaseSeries[Q, K, W1],
+        right: BaseSeries[Q, K, W2],
         fn: Callable[[W1, W2], V],
         *,
         merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
@@ -209,7 +209,7 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](Series[Q, K, V]):
         return self._fn(a, b)
 
 
-class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
+class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
     """Series backed by a lazy stream of ``(K, Rule[V])`` cells.
 
     ``cells`` is a zero-arg factory. Ordinary callables return an iterable of
@@ -241,18 +241,18 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
         cls,
         name: str,
         query: QueryFn[Q2, K2, V2, W2],
-    ) -> Callable[[CellsFn[K2, V2]], GridSeries[Q2, K2, V2, W2]]:
-        """Decorator: build a ``GridSeries`` from a cells factory.
+    ) -> Callable[[CellsFn[K2, V2]], Series[Q2, K2, V2, W2]]:
+        """Decorator: build a ``Series`` from a cells factory.
 
         Arguments are ``name`` then ``query``. The decorated function becomes
         the series value (not the cells callable).
         """
 
-        def decorator(cells: CellsFn[K2, V2]) -> GridSeries[Q2, K2, V2, W2]:
+        def decorator(cells: CellsFn[K2, V2]) -> Series[Q2, K2, V2, W2]:
             build = cast(
                 Callable[
                     [str, CellsFn[K2, V2], QueryFn[Q2, K2, V2, W2]],
-                    GridSeries[Q2, K2, V2, W2],
+                    Series[Q2, K2, V2, W2],
                 ],
                 cls,
             )
@@ -268,10 +268,10 @@ class GridSeries[Q: Hashable, K: Key, V, W](Series[Q, K, W]):
         return (yield from _as_step(self._query(q, cells)))
 
 
-class MapItemsSeries[Q: Hashable, K: Key, V, W, A](Series[Q, K, A]):
+class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
     """Map each source key via ``fn(k, source)``, then query the derived stream.
 
-    ``source`` must be ``Series[K, K, W]`` so domain keys are valid point queries.
+    ``source`` must be ``BaseSeries[K, K, W]`` so domain keys are valid point queries.
     ``fn`` receives the key and source series so it can ``get_at`` for deps.
     ``keys()`` aliases ``source.keys()``.
     """
@@ -279,8 +279,8 @@ class MapItemsSeries[Q: Hashable, K: Key, V, W, A](Series[Q, K, A]):
     def __init__(
         self,
         name: str,
-        source: Series[K, K, W],
-        fn: Callable[[K, Series[K, K, W]], Step[V] | V],
+        source: BaseSeries[K, K, W],
+        fn: Callable[[K, BaseSeries[K, K, W]], Step[V] | V],
         query: QueryFn[Q, K, V, A],
     ) -> None:
         super().__init__(name)
@@ -342,8 +342,8 @@ class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
     def __init__(
         self,
         name: str,
-        source: Series[K, K, W],
-        fn: Callable[[K, Series[K, K, W]], Step[V] | V],
+        source: BaseSeries[K, K, W],
+        fn: Callable[[K, BaseSeries[K, K, W]], Step[V] | V],
     ) -> None:
         super().__init__(f"{name}.cells")
         self._series_name = name
@@ -397,7 +397,7 @@ class _MapNKeys[Q: Hashable, K: Key](Rule[Iterable[K]]):
     def __init__(
         self,
         name: str,
-        sources: tuple[Series[Q, K, Any], ...],
+        sources: tuple[BaseSeries[Q, K, Any], ...],
         merge: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
     ) -> None:
         super().__init__(f"{name}.keys")
