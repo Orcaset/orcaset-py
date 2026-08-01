@@ -9,6 +9,8 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
 ### Added
 
 - Added the `Series.define(...)` decorator constructor for defining a `Series`
@@ -135,6 +137,7 @@ change between minor releases.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/orcaset/orcaset-py/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/orcaset/orcaset-py/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/orcaset/orcaset-py/compare/v0.2.0...v0.3.0
