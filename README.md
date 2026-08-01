@@ -31,10 +31,11 @@ from orcaset import (
 )
 
 # Define the model
-@Series.define("revenue", accrual(YF.cmonthly))
+@Series.define("Revenue", accrual(YF.cmonthly))
 def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
-        # Get the prior month's revenue
+        
+        # Cell factory at each period
         def factory(p: Period = k):
             prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
             # Return the prior month's revenue * 10% growth rate,
