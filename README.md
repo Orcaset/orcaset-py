@@ -32,22 +32,16 @@ from orcaset import (
 
 # Define the model
 @Series.define("revenue", accrual(YF.cmonthly))
-def revenue():
-    # Generator of (Period, value_function) pairs over time
-    def cells():
-        for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
+def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
+    for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
+        # Get the prior month's revenue
+        def factory(p: Period = k):
+            prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
+            # Return the prior month's revenue * 10% growth rate,
+            # or initial revenue 100 if prior is Na
+            return prior * 1.10 if not isna(prior) else 100.0
 
-            # value_function factory
-            def value(p: Period = k):
-                # Get the prior month's revenue
-                prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
-                # Return the prior month's revenue * 10% growth rate, 
-                # or initial revenue of 100 if prior is Na
-                return prior * 1.10 if not isna(prior) else 100.0
-
-            yield k, value
-
-    return cells()
+        yield k, factory
 
 costs = revenue.map("Costs", lambda r: r * -0.50 if not isna(r) else r)
 profit = Map2Series(

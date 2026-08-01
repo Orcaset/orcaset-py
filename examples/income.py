@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from datetime import date
 from itertools import repeat
 
@@ -28,22 +28,18 @@ MONTHLY = relativedelta(months=1)
 
 
 @Series.define("revenue", accrual(YF.cmonthly))
-def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
+def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
     """Each cell is the prior period's answer grown by 1%; seed is 100."""
+    periods = Period.seq(date(2026, 1, 1), MONTHLY)
+    yield (next(periods), 100.0)
 
-    def cells() -> Iterator[tuple[Period, float | CellFactory[float]]]:
-        periods = Period.seq(date(2026, 1, 1), MONTHLY)
-        yield (next(periods), 100.0)
+    for k in periods:
 
-        for k in periods:
+        def factory(p: Period = k) -> Step[float]:
+            value = yield from get_at(revenue, p.from_start(-MONTHLY))
+            return value * 1.01 if not isna(value) else 0.0
 
-            def factory(p: Period = k) -> Step[float]:
-                value = yield from get_at(revenue, p.from_start(-MONTHLY))
-                return value * 1.01 if not isna(value) else 0.0
-
-            yield k, factory
-
-    return cells()
+        yield k, factory
 
 
 cogs = revenue.map("cogs", map_some(lambda r: r * -0.5))

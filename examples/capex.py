@@ -1,6 +1,6 @@
 """Capex → cohort schedules → total depreciation."""
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
@@ -31,12 +31,9 @@ by_days = accrual(lambda d1, d2: (d2 - d1).days)
 # ---------- Capex ----------
 
 
-def capex_cells() -> Iterable[tuple[Period, float]]:
-    def pairs() -> Iterator[tuple[Period, float]]:
-        for period in Period.seq(START, YEAR):
-            yield period, 100.0
-
-    return pairs()
+def capex_cells() -> Iterator[tuple[Period, float]]:
+    for period in Period.seq(START, YEAR):
+        yield period, 100.0
 
 
 capex = Series("capex", capex_cells, by_days)
@@ -53,21 +50,18 @@ def build_cohort(
 ) -> Cohort:
     """Depreciation schedule that re-fetches ``source`` at ``source_key`` when read."""
 
-    def cells() -> Iterable[tuple[Period, CellFactory[float]]]:
-        def pairs() -> Iterator[tuple[Period, CellFactory[float]]]:
-            period = Period(source_key.end, source_key.end + YEAR)
-            for _ in range(2):
+    def cells() -> Iterator[tuple[Period, CellFactory[float]]]:
+        period = Period(source_key.end, source_key.end + YEAR)
+        for _ in range(2):
 
-                def factory(capex_period: Period = source_key) -> Step[float]:
-                    spend = yield from get_at(source, capex_period)
-                    if isna(spend):
-                        raise ValueError(f"missing capex for {capex_period}")
-                    return spend / 2
+            def factory(capex_period: Period = source_key) -> Step[float]:
+                spend = yield from get_at(source, capex_period)
+                if isna(spend):
+                    raise ValueError(f"missing capex for {capex_period}")
+                return spend / 2
 
-                yield period, factory
-                period = Period(period.end, period.end + YEAR)
-
-        return pairs()
+            yield period, factory
+            period = Period(period.end, period.end + YEAR)
 
     return Series(f"Depreciation@{source_key.end}", cells, exact)
 

@@ -7,7 +7,7 @@ the final historical quarter under ``YF.cmonthly``. An empty historical list
 produces an empty series.
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from datetime import date
 from itertools import islice
 
@@ -38,25 +38,22 @@ HISTORICAL: list[tuple[Period, float]] = [
 
 
 @Series.define("revenue", accrual(YF.cmonthly))
-def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
-    def cells() -> Iterator[tuple[Period, float | CellFactory[float]]]:
-        last: Period | None = None
-        for period, value in HISTORICAL:
-            last = period
-            yield period, value
+def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
+    last: Period | None = None
+    for period, value in HISTORICAL:
+        last = period
+        yield period, value
 
-        if last is None:
-            return
+    if last is None:
+        return
 
-        for k in Period.seq(last.end, MONTHLY):
+    for k in Period.seq(last.end, MONTHLY):
 
-            def factory(p: Period = k) -> Step[float]:
-                prior = yield from get_at(revenue, p.from_start(-MONTHLY))
-                return prior * 1.01 if not isna(prior) else 0.0
+        def factory(p: Period = k) -> Step[float]:
+            prior = yield from get_at(revenue, p.from_start(-MONTHLY))
+            return prior * 1.01 if not isna(prior) else 0.0
 
-            yield k, factory
-
-    return cells()
+        yield k, factory
 
 
 ctx = Context()

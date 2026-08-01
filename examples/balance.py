@@ -7,7 +7,7 @@ Interest owns the period domain. Balance maps over those keys:
   Interest[period]       = Balance[period.start] * 5%
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from datetime import date
 from itertools import islice
 
@@ -15,6 +15,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     CellFactory,
+    CellStream,
     Context,
     Period,
     Series,
@@ -32,41 +33,35 @@ RATE = 0.05
 by_days = accrual(lambda a, b: (b - a).days)
 
 
-def interest_cells() -> Iterable[tuple[Period, CellFactory[float]]]:
-    def pairs() -> Iterator[tuple[Period, CellFactory[float]]]:
-        for p in Period.seq(SEED, MONTHLY):
+def interest_cells() -> Iterator[tuple[Period, CellFactory[float]]]:
+    for p in Period.seq(SEED, MONTHLY):
 
-            def factory(period: Period = p) -> Step[float]:
-                bal = yield from get_at(balance, period.start)
-                if isna(bal):
-                    return 0.0
-                return bal * RATE
+        def factory(period: Period = p) -> Step[float]:
+            bal = yield from get_at(balance, period.start)
+            if isna(bal):
+                return 0.0
+            return bal * RATE
 
-            yield p, factory
-
-    return pairs()
+        yield p, factory
 
 
 interest = Series("interest", interest_cells, by_days)
 
 
-def balance_cells() -> Step[Iterable[tuple[date, float | CellFactory[float]]]]:
+def balance_cells() -> CellStream[date, float]:
     periods = yield from get(interest.keys())
 
-    def pairs() -> Iterator[tuple[date, float | CellFactory[float]]]:
-        yield SEED, 100.0
-        for p in periods:
+    yield SEED, 100.0
+    for p in periods:
 
-            def factory(period: Period = p) -> Step[float]:
-                bal = yield from get_at(balance, period.start)
-                interest_amt = yield from get_at(interest, period)
-                if isna(bal) or isna(interest_amt):
-                    raise ValueError(f"missing inputs for balance at {period.end}")
-                return bal + interest_amt
+        def factory(period: Period = p) -> Step[float]:
+            bal = yield from get_at(balance, period.start)
+            interest_amt = yield from get_at(interest, period)
+            if isna(bal) or isna(interest_amt):
+                raise ValueError(f"missing inputs for balance at {period.end}")
+            return bal + interest_amt
 
-            yield p.end, factory
-
-    return pairs()
+        yield p.end, factory
 
 
 balance = Series("balance", balance_cells, exact)

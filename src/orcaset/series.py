@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
+from itertools import chain
 from typing import Any, Protocol, Self, cast
 
-from orcaset.rule import KeyedRule, Rule, Step, get, get_at
+from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 
 # ---------- keys ----------
 
@@ -28,16 +28,36 @@ class Key(Hashable, Protocol):
 type CellFactory[V] = Callable[[], Step[V] | V]
 """Builds a fresh ``Step`` (or plain value) each time a cell is computed."""
 
+type CellStream[K: Key, V] = Generator[
+    Demand[Any] | tuple[K, V | CellFactory[V]],
+    Any,
+    Iterable[tuple[K, V | CellFactory[V]]] | None,
+]
+"""A cell-producing generator: demand rules, then yield or return pairs.
+
+Yields ``Demand``s (via ``get``/``get_at``) and/or ``(key, value | factory)``
+pairs. All demands must precede the first pair — once a pair is seen the
+remainder is driven as a plain pairs iterator. A pure ``Step`` shape may
+``return`` the pairs iterable instead of yielding pairs.
+"""
+
 type CellsFn[K: Key, V] = Callable[
     [],
-    Step[Iterable[tuple[K, V | CellFactory[V]]]] | Iterable[tuple[K, V | CellFactory[V]]],
+    CellStream[K, V] | Iterable[tuple[K, V | CellFactory[V]]],
 ]
 """Builds the cell stream for a ``Series``.
 
-Ordinary functions return an iterable of ``(key, value | factory)`` pairs.
-Generator functions are ``Step``s: ``get``/``get_at`` then **return** that
-iterable. Do not ``yield`` the pairs from the outer function — ``yield`` means
-``Demand``. Use an inner generator (or list) and ``return`` it.
+Three shapes are accepted:
+
+- Ordinary callables return an iterable of ``(key, value | factory)`` pairs.
+- Generator functions yield those pairs directly.
+- Generator functions may also demand other rules with ``get``/``get_at``
+  before their first pair (or ``return`` the pairs iterable) — annotate these
+  as ``CellStream``.
+
+``_Cells`` drives the factory and branches on each yielded item, so no static
+distinction is needed. All demands must finish before the first pair — once a
+pair is seen the remainder is driven as a plain pairs iterator.
 """
 
 type QueryFn[Q, K: Key, V, W] = Callable[
@@ -212,12 +232,12 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](BaseSeries[Q, K, V]):
 class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
     """Series backed by a lazy stream of ``(K, Rule[V])`` cells.
 
-    ``cells`` is a zero-arg factory. Ordinary callables return an iterable of
-    plain values or factories ``() -> Step[V] | V``; generator functions are
-    ``Step``s that demand other rules and then return that iterable.
-    Each cell is wrapped as a ``Rule`` so forcing is context-memoized and
-    dependency-tracked. Live generators as cell *values* are rejected — pass a
-    factory instead.
+    ``cells`` is a zero-arg factory yielding or returning ``(key, value | factory)``
+    pairs, where each value is plain or a factory ``() -> Step[V] | V``. It may
+    also be a ``Step`` that demands other rules before its first pair; see
+    ``CellsFn`` for the accepted shapes. Each cell is wrapped as a ``Rule`` so
+    forcing is context-memoized and dependency-tracked. Live generators as cell
+    *values* are rejected — pass a factory instead.
     """
 
     def __init__(
@@ -311,7 +331,14 @@ class _CellRule[V](Rule[V]):
 
 
 class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
-    """Per-context cell stream: Replayable buffer of ``(K, Rule[V])``."""
+    """Per-context cell stream: Replayable buffer of ``(K, Rule[V])``.
+
+    The factory may return an iterable of pairs, be a generator that yields
+    pairs, or be a ``Step`` that demands other rules before yielding/returning
+    the pairs. The shapes are indistinguishable statically, so a generator
+    result is driven one step at a time and branched on its first yield: a
+    ``Demand`` means a ``Step``; a pair means a plain pairs iterator.
+    """
 
     def __init__(self, name: str, cells: CellsFn[K, V]) -> None:
         super().__init__(f"{name}.cells")
@@ -319,21 +346,30 @@ class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
         self._cells = cells
 
     def compute(self) -> Step[Iterable[tuple[K, Rule[V]]]]:
-        # Generator functions are Steps (may get/get_at). Ordinary callables
-        # return the spine directly — including generators of pairs, which must
-        # not be driven as Steps. isgeneratorfunction is invisible to the type
-        # checker, so cast the narrowed branch results.
-        if inspect.isgeneratorfunction(self._cells):
-            raw = yield from cast(
-                Callable[[], Step[Iterable[tuple[K, V | CellFactory[V]]]]],
-                self._cells,
-            )()
-        else:
-            raw = cast(
-                Iterable[tuple[K, V | CellFactory[V]]],
-                self._cells(),
+        result = self._cells()
+        if not isinstance(result, Generator):
+            raw = cast(Iterable[tuple[K, V | CellFactory[V]]], result)
+            return Replayable(_cell_pairs(self._series_name, raw))
+
+        it = cast(CellStream[K, V], result)
+        to_send: Any = None
+        while True:
+            try:
+                item = it.send(to_send)
+            except StopIteration as done:
+                if done.value is None:
+                    return Replayable(_cell_pairs(self._series_name, ()))
+                return Replayable(
+                    _cell_pairs(self._series_name, cast(Iterable[tuple[K, V | CellFactory[V]]], done.value))
+                )
+            if isinstance(item, Demand):
+                to_send = yield item
+                continue
+            pairs = chain(
+                [item],
+                cast(Iterator[tuple[K, V | CellFactory[V]]], it),
             )
-        return Replayable(_cell_pairs(self._series_name, raw))
+            return Replayable(_cell_pairs(self._series_name, pairs))
 
 
 class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
@@ -426,7 +462,14 @@ def _cell_pairs[K: Key, V](
     source: Iterable[tuple[K, V | CellFactory[V]]],
 ) -> Iterator[tuple[K, Rule[V]]]:
     prev: K | None = None
-    for k, v in source:
+    for item in source:
+        if isinstance(item, Demand):
+            raise TypeError(
+                f"series {series_name!r}: get/get_at demanded after the first cell "
+                "pair was yielded; demand all dependencies before yielding pairs, "
+                "or move the demand into a per-cell factory"
+            )
+        k, v = item
         if prev is not None and not prev < k:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
