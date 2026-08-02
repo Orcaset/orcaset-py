@@ -9,6 +9,13 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added `date_union(...)` for lazily merging ascending date domains into a
+  unique sorted spine, for composing date-keyed series.
+- Added `exact_or(default)` and `accrual_or(yf, default)` as non-`Maybe`
+  sisters of `exact` / `accrual` that substitute a default on miss.
+
 ## [0.5.0] - 2026-08-01
 
 ### Added

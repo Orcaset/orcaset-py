@@ -10,8 +10,8 @@ from orcaset.formatters import (
     markdown_table,
 )
 from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
-from orcaset.period import Period, period_union
-from orcaset.query import DayCount, accrual, exact
+from orcaset.period import Period, date_union, period_union
+from orcaset.query import DayCount, accrual, accrual_or, exact, exact_or
 from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 from orcaset.series import (
     BaseSeries,
@@ -79,10 +79,13 @@ __all__ = [
     "TotalRow",
     "ValueFormatter",
     "accrual",
+    "accrual_or",
     "add_values",
     "combine_values",
     "csv_table",
+    "date_union",
     "exact",
+    "exact_or",
     "fixed_width_table",
     "get",
     "get_at",

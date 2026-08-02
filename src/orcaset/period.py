@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterable, Iterator
 from datetime import date
+from heapq import merge
 from typing import NamedTuple
 
 from dateutil.relativedelta import relativedelta
@@ -139,3 +140,16 @@ def period_union(domains: tuple[Iterable[Period], ...]) -> Iterator[Period]:
         for index, period in enumerate(periods):
             if period is not None and period.end == boundary:
                 periods[index] = next(iterators[index], None)
+
+
+def date_union(domains: tuple[Iterable[date], ...]) -> Iterator[date]:
+    """Lazily merge ascending date domains into a unique sorted spine.
+
+    Each input must be strictly ascending. Duplicate dates within or across
+    sources are emitted once.
+    """
+    prev: date | None = None
+    for dt in merge(*domains):
+        if dt != prev:
+            yield dt
+            prev = dt
