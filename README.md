@@ -15,41 +15,48 @@ pip install git+https://github.com/orcaset/orcaset-py
 ```
 
 *This library has experimental status and the API is subject to breaking changes.*
+<!-- fmt: off -->
 
 ## Orcaset at a glance
 
-The code block below builds a simple model with revenue, costs, and profit.
+The block below builds a simple model with revenue, costs, and profit in nine lines of code.
 
-<!-- fmt: off -->
 ```py
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from itertools import islice
-from orcaset import (
-    YF, Context, Series, Map2Series, Period, Stmt, Total, 
-    accrual, fixed_width_table, get_at, isna, map2_some, period_union,
-)
+from orcaset import YF, Context, Period, PeriodSeries, Stmt, Total, accrual, fixed_width_table, get_at, isna
 
-# Define the model
-@Series.define("Revenue", accrual(YF.cmonthly))
+@PeriodSeries.define("Revenue", accrual(YF.cmonthly))
 def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
         
-        # Cell factory at each period
+        # Cell factory for each period
         def factory(p: Period = k):
             prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
             # Return the prior month's revenue * 10% growth rate,
-            # or initial revenue 100 if prior is Na
+            # or initial revenue amount of 100 if prior is Na
             return prior * 1.10 if not isna(prior) else 100.0
 
         yield k, factory
 
-costs = revenue.map("Costs", lambda r: r * -0.50 if not isna(r) else r)
-profit = Map2Series(
-    "Profit", revenue, costs, map2_some(lambda r, c: r + c), merge_keys=period_union
-)
+costs = (revenue * -0.50).named("Costs")
+profit = (revenue + costs).named("Profit")
+```
 
-# Materialize, format and print output
+This code block is complete and can be run standalone. It builds a dynamic model with the structure:
+
+```txt
+  ┌─ Revenue: Initial revenue of 100, growing at 10% annually and compounding monthly
+  ├─ Costs:   Constant 50% expense margin
+Profit: Sum of Revenue and Costs
+```
+
+Model values are queried and resolved in a `Context` that holds the state for a model run in a bounded, inspectable object.
+
+Orcaset also ships a `Stmt` class which can be used to build structured statements formatted into CSV, markdown, fixed-width, or other custom formats.
+
+```py
 ctx = Context()
 periods = list(islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4))
 statement = Stmt(Total(profit, [revenue, costs])).values_for_periods(ctx, periods)
@@ -57,15 +64,12 @@ print(fixed_width_table(statement))
 
 # Start                  2026-01-01  2026-02-01  2026-03-01  2026-04-01
 # End        2026-01-01  2026-02-01  2026-03-01  2026-04-01  2026-05-01
-#   revenue                  100.00      110.00      121.00      133.10
+#   Revenue                  100.00      110.00      121.00      133.10
 #   Costs                    -50.00      -55.00      -60.50      -66.55
 # ---------------------------------------------------------------------
 # Profit                      50.00       55.00       60.50       66.55
 ```
 
-> *This code block is complete and can be run standalone.*
-
-<br>
 `orcaset` uses effect handlers to trace calculation dependencies and memoize values within a run context. Dependencies can be inspected through the context object.
 
 ```py
@@ -80,7 +84,6 @@ print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
 #         revenue.cells = <orcaset.series.Replayable object at 0x1017bcec0>
 ```
 <!-- fmt: on -->
-
 See the demo scripts in the [examples](./examples) folder for additional review.
 
 ## License

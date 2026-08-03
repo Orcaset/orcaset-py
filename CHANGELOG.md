@@ -11,6 +11,10 @@ change between minor releases.
 
 ### Added
 
+- Added `PeriodSeries` and `DateSeries` for the common `Q = K = Period` /
+  `date` cases, with Na-propagating arithmetic (`+`, `-`, `*`, `/`, unary
+  `+/-`), derived operator names, and `.named(...)` for display labels.
+  Domain merges use `period_union` / `date_union` respectively.
 - Added `date_union(...)` for lazily merging ascending date domains into a
   unique sorted spine, for composing date-keyed series.
 - Added `exact_or(default)` and `accrual_or(yf, default)` as non-`Maybe`
