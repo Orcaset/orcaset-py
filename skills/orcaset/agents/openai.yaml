@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orcaset Financial Models"
+  short_description: "Build and validate financial models in code"
+  default_prompt: "Use $orcaset to build and validate a financial model in Python."
