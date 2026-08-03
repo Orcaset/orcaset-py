@@ -1,9 +1,10 @@
 [project]
 name = "orcaset"
-version = "0.6.0"
+version = "0.7.0"
 description = "Financial models in Python"
 readme = "README.md"
 license = "SSPL-1.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "python-dateutil>=2.9.0.post0",
@@ -14,22 +15,10 @@ dependencies = [
 requires = ["uv_build>=0.9.14,<0.10.0"]
 build-backend = "uv_build"
 
-[tool.uv.build-backend]
-source-exclude = ["/examples"]
-wheel-exclude = ["/examples"]
-
 [tool.ruff]
 line-length = 100
-
-[tool.pyright]
-pythonVersion = "3.14"
-venvPath = "."
-venv = ".venv"
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
-]
-examples = [
-    "pandas>=3.0.3",
 ]

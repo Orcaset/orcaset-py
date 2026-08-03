@@ -9,6 +9,19 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-03
+
+### Added
+
+- Publish tagged releases (`v*`) to PyPI via GitHub Actions using Trusted
+  Publishing (OIDC).
+
+### Changed
+
+- Ship the `LICENSE` file in sdists and wheels via `license-files`.
+- Install docs now point at the PyPI package (`uv add orcaset` /
+  `pip install orcaset`) instead of a git URL.
+
 ## [0.6.0] - 2026-08-03
 
 ### Added
@@ -150,7 +163,8 @@ change between minor releases.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/orcaset/orcaset-py/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/orcaset/orcaset-py/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/orcaset/orcaset-py/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/orcaset/orcaset-py/compare/v0.3.0...v0.4.0

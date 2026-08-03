@@ -7,11 +7,11 @@ The framework helps agents write correct models quickly. Strong typing surfaces 
 Install with `uv` or `pip`:
 
 ```sh
-uv add git+https://github.com/orcaset/orcaset-py
+uv add orcaset
 ```
 
 ```sh
-pip install git+https://github.com/orcaset/orcaset-py
+pip install orcaset
 ```
 
 *This library has experimental status and the API is subject to breaking changes.*
