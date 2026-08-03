@@ -9,6 +9,13 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-03
+
+### Fixed
+
+- Pin `astral-sh/setup-uv` to `v9.0.0` in the publish workflow so the
+  tag-triggered PyPI job can resolve the action.
+
 ## [0.7.0] - 2026-08-03
 
 ### Added
@@ -163,7 +170,8 @@ change between minor releases.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/orcaset/orcaset-py/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/orcaset/orcaset-py/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/orcaset/orcaset-py/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/orcaset/orcaset-py/compare/v0.4.0...v0.5.0
