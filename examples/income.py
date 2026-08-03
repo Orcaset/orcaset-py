@@ -1,3 +1,8 @@
+# Copyright (c) 2026 Orcaset Inc.
+# SPDX-License-Identifier: SSPL-1.0
+
+"""Simple income statement from derived series and nested Totals."""
+
 from collections.abc import Iterator
 from datetime import date
 from itertools import repeat

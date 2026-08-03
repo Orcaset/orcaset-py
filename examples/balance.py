@@ -1,11 +1,7 @@
-"""Balance starts at 100 and grows by interest at each interest period end.
+# Copyright (c) 2026 Orcaset Inc.
+# SPDX-License-Identifier: SSPL-1.0
 
-Interest owns the period domain. Balance maps over those keys:
-
-  Balance[SEED]          = 100
-  Balance[period.end]    = Balance[period.start] + Interest[period]
-  Interest[period]       = Balance[period.start] * 5%
-"""
+"""Point-in-time balance that compounds from period-domain interest."""
 
 from collections.abc import Iterator
 from datetime import date

@@ -1,11 +1,7 @@
-"""Quarterly history extended by a monthly growth projection on one spine.
+# Copyright (c) 2026 Orcaset Inc.
+# SPDX-License-Identifier: SSPL-1.0
 
-The cell stream yields the historical ``(Period, float)`` pairs first, then
-continues monthly from the last historical end. Each projected month grows the
-series' one-month lookback by 1%, so the first forecast month is accrued out of
-the final historical quarter under ``YF.cmonthly``. An empty historical list
-produces an empty series.
-"""
+"""Quarterly history extended by a monthly growth projection on one spine."""
 
 from collections.abc import Iterator
 from datetime import date

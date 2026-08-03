@@ -1,4 +1,7 @@
-"""Capex → cohort schedules → total depreciation."""
+# Copyright (c) 2026 Orcaset Inc.
+# SPDX-License-Identifier: SSPL-1.0
+
+"""Capex mapped to nested cohort depreciation schedules, then rolled up to totals."""
 
 from collections.abc import Iterator
 from datetime import date
