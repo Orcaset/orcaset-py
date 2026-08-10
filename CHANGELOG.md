@@ -9,6 +9,18 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added `PeriodSeriesBase` and `DateSeriesBase` as the shared period/date
+  series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
+  `PeriodSeries` / `DateSeries` and derived combinators both inherit from
+  these bases so operator chaining stays closed over the surface type.
+
+### Changed
+
+- Period/date map and operator combinators no longer subclass the cell-backed
+  grid types; `isinstance` checks in arithmetic use the new base classes.
+
 ## [0.7.1] - 2026-08-03
 
 ### Fixed
