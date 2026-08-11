@@ -11,7 +11,7 @@ from orcaset.formatters import (
 )
 from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
 from orcaset.period import Period, date_union, period_union
-from orcaset.query import DayCount, accrual, accrual_or, exact, exact_or
+from orcaset.query import DayCount, accrual, accrual_or, exact, exact_or, last
 from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 from orcaset.series import (
     BaseSeries,
@@ -98,6 +98,7 @@ __all__ = [
     "get",
     "get_at",
     "isna",
+    "last",
     "map2_some",
     "map_some",
     "markdown_table",

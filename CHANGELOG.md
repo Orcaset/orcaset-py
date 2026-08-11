@@ -11,6 +11,8 @@ change between minor releases.
 
 ### Added
 
+- Added `last`, an as-of query that returns the latest cell at or before the
+  query key (or `Na` if none), for balance-sheet-style point-in-time lookups.
 - Added `PeriodSeriesBase` and `DateSeriesBase` as the shared period/date
   series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
   `PeriodSeries` / `DateSeries` and derived combinators both inherit from

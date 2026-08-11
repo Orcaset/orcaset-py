@@ -14,6 +14,7 @@ from orcaset import (
     exact,
     exact_or,
     isna,
+    last,
 )
 
 START = date(2026, 1, 1)
@@ -45,6 +46,36 @@ def test_exact_still_returns_na_on_miss():
     ctx = Context()
     assert isna(ctx.get_at(series, P2))
     assert ctx.get_at(series, P2) is Na
+
+
+def test_last_returns_latest_at_or_before_query():
+    d0 = date(2026, 1, 1)
+    d1 = date(2026, 2, 1)
+    d2 = date(2026, 3, 1)
+    mid = date(2026, 2, 15)
+    series = Series(
+        "balance",
+        lambda: [(d0, 100.0), (d1, 110.0), (d2, 120.0)],
+        last,
+    )
+
+    ctx = Context()
+    assert ctx.get_at(series, d0) == 100.0
+    assert ctx.get_at(series, mid) == 110.0
+    assert ctx.get_at(series, d2) == 120.0
+    assert ctx.get_at(series, date(2026, 4, 1)) == 120.0
+
+
+def test_last_returns_na_before_first_observation():
+    series = Series(
+        "balance",
+        lambda: [(date(2026, 2, 1), 110.0)],
+        last,
+    )
+
+    ctx = Context()
+    assert isna(ctx.get_at(series, date(2026, 1, 1)))
+    assert ctx.get_at(series, date(2026, 1, 1)) is Na
 
 
 def test_accrual_or_returns_default_on_miss():

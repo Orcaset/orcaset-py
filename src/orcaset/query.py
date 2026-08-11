@@ -50,6 +50,27 @@ def exact_or[K: Key, V](default: V) -> QueryFn[K, K, V, V]:
     return query
 
 
+def last[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:
+    """As-of lookup: return the latest cell at or before ``q``, or ``Na``.
+
+    Scans an ascending key stream without forcing cells that are strictly
+    before a later candidate. Stops at the first key strictly after ``q``.
+    Query key and domain key are the same type.
+    """
+    pending: Rule[V] | None = None
+    for k, cell in cells:
+        if k < q:
+            pending = cell
+            continue
+        if q < k:
+            break
+        if k == q:
+            return (yield from get(cell))
+    if pending is None:
+        return Na
+    return (yield from get(pending))
+
+
 def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:
     """Build a period query that weights overlapping cells by ``yf``.
 

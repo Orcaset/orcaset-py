@@ -17,26 +17,26 @@ from orcaset import (
     Series,
     Step,
     accrual,
-    exact,
     get,
     get_at,
     isna,
+    last,
 )
 
-MONTHLY = relativedelta(months=1, day=31)
-SEED = date(2019, 12, 31)
-RATE = 0.05
+quarterly = relativedelta(months=3, day=31)
+start_date = date(2019, 12, 31)
+rate = 0.05
 by_days = accrual(lambda a, b: (b - a).days)
 
 
 def interest_cells() -> Iterator[tuple[Period, CellFactory[float]]]:
-    for p in Period.seq(SEED, MONTHLY):
+    for p in Period.seq(start_date, quarterly):
 
         def factory(period: Period = p) -> Step[float]:
             bal = yield from get_at(balance, period.start)
             if isna(bal):
                 return 0.0
-            return bal * RATE
+            return bal * rate
 
         yield p, factory
 
@@ -47,7 +47,7 @@ interest = Series("interest", interest_cells, by_days)
 def balance_cells() -> CellStream[date, float]:
     periods = yield from get(interest.keys())
 
-    yield SEED, 100.0
+    yield start_date, 100.0
     for p in periods:
 
         def factory(period: Period = p) -> Step[float]:
@@ -60,12 +60,12 @@ def balance_cells() -> CellStream[date, float]:
         yield p.end, factory
 
 
-balance = Series("balance", balance_cells, exact)
+balance = Series("balance", balance_cells, last)
 
 
 ctx = Context()
-periods = list(islice(Period.seq(SEED, MONTHLY), 4))
-dates = [SEED, *(p.end for p in periods)]
+periods = list(islice(Period.seq(start_date, quarterly), 4))
+dates = [start_date, *(p.end for p in periods)]
 
 print("Date".ljust(16) + "".join(str(d).rjust(12) for d in dates))
 print("Balance".ljust(16) + "".join(f"{ctx.get_at(balance, d):12.2f}" for d in dates))
