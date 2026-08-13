@@ -192,17 +192,6 @@ aggregation for averages and other non-additive metrics.
 - Period models: `values_for_periods(ctx, periods)` or `values(ctx, periods)`.
 - Mixed period/date statements: `values(ctx, periods)` answers date series at period boundaries.
 
-## Repo references
-
-Read these when the task matches; do not copy them wholesale into new models unless asked:
-
-- `examples/income.py` — growth + margins + quarterly `Stmt`
-- `examples/circular.py` — average-balance PIK interest via typed cyclic `get_at`
-- `examples/simple-three-statement.py` — IS / CF / BS with BS rollforwards
-- `examples/capex.py` — cohorts via `MapItemsSeries`
-- `examples/balance.py` — balance rollforwards
-- `examples/projection.py` - history then forecast via `PeriodExtendSeries`
-
 ## Additional resources
 
 - Statement and series patterns: [references/patterns.md](references/patterns.md)
