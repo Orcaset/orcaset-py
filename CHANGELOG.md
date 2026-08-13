@@ -19,9 +19,11 @@ change between minor releases.
   these bases so operator chaining stays closed over the surface type.
 - Added an iterative solver for demand cycles: `get` / `get_at` accept typed
   `seed` and `distance` used only when the demanded cell is already being
-  computed. `Context` iterates until successive guesses are close, or raises
-  `ConvergenceError`. `abs_distance` and `maybe_abs_distance` cover `float`
-  and `Maybe[float]`; other value types supply their own metric.
+  computed. A cycle may mark every cyclic getter; only the back-edge is used
+  as the cut, so the same cycle is solvable from either entry. `Context`
+  iterates until successive guesses are close, or raises `ConvergenceError`.
+  `abs_distance` and `maybe_abs_distance` cover `float` and `Maybe[float]`;
+  other value types supply their own metric. See `examples/circular.py`.
 
 ### Changed
 
