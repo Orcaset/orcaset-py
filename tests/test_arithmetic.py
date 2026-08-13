@@ -5,12 +5,21 @@ from datetime import date
 
 import pytest
 
+import orcaset
 from orcaset import (
     Context,
+    DateExtendSeries,
+    DateMap2Series,
+    DateMapSeries,
     DateSeries,
+    DateSeriesBase,
     Na,
     Period,
+    PeriodExtendSeries,
+    PeriodMap2Series,
+    PeriodMapSeries,
     PeriodSeries,
+    PeriodSeriesBase,
     Series,
     exact,
     map2_some,
@@ -87,6 +96,76 @@ def test_operator_chaining():
     ctx = Context()
     assert ctx.get_at(result, P1) == 20.0
     assert result.name == "(((Left + Right) * 2) - 8.0)"
+
+
+def test_period_derived_series_use_public_concrete_classes():
+    source = PeriodSeries("Source", lambda: [(P1, 10.0)], exact)
+    mapped = source.map("Mapped", lambda value: value)
+    combined = source.map2("Combined", source, map2_some(lambda a, b: a + b))
+
+    assert isinstance(mapped, PeriodMapSeries)
+    assert isinstance(combined, PeriodMap2Series)
+    assert isinstance(source.named("Named"), PeriodMapSeries)
+    assert isinstance(source * 2.0, PeriodMapSeries)
+    assert isinstance(source + source, PeriodMap2Series)
+
+
+def test_date_derived_series_use_public_concrete_classes():
+    source = DateSeries("Source", lambda: [(D1, 10.0)], exact)
+    mapped = source.map("Mapped", lambda value: value)
+    combined = source.map2("Combined", source, map2_some(lambda a, b: a + b))
+
+    assert isinstance(mapped, DateMapSeries)
+    assert isinstance(combined, DateMap2Series)
+    assert isinstance(source.named("Named"), DateMapSeries)
+    assert isinstance(source * 2.0, DateMapSeries)
+    assert isinstance(source + source, DateMap2Series)
+
+
+def test_public_specialized_map_constructors_accept_generic_series():
+    period_source = Series("Period", lambda: [(P1, 10.0)], exact)
+    date_source = Series("Date", lambda: [(D1, 20.0)], exact)
+    period_mapped = PeriodMapSeries("Period mapped", period_source, lambda value: value)
+    date_mapped = DateMapSeries("Date mapped", date_source, lambda value: value)
+    period_combined = PeriodMap2Series(
+        "Period combined",
+        period_source,
+        period_source,
+        map2_some(lambda a, b: a + b),
+    )
+    date_combined = DateMap2Series(
+        "Date combined",
+        date_source,
+        date_source,
+        map2_some(lambda a, b: a + b),
+    )
+
+    ctx = Context()
+    assert ctx.get_at(period_mapped, P1) == 10.0
+    assert ctx.get_at(date_mapped, D1) == 20.0
+    assert ctx.get_at(period_combined, P1) == 20.0
+    assert ctx.get_at(date_combined, D1) == 40.0
+    assert list(ctx.get(period_combined.keys())) == [P1]
+    assert list(ctx.get(date_combined.keys())) == [D1]
+
+
+def test_all_specialized_series_classes_are_exported():
+    expected = {
+        "DateExtendSeries": DateExtendSeries,
+        "DateMap2Series": DateMap2Series,
+        "DateMapSeries": DateMapSeries,
+        "DateSeries": DateSeries,
+        "DateSeriesBase": DateSeriesBase,
+        "PeriodExtendSeries": PeriodExtendSeries,
+        "PeriodMap2Series": PeriodMap2Series,
+        "PeriodMapSeries": PeriodMapSeries,
+        "PeriodSeries": PeriodSeries,
+        "PeriodSeriesBase": PeriodSeriesBase,
+    }
+
+    for name, cls in expected.items():
+        assert name in orcaset.__all__
+        assert getattr(orcaset, name) is cls
 
 
 def test_map2_accepts_generic_period_keyed_series():

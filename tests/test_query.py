@@ -11,6 +11,7 @@ from orcaset import (
     Series,
     accrual,
     accrual_or,
+    covered,
     exact,
     exact_or,
     isna,
@@ -112,3 +113,30 @@ def test_accrual_or_preserves_overlap_answers():
     # 31 / 90 of the quarter lands in January.
     assert ctx.get_at(series, P1) == 90.0 * 31 / 90
     assert ctx.get_at(series, P3) != 0.0
+
+
+def test_covered_sums_adjacent_cells():
+    series = Series(
+        "revenue",
+        lambda: [(P1, 10.0), (P2, 20.0), (P3, 30.0)],
+        covered,
+    )
+
+    ctx = Context()
+    assert ctx.get_at(series, P1) == 10.0
+    assert ctx.get_at(series, Period(P1.start, P2.end)) == 30.0
+    assert ctx.get_at(series, Period(P1.start, P3.end)) == 60.0
+
+
+def test_covered_returns_na_on_partial_or_gap():
+    series = Series(
+        "revenue",
+        lambda: [(P1, 10.0), (P3, 30.0)],
+        covered,
+    )
+
+    ctx = Context()
+    assert isna(ctx.get_at(series, Period(P1.start, date(2026, 1, 15))))
+    assert isna(ctx.get_at(series, Period(date(2026, 1, 15), P1.end)))
+    assert isna(ctx.get_at(series, Period(P1.start, P3.end)))
+    assert isna(ctx.get_at(series, P2))

@@ -36,7 +36,18 @@ partial order for overlaps.
 
 ## Accrual vs exact mismatch
 
-`exact` only hits when the query key equals a cell key. Partial/overlapping periods need `accrual(yf)`. Dated balance lookups should stay `exact` at `p.start` / `p.end`.
+`exact` only hits when the query key equals a cell key. Partial/overlapping
+periods need `accrual(yf)`. Sourced historicals that must not be interpolated
+use `covered` (sum of complete cells only). Dated balance lookups should stay
+`exact` at `p.start` / `p.end`.
+
+## History and forecast on one spine
+
+Do not `map2` a coalesce of historicals and projections: a query that crosses
+the cutoff will keep a partial historical answer and drop the forecast. Use
+`PeriodExtendSeries` (flows) or `DateExtendSeries` (stocks). Do not seed
+the first forecast period with a lookback that is finer than the historical
+grid when historicals use `covered`.
 
 ## Aggregating ratios like flows
 

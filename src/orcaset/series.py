@@ -3,15 +3,11 @@
 
 from __future__ import annotations
 
-import operator
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
-from datetime import date
 from itertools import chain
 from typing import Any, Protocol, Self, cast
 
-from orcaset.maybe import Maybe, map2_some, map_some
-from orcaset.period import Period, date_union, period_union
 from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
 
 # ---------- keys ----------
@@ -245,7 +241,8 @@ class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
 
     Prefer ``PeriodSeries`` / ``DateSeries`` when ``Q`` and ``K`` are ``Period`` or
     ``date`` — those add Na-propagating arithmetic and a fixed domain union.
-    Derived period/date series are typed as ``PeriodSeriesBase`` / ``DateSeriesBase``.
+    Period/date variants use public specialized map classes that preserve the
+    ``PeriodSeriesBase`` / ``DateSeriesBase`` arithmetic surface.
     """
 
     def __init__(
@@ -294,377 +291,6 @@ class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
     def compute(self, q: Q, /) -> Step[W]:
         cells = yield from get(self._cells)
         return (yield from _as_step(self._query(q, cells)))
-
-
-# ---------- period / date series ----------
-
-
-def _identity[T](value: T) -> T:
-    return value
-
-
-class PeriodSeriesBase[W](BaseSeries[Period, Period, W], ABC):
-    """Period-keyed series surface: ``map`` / ``map2`` / Na-aware arithmetic.
-
-    Cell-backed grids (``PeriodSeries``) and derived combinators share this type
-    so operator chaining and ``isinstance`` checks stay closed over the surface.
-    """
-
-    def map[V](self, name: str, fn: Callable[[W], V]) -> PeriodSeriesBase[V]:
-        return _PeriodMapSeries(name, self, fn)
-
-    def map2[W2, V](
-        self,
-        name: str,
-        other: BaseSeries[Period, Period, W2],
-        fn: Callable[[W, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[Period], ...]], Iterable[Period]] | None = None,
-    ) -> PeriodSeriesBase[V]:
-        """Combine with any ``Period``-keyed series; domain defaults to ``period_union``."""
-        return _PeriodMap2Series(
-            name,
-            self,
-            other,
-            fn,
-            merge_keys=period_union if merge_keys is None else merge_keys,
-        )
-
-    def named(self, name: str) -> PeriodSeriesBase[W]:
-        """Identity-mapped series with a new display name."""
-        return self.map(name, _identity)
-
-    def __add__[W1: Maybe[float], W2: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: PeriodSeriesBase[W2] | float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.add, "+")
-
-    def __radd__[W1: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.add, "+")
-
-    def __sub__[W1: Maybe[float], W2: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: PeriodSeriesBase[W2] | float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.sub, "-")
-
-    def __rsub__[W1: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.sub, "-")
-
-    def __mul__[W1: Maybe[float], W2: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: PeriodSeriesBase[W2] | float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.mul, "*")
-
-    def __rmul__[W1: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.mul, "*")
-
-    def __truediv__[W1: Maybe[float], W2: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: PeriodSeriesBase[W2] | float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.truediv, "/")
-
-    def __rtruediv__[W1: Maybe[float]](
-        self: PeriodSeriesBase[W1], other: float
-    ) -> PeriodSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.truediv, "/")
-
-    def __neg__[W1: Maybe[float]](self: PeriodSeriesBase[W1]) -> PeriodSeriesBase[Maybe[float]]:
-        return self.map(f"(-{self.name})", map_some(operator.neg))
-
-    def __pos__[W1: Maybe[float]](self: PeriodSeriesBase[W1]) -> PeriodSeriesBase[Maybe[float]]:
-        return self.map(f"(+{self.name})", map_some(operator.pos))
-
-    def _binop(
-        self,
-        other: object,
-        op: Callable[[Any, Any], Any],
-        sym: str,
-    ) -> PeriodSeriesBase[Any]:
-        if isinstance(other, PeriodSeriesBase):
-            return self.map2(f"({self.name} {sym} {other.name})", other, map2_some(op))
-        if isinstance(other, (int, float)):
-            return self.map(f"({self.name} {sym} {other!r})", map_some(lambda w: op(w, other)))
-        return NotImplemented
-
-    def _rbinop(
-        self,
-        other: object,
-        op: Callable[[Any, Any], Any],
-        sym: str,
-    ) -> PeriodSeriesBase[Any]:
-        if isinstance(other, (int, float)):
-            return self.map(f"({other!r} {sym} {self.name})", map_some(lambda w: op(other, w)))
-        return NotImplemented
-
-
-class DateSeriesBase[W](BaseSeries[date, date, W], ABC):
-    """Date-keyed series surface: ``map`` / ``map2`` / Na-aware arithmetic.
-
-    Cell-backed grids (``DateSeries``) and derived combinators share this type
-    so operator chaining and ``isinstance`` checks stay closed over the surface.
-    """
-
-    def map[V](self, name: str, fn: Callable[[W], V]) -> DateSeriesBase[V]:
-        return _DateMapSeries(name, self, fn)
-
-    def map2[W2, V](
-        self,
-        name: str,
-        other: BaseSeries[date, date, W2],
-        fn: Callable[[W, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[date], ...]], Iterable[date]] | None = None,
-    ) -> DateSeriesBase[V]:
-        """Combine with any ``date``-keyed series; domain defaults to ``date_union``."""
-        return _DateMap2Series(
-            name,
-            self,
-            other,
-            fn,
-            merge_keys=date_union if merge_keys is None else merge_keys,
-        )
-
-    def named(self, name: str) -> DateSeriesBase[W]:
-        """Identity-mapped series with a new display name."""
-        return self.map(name, _identity)
-
-    def __add__[W1: Maybe[float], W2: Maybe[float]](
-        self: DateSeriesBase[W1], other: DateSeriesBase[W2] | float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.add, "+")
-
-    def __radd__[W1: Maybe[float]](
-        self: DateSeriesBase[W1], other: float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.add, "+")
-
-    def __sub__[W1: Maybe[float], W2: Maybe[float]](
-        self: DateSeriesBase[W1], other: DateSeriesBase[W2] | float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.sub, "-")
-
-    def __rsub__[W1: Maybe[float]](
-        self: DateSeriesBase[W1], other: float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.sub, "-")
-
-    def __mul__[W1: Maybe[float], W2: Maybe[float]](
-        self: DateSeriesBase[W1], other: DateSeriesBase[W2] | float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.mul, "*")
-
-    def __rmul__[W1: Maybe[float]](
-        self: DateSeriesBase[W1], other: float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.mul, "*")
-
-    def __truediv__[W1: Maybe[float], W2: Maybe[float]](
-        self: DateSeriesBase[W1], other: DateSeriesBase[W2] | float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._binop(other, operator.truediv, "/")
-
-    def __rtruediv__[W1: Maybe[float]](
-        self: DateSeriesBase[W1], other: float
-    ) -> DateSeriesBase[Maybe[float]]:
-        return self._rbinop(other, operator.truediv, "/")
-
-    def __neg__[W1: Maybe[float]](self: DateSeriesBase[W1]) -> DateSeriesBase[Maybe[float]]:
-        return self.map(f"(-{self.name})", map_some(operator.neg))
-
-    def __pos__[W1: Maybe[float]](self: DateSeriesBase[W1]) -> DateSeriesBase[Maybe[float]]:
-        return self.map(f"(+{self.name})", map_some(operator.pos))
-
-    def _binop(
-        self,
-        other: object,
-        op: Callable[[Any, Any], Any],
-        sym: str,
-    ) -> DateSeriesBase[Any]:
-        if isinstance(other, DateSeriesBase):
-            return self.map2(f"({self.name} {sym} {other.name})", other, map2_some(op))
-        if isinstance(other, (int, float)):
-            return self.map(f"({self.name} {sym} {other!r})", map_some(lambda w: op(w, other)))
-        return NotImplemented
-
-    def _rbinop(
-        self,
-        other: object,
-        op: Callable[[Any, Any], Any],
-        sym: str,
-    ) -> DateSeriesBase[Any]:
-        if isinstance(other, (int, float)):
-            return self.map(f"({other!r} {sym} {self.name})", map_some(lambda w: op(other, w)))
-        return NotImplemented
-
-
-class PeriodSeries[W](PeriodSeriesBase[W]):
-    """Cell-backed series with ``Q = K = Period`` and ``period_union`` merges.
-
-    Supports Na-propagating arithmetic via ``PeriodSeriesBase``. Derived series
-    (``map``, ``map2``, operators) are ``PeriodSeriesBase``, not cell-backed grids.
-    """
-
-    def __init__[V](
-        self,
-        name: str,
-        cells: CellsFn[Period, V],
-        query: QueryFn[Period, Period, V, W],
-    ) -> None:
-        super().__init__(name)
-        self._cells: Rule[Iterable[tuple[Period, Rule[Any]]]] = _Cells(name, cells)
-        self._keys: Rule[Iterable[Period]] = _GridKeys(name, self._cells)
-        self._query: QueryFn[Period, Period, Any, W] = query
-
-    @classmethod
-    def define[V, W2](
-        cls,
-        name: str,
-        query: QueryFn[Period, Period, V, W2],
-    ) -> Callable[[CellsFn[Period, V]], PeriodSeries[W2]]:
-        """Decorator: build a ``PeriodSeries`` from a cells factory."""
-
-        def decorator(cells: CellsFn[Period, V]) -> PeriodSeries[W2]:
-            return PeriodSeries(name, cells, query)
-
-        return decorator
-
-    def keys(self) -> Rule[Iterable[Period]]:
-        return self._keys
-
-    def compute(self, q: Period, /) -> Step[W]:
-        cells = yield from get(self._cells)
-        return (yield from _as_step(self._query(q, cells)))
-
-
-class DateSeries[W](DateSeriesBase[W]):
-    """Cell-backed series with ``Q = K = date`` and ``date_union`` merges.
-
-    Supports Na-propagating arithmetic via ``DateSeriesBase``. Derived series
-    (``map``, ``map2``, operators) are ``DateSeriesBase``, not cell-backed grids.
-    """
-
-    def __init__[V](
-        self,
-        name: str,
-        cells: CellsFn[date, V],
-        query: QueryFn[date, date, V, W],
-    ) -> None:
-        super().__init__(name)
-        self._cells: Rule[Iterable[tuple[date, Rule[Any]]]] = _Cells(name, cells)
-        self._keys: Rule[Iterable[date]] = _GridKeys(name, self._cells)
-        self._query: QueryFn[date, date, Any, W] = query
-
-    @classmethod
-    def define[V, W2](
-        cls,
-        name: str,
-        query: QueryFn[date, date, V, W2],
-    ) -> Callable[[CellsFn[date, V]], DateSeries[W2]]:
-        """Decorator: build a ``DateSeries`` from a cells factory."""
-
-        def decorator(cells: CellsFn[date, V]) -> DateSeries[W2]:
-            return DateSeries(name, cells, query)
-
-        return decorator
-
-    def keys(self) -> Rule[Iterable[date]]:
-        return self._keys
-
-    def compute(self, q: date, /) -> Step[W]:
-        cells = yield from get(self._cells)
-        return (yield from _as_step(self._query(q, cells)))
-
-
-class _PeriodMapSeries[W, V](PeriodSeriesBase[V]):
-    """Answers ``fn(source answered at q)``; ``keys()`` aliases the source domain."""
-
-    def __init__(self, name: str, source: PeriodSeriesBase[W], fn: Callable[[W], V]) -> None:
-        super().__init__(name)
-        self._source = source
-        self._fn = fn
-
-    def keys(self) -> Rule[Iterable[Period]]:
-        return self._source.keys()
-
-    def compute(self, q: Period, /) -> Step[V]:
-        w = yield from get_at(self._source, q)
-        return self._fn(w)
-
-
-class _PeriodMap2Series[W1, W2, V](PeriodSeriesBase[V]):
-    """Combines two ``Period``-keyed series at the same query."""
-
-    def __init__(
-        self,
-        name: str,
-        left: PeriodSeriesBase[W1],
-        right: BaseSeries[Period, Period, W2],
-        fn: Callable[[W1, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[Period], ...]], Iterable[Period]],
-    ) -> None:
-        super().__init__(name)
-        self._left = left
-        self._right = right
-        self._fn = fn
-        self._keys: Rule[Iterable[Period]] = _MapNKeys(name, (left, right), merge_keys)
-
-    def keys(self) -> Rule[Iterable[Period]]:
-        return self._keys
-
-    def compute(self, q: Period, /) -> Step[V]:
-        a = yield from get_at(self._left, q)
-        b = yield from get_at(self._right, q)
-        return self._fn(a, b)
-
-
-class _DateMapSeries[W, V](DateSeriesBase[V]):
-    """Answers ``fn(source answered at q)``; ``keys()`` aliases the source domain."""
-
-    def __init__(self, name: str, source: DateSeriesBase[W], fn: Callable[[W], V]) -> None:
-        super().__init__(name)
-        self._source = source
-        self._fn = fn
-
-    def keys(self) -> Rule[Iterable[date]]:
-        return self._source.keys()
-
-    def compute(self, q: date, /) -> Step[V]:
-        w = yield from get_at(self._source, q)
-        return self._fn(w)
-
-
-class _DateMap2Series[W1, W2, V](DateSeriesBase[V]):
-    """Combines two ``date``-keyed series at the same query."""
-
-    def __init__(
-        self,
-        name: str,
-        left: DateSeriesBase[W1],
-        right: BaseSeries[date, date, W2],
-        fn: Callable[[W1, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[date], ...]], Iterable[date]],
-    ) -> None:
-        super().__init__(name)
-        self._left = left
-        self._right = right
-        self._fn = fn
-        self._keys: Rule[Iterable[date]] = _MapNKeys(name, (left, right), merge_keys)
-
-    def keys(self) -> Rule[Iterable[date]]:
-        return self._keys
-
-    def compute(self, q: date, /) -> Step[V]:
-        a = yield from get_at(self._left, q)
-        b = yield from get_at(self._right, q)
-        return self._fn(a, b)
 
 
 class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
@@ -836,6 +462,50 @@ def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
         yield k
+
+
+class _ContinueFrom[K: Key, S](Rule[S]):
+    """Exhaust ``base.keys()``, then build ``S`` from the last key.
+
+    The base domain must be finite. Memoized per context so the scan runs once.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        base: BaseSeries[Any, K, Any],
+        fn: Callable[[K], S],
+    ) -> None:
+        super().__init__(f"{name}.continuation")
+        self._base = base
+        self._fn = fn
+
+    def compute(self) -> Step[S]:
+        last: K | None = None
+        for k in (yield from get(self._base.keys())):
+            last = k
+        if last is None:
+            raise ValueError(f"{self.name}: base series is empty")
+        return self._fn(last)
+
+
+class _ContinueKeys[K: Key](Rule[Iterable[K]]):
+    """Concatenated domain: ``base.keys()`` then continuation keys."""
+
+    def __init__(
+        self,
+        name: str,
+        base: BaseSeries[Any, K, Any],
+        continuation: Rule[Any],
+    ) -> None:
+        super().__init__(f"{name}.keys")
+        self._base = base
+        self._continuation = continuation
+
+    def compute(self) -> Step[Iterable[K]]:
+        base_keys = yield from get(self._base.keys())
+        cont = yield from get(self._continuation)
+        return Replayable(_ascending(chain(base_keys, (yield from get(cont.keys())))))
 
 
 def _cell_pairs[K: Key, V](

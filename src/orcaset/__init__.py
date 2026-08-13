@@ -2,6 +2,13 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from orcaset.context import Context, ConvergenceError, CycleError, DepNode
+from orcaset.date_series import (
+    DateExtendSeries,
+    DateMap2Series,
+    DateMapSeries,
+    DateSeries,
+    DateSeriesBase,
+)
 from orcaset.formatters import (
     DateFormatter,
     ValueFormatter,
@@ -11,7 +18,14 @@ from orcaset.formatters import (
 )
 from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
 from orcaset.period import Period, date_union, period_union
-from orcaset.query import DayCount, accrual, accrual_or, exact, exact_or, last
+from orcaset.period_series import (
+    PeriodExtendSeries,
+    PeriodMap2Series,
+    PeriodMapSeries,
+    PeriodSeries,
+    PeriodSeriesBase,
+)
+from orcaset.query import DayCount, accrual, accrual_or, covered, exact, exact_or, last
 from orcaset.rule import (
     Demand,
     Iterate,
@@ -28,15 +42,11 @@ from orcaset.series import (
     CellFactory,
     CellsFn,
     CellStream,
-    DateSeries,
-    DateSeriesBase,
     Key,
     Map2Series,
     MapItemsSeries,
     MapNSeries,
     MapSeries,
-    PeriodSeries,
-    PeriodSeriesBase,
     QueryFn,
     Replayable,
     Series,
@@ -64,7 +74,10 @@ __all__ = [
     "Context",
     "ConvergenceError",
     "CycleError",
+    "DateExtendSeries",
     "DateFormatter",
+    "DateMap2Series",
+    "DateMapSeries",
     "DateSeries",
     "DateSeriesBase",
     "DateValue",
@@ -84,6 +97,9 @@ __all__ = [
     "Maybe",
     "Na",
     "Period",
+    "PeriodExtendSeries",
+    "PeriodMap2Series",
+    "PeriodMapSeries",
     "PeriodSeries",
     "PeriodSeriesBase",
     "PeriodValue",
@@ -103,6 +119,7 @@ __all__ = [
     "accrual_or",
     "add_values",
     "combine_values",
+    "covered",
     "csv_table",
     "date_union",
     "exact",
