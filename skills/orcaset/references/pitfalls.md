@@ -65,13 +65,15 @@ end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
 they are not a default for missing keys. Prefer `exact_or` / `accrual_or` for
 circular items that always exist, so `abs_distance` matches; `exact` answers
 `Maybe[float]` and needs `maybe_abs_distance`. Custom types supply their own
-metric. A cycle that does not settle raises `ConvergenceError`.
+metric. `Context` Jacobi-sweeps every enrolled unknown from the previous
+snapshot only. A system that does not settle raises `ConvergenceError`;
+inspect `err.turns[k].values` / `err.turns[k].residuals`.
 
 Timing can still break a cycle without iteration (e.g. depreciation reads
 *beginning* PPE, PPE update applies dep at period end). Use iteration when the
 economics are simultaneous (average-balance interest, cash sweeps). Mark every
-cyclic `get` / `get_at` with `seed`/`distance`: only the back-edge is cut, so
-extra specs are unused for that evaluation order rather than nested solvers.
+cyclic `get` / `get_at` with `seed`/`distance` so each unknown has a typed
+snapshot; extras enroll the other series rather than nesting solvers.
 
 ## Unsigned / double-negative expenses
 

@@ -22,10 +22,11 @@ _MISSING: Any = object()
 class Iterate[V]:
     """Fixed-point policy for a cyclic ``get`` / ``get_at``.
 
-    ``seed`` is the initial guess for the demanded value, used only when that
-    cell is already being computed. ``distance`` measures successive guesses
-    of the same type; the context iterates until ``distance(prev, next)`` is
-    strictly less than ``tol`` (or the context default).
+    ``seed`` is the initial Jacobi snapshot for the demanded cell, used when
+    that cell is a cyclic unknown. ``distance`` measures successive snapshots
+    of the same type; the context Jacobi-sweeps until every unknown's
+    ``distance(prev, next)`` is strictly less than ``tol`` (or the context
+    default).
     """
 
     seed: V
@@ -124,9 +125,10 @@ def get_at[K: Hashable, V](
         prev = yield from get_at(self, prior_key)
 
     To solve a demand cycle, pass ``seed`` and ``distance`` together. Both are
-    typed against this call's return type ``V``: ``seed`` is an initial guess
-    for the fetched value, and ``distance`` maps two ``V``s to a residual.
-    They are ignored when ``rule`` at ``key`` is not already being computed.
+    typed against this call's return type ``V``: ``seed`` is this cell's
+    initial Jacobi snapshot, and ``distance`` maps two ``V``s to a residual.
+    They enroll the cell as a Jacobi unknown when a cycle is detected, and
+    are ignored when ``rule`` at ``key`` is not already being computed.
     """
     value = yield Demand(rule, key, _iterate(seed, distance, tol, max_iter))
     return cast(V, value)
