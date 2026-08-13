@@ -69,7 +69,9 @@ metric. A cycle that does not settle raises `ConvergenceError`.
 
 Timing can still break a cycle without iteration (e.g. depreciation reads
 *beginning* PPE, PPE update applies dep at period end). Use iteration when the
-economics are simultaneous (average-balance interest, cash sweeps).
+economics are simultaneous (average-balance interest, cash sweeps). Mark every
+cyclic `get` / `get_at` with `seed`/`distance`: only the back-edge is cut, so
+extra specs are unused for that evaluation order rather than nested solvers.
 
 ## Unsigned / double-negative expenses
 

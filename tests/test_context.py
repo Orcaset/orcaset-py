@@ -76,7 +76,7 @@ class Interest(KeyedRule[int, float]):
     def __init__(self, rate: float) -> None:
         super().__init__("interest")
         self._rate = rate
-        self.debt: EndingDebt | None = None
+        self.debt: KeyedRule[int, float] | None = None
 
     def compute(self, period: int, /) -> Step[float]:
         debt = self.debt
@@ -97,6 +97,19 @@ class EndingDebt(KeyedRule[int, float]):
         if interest is None:
             raise RuntimeError("ending_debt.interest was not wired")
         amount = yield from get_at(interest, period)
+        return 100.0 + amount
+
+
+class SeededEndingDebt(KeyedRule[int, float]):
+    def __init__(self) -> None:
+        super().__init__("ending_debt")
+        self.interest: Interest | None = None
+
+    def compute(self, period: int, /) -> Step[float]:
+        interest = self.interest
+        if interest is None:
+            raise RuntimeError("ending_debt.interest was not wired")
+        amount = yield from get_at(interest, period, seed=0.0, distance=abs_distance)
         return 100.0 + amount
 
 
@@ -161,6 +174,27 @@ def test_two_node_average_balance_interest():
     expected = 100.0 * (1 + rate / 2) / (1 - rate / 2)
     assert isclose(end, expected, rel_tol=1e-9)
     assert isclose(ctx.get_at(interest, 0), end - 100.0, rel_tol=1e-9)
+
+
+@pytest.mark.parametrize("enter", ["debt", "interest"])
+def test_seed_on_both_cycle_edges_converges_from_either_entry(enter: str):
+    rate = 0.10
+    interest = Interest(rate)
+    debt = SeededEndingDebt()
+    interest.debt = debt
+    debt.interest = interest
+
+    ctx = Context()
+    if enter == "debt":
+        end = ctx.get_at(debt, 0)
+        amount = ctx.get_at(interest, 0)
+    else:
+        amount = ctx.get_at(interest, 0)
+        end = ctx.get_at(debt, 0)
+
+    expected_end = 100.0 * (1 + rate / 2) / (1 - rate / 2)
+    assert isclose(end, expected_end, rel_tol=1e-9)
+    assert isclose(amount, expected_end - 100.0, rel_tol=1e-9)
 
 
 def test_pending_spec_seeds_back_edge_to_the_started_cell():

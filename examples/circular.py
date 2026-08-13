@@ -4,9 +4,11 @@
 """Average-balance interest solved as a typed demand cycle.
 
 Interest depends on ending debt, and ending debt includes that interest
-(payment-in-kind). The cycle is cut at ``get_at(debt, ...)`` by passing a
-``seed`` and ``distance`` whose types match the fetched value — here ``float``,
-because ``exact_or(0.0)`` answers ``float`` rather than ``Maybe[float]``.
+(payment-in-kind). Each cyclic ``get_at`` passes ``seed`` and ``distance``
+typed against the fetched value — here ``float``, because ``exact_or(0.0)``
+answers ``float`` rather than ``Maybe[float]``. Only the back-edge is used as
+the cut; the other spec makes the same cycle solvable if evaluation starts
+from the other series.
 
 A wrong seed type (for example ``seed="0"``) is a static error against the
 ``get_at`` return type. Custom value types follow the same pattern: provide a
@@ -44,7 +46,7 @@ def debt() -> Iterator[tuple[date, float | CellFactory[float]]]:
 
         def factory(period: Period = p) -> Step[float]:
             begin = yield from get_at(debt, period.start)
-            interest_amt = yield from get_at(interest, period)
+            interest_amt = yield from get_at(interest, period, seed=0.0, distance=abs_distance)
             return begin + interest_amt
 
         yield p.end, factory
