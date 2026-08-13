@@ -132,7 +132,7 @@ class _FixedPoint:
 
 
 class Context:
-    def __init__(self, *, tol: float = 1e-9, max_iter: int = 100) -> None:
+    def __init__(self, *, tol: float = 1e-9, max_iter: int = 1000) -> None:
         self._tol = tol
         self._max_iter = max_iter
         self._compute_cache: dict[RuleKey, Any] = {}
