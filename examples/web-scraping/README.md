@@ -1,4 +1,4 @@
-# Southwest TSA revenue nowcast
+# Web scraping
 
 This example inlines a live web scrape into an orcaset model. Daily [TSA checkpoint travel numbers](https://www.tsa.gov/travel/passenger-volumes) nowcast the current quarter of Southwest Airlines (LUV) passenger revenue; later quarters follow last year's seasonal quarter-on-quarter path.
 

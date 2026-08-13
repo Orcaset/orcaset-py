@@ -19,7 +19,7 @@ from orcaset import Period, PeriodSeries, accrual
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
-    "User-Agent": "orcaset-southwest-tsa-example/0.1 (+https://github.com/orcaset/orcaset-py)",
+    "User-Agent": "orcaset-web-scraping-example/0.1 (+https://github.com/orcaset/orcaset-py)",
     "Accept": "text/html,application/xhtml+xml",
 }
 _BY_DAYS = accrual(lambda start, end: float((end - start).days))

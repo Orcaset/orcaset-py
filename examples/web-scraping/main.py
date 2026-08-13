@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Run the Southwest TSA nowcast and print a quarterly operating-revenue table."""
+"""Run the web-scraping nowcast and print a quarterly operating-revenue table."""
 
 from model import (
     as_of_date,
