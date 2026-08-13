@@ -29,7 +29,12 @@ class CycleError(RuntimeError):
 
 
 class ConvergenceError(RuntimeError):
-    """Raised when a cyclic demand does not converge within ``max_iter``."""
+    """Raised when a cyclic demand does not converge within ``max_iter``.
+
+    ``values`` is the cut cell's seed followed by each computed iterate.
+    ``residuals[i]`` is ``distance(values[i], values[i + 1])``. Inspect them
+    to see oscillation, blow-up, or a slow crawl.
+    """
 
     def __init__(
         self,
@@ -38,18 +43,26 @@ class ConvergenceError(RuntimeError):
         iterations: int,
         residual: float,
         tol: float,
+        values: tuple[Any, ...],
+        residuals: tuple[float, ...],
         names: dict[int, str] | None = None,
     ) -> None:
         self.cell = cell
         self.iterations = iterations
         self.residual = residual
         self.tol = tol
+        self.values = values
+        self.residuals = residuals
         names = names or {}
         label = _format_cell(names.get(cell[0], str(cell[0])), cell[1])
-        super().__init__(
-            f"Failed to converge {label} after {iterations} iterations "
-            f"(distance={residual}, tol={tol})"
-        )
+        lines = [
+            (
+                f"Failed to converge {label} after {iterations} iterations "
+                f"(distance={residual}, tol={tol})"
+            ),
+            *_history_lines(values, residuals),
+        ]
+        super().__init__("\n".join(lines))
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +95,26 @@ def _format_cell(name: str, key: Hashable) -> str:
     return f"{name}@{key!r}"
 
 
+_HISTORY_HEAD = 8
+_HISTORY_TAIL = 12
+_HISTORY_ALL = _HISTORY_HEAD + _HISTORY_TAIL
+
+
+def _history_lines(values: tuple[Any, ...], residuals: tuple[float, ...]) -> list[str]:
+    """Render seed + iterates; omit a middle span when the trace is long."""
+    lines = [f"  0: {values[0]!r}"]
+    for index, (value, residual) in enumerate(zip(values[1:], residuals, strict=True), start=1):
+        lines.append(f"  {index}: {value!r}  distance={residual}")
+    if len(lines) <= _HISTORY_ALL:
+        return lines
+    omitted = len(lines) - _HISTORY_HEAD - _HISTORY_TAIL
+    return [
+        *lines[:_HISTORY_HEAD],
+        f"  ... ({omitted} iterates omitted) ...",
+        *lines[-_HISTORY_TAIL:],
+    ]
+
+
 def _completed(value: Any) -> Step[Any]:
     """A step that immediately completes with `value`."""
     return value
@@ -94,6 +127,8 @@ class _FixedPoint:
     seed: Any
     iteration: int = 0
     written: list[RuleKey] = field(default_factory=list)
+    guesses: list[Any] = field(default_factory=list)
+    residuals: list[float] = field(default_factory=list)
 
 
 class Context:
@@ -198,7 +233,7 @@ class Context:
             self._raise_cycle(child)
         fp = self._fp.get(child)
         if fp is None:
-            fp = _FixedPoint(spec=spec, seed=spec.seed)
+            fp = _FixedPoint(spec=spec, seed=spec.seed, guesses=[spec.seed])
             self._fp[child] = fp
         return fp.seed
 
@@ -209,8 +244,12 @@ class Context:
 
         fp.iteration += 1
         residual = fp.spec.distance(fp.seed, value)
-        tol = self._tol if fp.spec.tol is None else fp.spec.tol
-        max_iter = self._max_iter if fp.spec.max_iter is None else fp.spec.max_iter
+        fp.guesses.append(value)
+        fp.residuals.append(residual)
+        spec_tol = fp.spec.tol
+        tol: float = self._tol if spec_tol is None else spec_tol
+        spec_max_iter = fp.spec.max_iter
+        max_iter: int = self._max_iter if spec_max_iter is None else spec_max_iter
         if residual < tol:
             del self._fp[finished]
             return self._commit(finished, value)
@@ -220,6 +259,8 @@ class Context:
                 iterations=fp.iteration,
                 residual=residual,
                 tol=tol,
+                values=tuple(fp.guesses),
+                residuals=tuple(fp.residuals),
                 names=self._target_names(),
             )
         self._invalidate(fp)

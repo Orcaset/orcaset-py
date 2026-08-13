@@ -65,7 +65,9 @@ end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
 they are not a default for missing keys. Prefer `exact_or` / `accrual_or` for
 circular items that always exist, so `abs_distance` matches; `exact` answers
 `Maybe[float]` and needs `maybe_abs_distance`. Custom types supply their own
-metric. A cycle that does not settle raises `ConvergenceError`.
+metric. A cycle that does not settle raises `ConvergenceError`; inspect
+`err.values` (seed then each iterate) and `err.residuals` to see oscillation
+or blow-up.
 
 Timing can still break a cycle without iteration (e.g. depreciation reads
 *beginning* PPE, PPE update applies dep at period end). Use iteration when the

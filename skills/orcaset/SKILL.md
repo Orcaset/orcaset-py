@@ -166,7 +166,8 @@ value: `seed` is the initial guess, `distance` maps two values to a residual
 custom metric). Put `seed`/`distance` on every cyclic `get`/`get_at` so the
 cut does not depend on evaluation order. `Context(tol=..., max_iter=...)`
 sets solver defaults; per-demand `tol` / `max_iter` override them.
-A cycle that does not settle raises `ConvergenceError`.
+A cycle that does not settle raises `ConvergenceError`; inspect `err.values`
+(seed then each iterate) and `err.residuals` for oscillation or blow-up.
 
 ## Queries
 

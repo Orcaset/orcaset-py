@@ -156,8 +156,25 @@ def test_self_cycle_is_memoized_after_convergence():
 def test_non_converging_cycle_raises():
     rule = Divergent("grow")
     ctx = Context()
-    with pytest.raises(ConvergenceError, match="Failed to converge grow after 8"):
+    with pytest.raises(ConvergenceError, match="Failed to converge grow after 8") as caught:
         ctx.get(rule)
+    err = caught.value
+    assert err.values == (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0)
+    assert err.residuals == (1.0,) * 8
+    assert "  0: 1.0" in str(err)
+    assert "  8: 9.0  distance=1.0" in str(err)
+
+
+def test_oscillation_is_visible_on_convergence_error():
+    class Flip(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=4)
+            return 1.0 - prior
+
+    ctx = Context()
+    with pytest.raises(ConvergenceError) as caught:
+        ctx.get(Flip("flip"))
+    assert caught.value.values == (0.0, 1.0, 0.0, 1.0, 0.0)
 
 
 def test_two_node_average_balance_interest():
@@ -261,8 +278,28 @@ def test_context_max_iter_default_is_used():
             return prior + 1.0
 
     ctx = Context(max_iter=3)
-    with pytest.raises(ConvergenceError, match="after 3 iterations"):
+    with pytest.raises(ConvergenceError, match="after 3 iterations") as caught:
         ctx.get(Grow("grow"))
+    assert caught.value.values == (1.0, 2.0, 3.0, 4.0)
+
+
+def test_long_iterate_history_omits_the_middle_of_the_message():
+    class Grow(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=25)
+            return prior + 1.0
+
+    ctx = Context()
+    with pytest.raises(ConvergenceError) as caught:
+        ctx.get(Grow("grow"))
+    err = caught.value
+    assert err.values[0] == 0.0
+    assert err.values[-1] == 25.0
+    assert len(err.values) == 26
+    text = str(err)
+    assert "iterates omitted" in text
+    assert "  0: 0.0" in text
+    assert "  25: 25.0  distance=1.0" in text
 
 
 def test_dependencies_include_cyclic_edge_after_solve():
