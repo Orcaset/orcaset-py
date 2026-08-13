@@ -17,6 +17,11 @@ change between minor releases.
   series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
   `PeriodSeries` / `DateSeries` and derived combinators both inherit from
   these bases so operator chaining stays closed over the surface type.
+- Added an iterative solver for demand cycles: `get` / `get_at` accept typed
+  `seed` and `distance` used only when the demanded cell is already being
+  computed. `Context` iterates until successive guesses are close, or raises
+  `ConvergenceError`. `abs_distance` and `maybe_abs_distance` cover `float`
+  and `Maybe[float]`; other value types supply their own metric.
 
 ### Changed
 

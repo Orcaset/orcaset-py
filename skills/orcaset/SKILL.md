@@ -149,6 +149,7 @@ Inside a factory / `compute`:
 ```python
 prior = yield from get_at(other_series, key)  # keyed
 keys = yield from get(series.keys())  # unkeyed Rule
+end = yield from get_at(debt, as_of, seed=0.0, distance=abs_distance)  # cyclic
 ```
 
 Always `yield from`. Treat missing data according to its economic meaning:
@@ -157,6 +158,15 @@ Always `yield from`. Treat missing data according to its economic meaning:
 - Use `isna(...)` and raise a descriptive error when an input is required.
 - Use an explicit seed or opening balance for the first modeled period.
 - Do not convert `Na` to zero merely to make a model run.
+
+Mutual `get_at` cycles raise `CycleError` unless the demand that observes an
+in-flight cell passes `seed` and `distance`. Both are typed against the fetched
+value: `seed` is the initial guess, `distance` maps two values to a residual
+(`abs_distance` for `float`, `maybe_abs_distance` for `Maybe[float]`, or a
+custom metric). Put `seed`/`distance` on every cyclic `get`/`get_at` so the
+cut does not depend on evaluation order. `Context(tol=..., max_iter=...)`
+sets solver defaults; per-demand `tol` / `max_iter` override them.
+A cycle that does not settle raises `ConvergenceError`.
 
 ## Queries
 
@@ -182,6 +192,7 @@ aggregation for averages and other non-additive metrics.
 Read these when the task matches; do not copy them wholesale into new models unless asked:
 
 - `examples/income.py` — growth + margins + quarterly `Stmt`
+- `examples/circular.py` — average-balance PIK interest via typed cyclic `get_at`
 - `examples/simple-three-statement.py` — IS / CF / BS with BS rollforwards
 - `examples/capex.py` — cohorts via `MapItemsSeries`
 - `examples/balance.py`, `examples/projection.py` — additional shapes
