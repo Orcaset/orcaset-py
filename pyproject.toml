@@ -20,5 +20,6 @@ line-length = 100
 
 [dependency-groups]
 dev = [
+    "pyrefly>=1.2.0",
     "pytest>=9.0.3",
 ]
