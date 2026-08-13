@@ -13,15 +13,40 @@ change between minor releases.
 
 - Added `last`, an as-of query that returns the latest cell at or before the
   query key (or `Na` if none), for balance-sheet-style point-in-time lookups.
+- Added `covered`, a period query that sums cells that exactly tile the query
+  period and returns `Na` on any gap or partial overlap.
+- Added `PeriodExtendSeries` and `DateExtendSeries` for sequential
+  composition: answer from a finite base until its domain is exhausted, then
+  from a continuation built from the last base key. Period queries that cross
+  the seam are split and folded with a required `combine`; date queries are
+  dispatched to one side — the continuation owns dates at or after its first
+  key, so an as-of (`last`) base query carries forward across any gap before
+  the continuation's first cell. See `examples/projection.py`.
 - Added `PeriodSeriesBase` and `DateSeriesBase` as the shared period/date
   series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
   `PeriodSeries` / `DateSeries` and derived combinators both inherit from
   these bases so operator chaining stays closed over the surface type.
+- Added an iterative solver for demand cycles: `get` / `get_at` accept typed
+  `seed` and `distance` used only when the demanded cell is already being
+  computed. A cycle may mark every cyclic getter; only the back-edge is used
+  as the cut, so the same cycle is solvable from either entry. `Context`
+  iterates until successive guesses are close (`tol=1e-9`, `max_iter=1000`
+  unless overridden), or raises `ConvergenceError`
+  with the cut cell's seed and every iterate (and residuals) so oscillation
+  or blow-up is visible. `abs_distance` and `maybe_abs_distance` cover `float` and `Maybe[float]`;
+  other value types supply their own metric. See `examples/circular.py`.
 
 ### Changed
 
 - Period/date map and operator combinators no longer subclass the cell-backed
   grid types; `isinstance` checks in arithmetic use the new base classes.
+- Made every specialized period/date series class public. The concrete
+  `PeriodMapSeries`, `PeriodMap2Series`, `DateMapSeries`, and `DateMap2Series`
+  classes are now exported alongside their base, cell-backed, and extension
+  counterparts.
+- Moved `PeriodSeries` / `PeriodSeriesBase` into `orcaset.period_series` and
+  `DateSeries` / `DateSeriesBase` into `orcaset.date_series`. Public imports
+  for the existing classes from `orcaset` are unchanged.
 
 ## [0.7.1] - 2026-08-03
 

@@ -1,8 +1,13 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Quarterly history extended by a monthly growth projection on one spine."""
+"""Quarterly history continued by a monthly growth forecast.
 
+Historicals use ``covered`` so intra-quarter queries are ``Na``. The forecast
+uses ``accrual``. Queries that cross the seam are split and added.
+"""
+
+import operator
 from collections.abc import Iterator
 from datetime import date
 from itertools import islice
@@ -15,13 +20,16 @@ from orcaset import (
     Context,
     Maybe,
     Period,
-    Series,
+    PeriodExtendSeries,
+    PeriodSeries,
     Step,
     Stmt,
     accrual,
+    covered,
     fixed_width_table,
     get_at,
     isna,
+    map2_some,
 )
 
 MONTHLY = relativedelta(months=1)
@@ -33,30 +41,39 @@ HISTORICAL: list[tuple[Period, float]] = [
 ]
 
 
-@Series.define("revenue", accrual(YF.cmonthly))
-def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
-    last: Period | None = None
-    for period, value in HISTORICAL:
-        last = period
-        yield period, value
+@PeriodSeries.define("hist_revenue", covered)
+def hist_revenue() -> Iterator[tuple[Period, float]]:
+    yield from HISTORICAL
 
-    if last is None:
-        return
 
-    for k in Period.seq(last.end, MONTHLY):
+@PeriodExtendSeries.define("revenue", hist_revenue, map2_some(operator.add))
+def revenue(last: Period) -> PeriodSeries[Maybe[float]]:
+    def cells() -> Iterator[tuple[Period, CellFactory[float]]]:
+        for k in Period.seq(last.end, MONTHLY):
 
-        def factory(p: Period = k) -> Step[float]:
-            prior = yield from get_at(revenue, p.from_start(-MONTHLY))
-            return prior * 1.01 if not isna(prior) else 0.0
+            def factory(p: Period = k) -> Step[float]:
+                if p.start == last.end:
+                    prior = yield from get_at(hist_revenue, last)
+                    if isna(prior):
+                        raise ValueError(f"missing last historical revenue {last}")
+                    run_rate = (
+                        prior * YF.cmonthly(p.start, p.end) / YF.cmonthly(last.start, last.end)
+                    )
+                    return run_rate * 1.01
+                prior = yield from get_at(forecast, p.from_start(-MONTHLY))
+                if isna(prior):
+                    raise ValueError(f"missing prior forecast revenue for {p}")
+                return prior * 1.01
 
-        yield k, factory
+            yield k, factory
+
+    forecast = PeriodSeries("forecast_revenue", cells, accrual(YF.cmonthly))
+    return forecast
 
 
 ctx = Context()
-
 quarters = [p for p, _ in HISTORICAL]
-last_hist_month = Period(date(2025, 9, 1), date(2025, 10, 1))
-forecast = list(islice(Period.seq(date(2025, 10, 1), MONTHLY), 3))
+forecast_months = list(islice(Period.seq(date(2025, 10, 1), MONTHLY), 3))
 
 
 def show(value: Maybe[float] | float) -> str:
@@ -67,14 +84,14 @@ print("Historical quarters")
 for q in quarters:
     print(f"  {q}: {show(ctx.get_at(revenue, q))}")
 
-print(f"\nLast historical month via accrual: {last_hist_month}")
-print(f"  {show(ctx.get_at(revenue, last_hist_month))}")
+intra = Period(date(2025, 9, 1), date(2025, 10, 1))
+print(f"\nIntra-quarter historical ({intra}): {show(ctx.get_at(revenue, intra))}")
 
-print("\nMonthly projection (1% growth off one-month lookback)")
-for q in forecast:
+print("\nMonthly projection (1% growth off last-quarter run-rate)")
+for q in forecast_months:
     print(f"  {q}: {show(ctx.get_at(revenue, q))}")
 
-projected_quarter = Period(forecast[0].start, forecast[-1].end)
+projected_quarter = Period(forecast_months[0].start, forecast_months[-1].end)
 quarterly_statement = Stmt(revenue).values_for_periods(
     ctx,
     [*quarters, projected_quarter],
@@ -83,5 +100,6 @@ quarterly_statement = Stmt(revenue).values_for_periods(
 print("\nQuarterly statement")
 print(fixed_width_table(quarterly_statement))
 
-print(f"\nDeps: revenue @ {forecast[0]}\n")
-print(ctx.dependencies(revenue, forecast[0]))
+aligned = Period(date(2025, 7, 1), date(2025, 12, 1))
+print(f"\nDeps: revenue @ {aligned}\n")
+print(ctx.dependencies(revenue, aligned))

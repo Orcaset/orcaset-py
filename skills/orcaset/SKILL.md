@@ -6,8 +6,9 @@ description: >-
   valuation schedules, debt and interest schedules, working-capital models,
   cohort schedules, accruals, balance-sheet rollforwards, scenario models,
   statement presentation, and model reconciliation. Use when a task requires
-  PeriodSeries, DateSeries, Period, Context, get/get_at effect handlers,
-  accrual/exact queries, or Stmt output.
+  PeriodSeries, DateSeries, PeriodExtendSeries, DateExtendSeries, Period,
+  Context, get/get_at effect handlers, accrual/covered/exact queries, or Stmt
+  output.
 ---
 
 # Orcaset
@@ -24,9 +25,10 @@ If `orcaset` is not already available, install it from PyPI with
 ## Mental model
 
 1. **Keys**: flow items use `Period`; stocks use `date`.
-2. **Series**: `PeriodSeries` / `DateSeries` (or `Series`) hold named cells + a query (`accrual` / `exact`).
+2. **Series**: `PeriodSeries` / `DateSeries` (or `Series`) hold named cells + a query (`accrual` / `covered` / `exact`).
 3. **Cells**: constants or `CellFactory` generators that `yield from get_at` / `get`.
-4. **Compose**: arithmetic (`+`, `-`, `*`, `/`) and `.named(...)` for labels.
+4. **Compose**: arithmetic (`+`, `-`, `*`, `/`), `.named(...)` for labels, and
+   `PeriodExtendSeries` / `DateExtendSeries` to append a later regime.
 5. **Evaluate**: `Context().get_at(series, key)` or `Stmt(...).values(ctx, periods)`.
 6. **Format**: `fixed_width_table` / `csv_table` / `markdown_table`.
 
@@ -125,9 +127,9 @@ When building or extending a model:
 10. Run the repository's formatter, type checker, and tests after editing code.
 
 A model is not complete until its configured type checker passes with no errors
-or warnings. Fix the types at their source. Static type casts, `type: ignore`
-comments, checker-specific suppression comments, and equivalent mechanisms are
-strictly prohibited.
+or warnings. Fix the types at their source. Static type casts, use of `Any`,
+`type: ignore` comments, checker-specific suppression comments, and equivalent
+mechanisms are strictly prohibited.
 
 ## Series construction
 
@@ -139,6 +141,7 @@ strictly prohibited.
 | Sum / difference | `(a + b).named("...")` or `(a - b).named("...")` |
 | Sign flip | `(-series).named("...")` |
 | Point-in-time balances | `DateSeries(name, cells_fn, exact)` |
+| History then forecast | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
 
 **Closure rule:** capture the loop key with a default arg (`def factory(p: Period = k)`), never close over the loop variable alone.
 
@@ -149,6 +152,7 @@ Inside a factory / `compute`:
 ```python
 prior = yield from get_at(other_series, key)  # keyed
 keys = yield from get(series.keys())  # unkeyed Rule
+end = yield from get_at(debt, as_of, seed=0.0, distance=abs_distance)  # cyclic
 ```
 
 Always `yield from`. Treat missing data according to its economic meaning:
@@ -158,9 +162,20 @@ Always `yield from`. Treat missing data according to its economic meaning:
 - Use an explicit seed or opening balance for the first modeled period.
 - Do not convert `Na` to zero merely to make a model run.
 
+Mutual `get_at` cycles raise `CycleError` unless the demand that observes an
+in-flight cell passes `seed` and `distance`. Both are typed against the fetched
+value: `seed` is the initial guess, `distance` maps two values to a residual
+(`abs_distance` for `float`, `maybe_abs_distance` for `Maybe[float]`, or a
+custom metric). Put `seed`/`distance` on every cyclic `get`/`get_at` so the
+cut does not depend on evaluation order. `Context(tol=..., max_iter=...)`
+sets solver defaults; per-demand `tol` / `max_iter` override them.
+A cycle that does not settle raises `ConvergenceError`; inspect `err.values`
+(seed then each iterate) and `err.residuals` for oscillation or blow-up.
+
 ## Queries
 
 - `accrual(yf)` — weight overlapping cells by year-fraction (`YF.cmonthly`, `YF.act360`, or a custom `(d1, d2) -> float`).
+- `covered` — sum cells that exactly tile the query period; `Na` on any gap or partial overlap (typical for sourced historicals).
 - `exact` — require an exact key match (typical for dated balances and cohort schedules).
 - `accrual_or(yf, default)` / `exact_or(default)` — substitute a default on miss instead of `Na`.
 
@@ -182,9 +197,11 @@ aggregation for averages and other non-additive metrics.
 Read these when the task matches; do not copy them wholesale into new models unless asked:
 
 - `examples/income.py` — growth + margins + quarterly `Stmt`
+- `examples/circular.py` — average-balance PIK interest via typed cyclic `get_at`
 - `examples/simple-three-statement.py` — IS / CF / BS with BS rollforwards
 - `examples/capex.py` — cohorts via `MapItemsSeries`
-- `examples/balance.py`, `examples/projection.py` — additional shapes
+- `examples/balance.py` — balance rollforwards
+- `examples/projection.py` - history then forecast via `PeriodExtendSeries`
 
 ## Additional resources
 

@@ -129,10 +129,17 @@ When each spend period opens a multi-period schedule, use `MapItemsSeries` (see 
 ## Historical and forecast periods
 
 Keep sourced historical values, forecast assumptions, and calculated outputs
-conceptually separate. Define the forecast cutoff explicitly. Seed recursive
-forecast lines from the final historical balance or flow. Test the first
-forecast period independently because most timing and missing-data errors occur
-at that boundary.
+conceptually separate. Put historicals on their own series (`covered` when
+intra-period queries should be undefined) and append the forecast with
+`PeriodExtendSeries` / `DateExtendSeries`. The continuation factory
+receives the last historical key; seed the first forecast cell from that key
+(`get_at(hist, last)`), not from a sub-period lookback that `covered` will
+refuse. Pass `map2_some(operator.add)` as `combine` for additive flows. Test
+the first forecast period and at least one query that crosses the seam.
+
+For stocks, `DateExtendSeries` dispatches dates before the continuation's
+first cell to the historicals, so a `last`-queried base carries the balance
+forward across the seam; an `exact`-queried base answers `Na` there.
 
 ## Non-additive metrics
 

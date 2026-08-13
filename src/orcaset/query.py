@@ -122,3 +122,28 @@ def accrual_or(yf: DayCount, default: float) -> QueryFn[Period, Period, float, f
         return total if hit else default
 
     return query
+
+
+def covered(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[Maybe[float]]:
+    """Sum cells that exactly tile ``q``; ``Na`` on any gap or partial overlap.
+
+    Unlike ``exact``, a query that is the union of adjacent cells is answered.
+    Unlike ``accrual``, a query that cuts through a cell is ``Na``.
+    """
+    total = 0.0
+    expected_start = q.start
+    covered_end: date | None = None
+    for k, cell in cells:
+        if k < q:
+            continue
+        if q < k:
+            break
+        if k.start != expected_start or k.end > q.end:
+            return Na
+        value = yield from get(cell)
+        total += value
+        expected_start = k.end
+        covered_end = k.end
+    if covered_end != q.end:
+        return Na
+    return total
