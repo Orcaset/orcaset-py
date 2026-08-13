@@ -30,6 +30,8 @@ from orcaset import (
     PeriodSeries,
     PeriodSeriesBase,
     Step,
+    Stmt,
+    Total,
     accrual,
     get,
     get_at,
@@ -229,3 +231,21 @@ passenger_revenue: PeriodSeriesBase[Maybe[float]] = (
 total_operating_revenue: PeriodSeriesBase[Maybe[float]] = (
     passenger_revenue + freight + other
 ).named("Total operating revenue")
+
+operating_revenue_stmt = Stmt(
+    Total(
+        total_operating_revenue,
+        [
+            Total(
+                passenger_revenue,
+                [
+                    passenger_non_loyalty,
+                    loyalty_air_transport,
+                    ancillary,
+                ],
+            ),
+            freight,
+            other,
+        ],
+    )
+)

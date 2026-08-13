@@ -3,9 +3,14 @@
 
 """Run the Southwest TSA nowcast and print a quarterly operating-revenue table."""
 
-from model import as_of_date, nowcast_spec, quarter_label, reporting_quarters
+from model import (
+    as_of_date,
+    nowcast_spec,
+    operating_revenue_stmt,
+    quarter_label,
+    reporting_quarters,
+)
 from scrape import TSA_URL, tsa_passengers
-from statement import operating_revenue_stmt
 
 from orcaset import Context, fixed_width_table, isna
 
@@ -49,7 +54,7 @@ def main() -> None:
         )
     print()
 
-    result = operating_revenue_stmt().values_for_periods(ctx, reporting_quarters(today))
+    result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters(today))
     print(fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_millions))
 
 
