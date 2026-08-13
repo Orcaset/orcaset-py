@@ -7,8 +7,8 @@ description: >-
   cohort schedules, accruals, balance-sheet rollforwards, scenario models,
   statement presentation, and model reconciliation. Use when a task requires
   PeriodSeries, DateSeries, PeriodExtendSeries, DateExtendSeries, Period,
-  Context, get/get_at effect handlers, accrual/covered/exact queries, or Stmt
-  output.
+  Context, get/get_at effect handlers, accrual/covered/exact/last queries, or
+  Stmt output.
 ---
 
 # Orcaset
@@ -140,7 +140,7 @@ mechanisms are strictly prohibited.
 | Scalar-driven line | `(base * rate).named("...")` |
 | Sum / difference | `(a + b).named("...")` or `(a - b).named("...")` |
 | Sign flip | `(-series).named("...")` |
-| Point-in-time balances | `DateSeries(name, cells_fn, exact)` |
+| Point-in-time balances | `DateSeries(name, cells_fn, exact)` (or `last` for as-of carry-forward) |
 | History then forecast | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
 
 **Closure rule:** capture the loop key with a default arg (`def factory(p: Period = k)`), never close over the loop variable alone.
@@ -177,6 +177,7 @@ A cycle that does not settle raises `ConvergenceError`; inspect `err.values`
 - `accrual(yf)` — weight overlapping cells by year-fraction (`YF.cmonthly`, `YF.act360`, or a custom `(d1, d2) -> float`).
 - `covered` — sum cells that exactly tile the query period; `Na` on any gap or partial overlap (typical for sourced historicals).
 - `exact` — require an exact key match (typical for dated balances and cohort schedules).
+- `last` — latest cell at or before the query key, or `Na` (as-of lookups that should carry a balance forward).
 - `accrual_or(yf, default)` / `exact_or(default)` — substitute a default on miss instead of `Na`.
 
 Do not model ratios, rates, prices, or per-share measures as additive flows and
