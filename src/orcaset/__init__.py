@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from orcaset.context import Context, ConvergenceError, CycleError, DepNode, JacobiTurn
+from orcaset.context import Context, ConvergenceError, CycleError, DepNode
 from orcaset.formatters import (
     DateFormatter,
     ValueFormatter,
@@ -74,7 +74,6 @@ __all__ = [
     "Group",
     "GroupRow",
     "Iterate",
-    "JacobiTurn",
     "Key",
     "KeyedRule",
     "LineRow",

@@ -13,7 +13,6 @@ from orcaset import (
     CycleError,
     DateSeries,
     Iterate,
-    JacobiTurn,
     KeyedRule,
     Period,
     PeriodSeries,
@@ -157,29 +156,8 @@ def test_self_cycle_is_memoized_after_convergence():
 def test_non_converging_cycle_raises():
     rule = Divergent("grow")
     ctx = Context()
-    with pytest.raises(ConvergenceError, match="after 8 Jacobi turns") as caught:
+    with pytest.raises(ConvergenceError, match="Failed to converge grow after 8"):
         ctx.get(rule)
-    err = caught.value
-    assert isinstance(err.turns[0], JacobiTurn)
-    assert err.turns[0].values == {"grow": 1.0}
-    assert err.turns[0].residuals == {}
-    assert err.turns[1].values == {"grow": 2.0}
-    assert err.turns[1].residuals == {"grow": 1.0}
-    assert err.turns[-1].values == {"grow": 9.0}
-    assert "Inspect ConvergenceError.turns" in str(err)
-
-
-def test_oscillation_is_visible_on_turns():
-    class Flip(Rule[float]):
-        def compute(self) -> Step[float]:
-            prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=4)
-            return 1.0 - prior
-
-    ctx = Context()
-    with pytest.raises(ConvergenceError) as caught:
-        ctx.get(Flip("flip"))
-    values = [turn.values["flip"] for turn in caught.value.turns]
-    assert values == [0.0, 1.0, 0.0, 1.0, 0.0]
 
 
 def test_two_node_average_balance_interest():
@@ -217,24 +195,6 @@ def test_seed_on_both_cycle_edges_converges_from_either_entry(enter: str):
     expected_end = 100.0 * (1 + rate / 2) / (1 - rate / 2)
     assert isclose(end, expected_end, rel_tol=1e-9)
     assert isclose(amount, expected_end - 100.0, rel_tol=1e-9)
-
-
-def test_jacobi_uses_previous_turn_for_every_unknown():
-    """First sweep must not see same-turn updates (that would be Gauss-Seidel)."""
-    rate = 0.10
-    interest = Interest(rate)
-    debt = SeededEndingDebt()
-    interest.debt = debt
-    debt.interest = interest
-
-    ctx = Context(max_iter=1)
-    with pytest.raises(ConvergenceError) as caught:
-        ctx.get_at(debt, 0)
-    turns = caught.value.turns
-    assert turns[0].values == {"ending_debt@0": 0.0, "interest@0": 0.0}
-    # debt_{1} = 100 + interest_{0} = 100; interest_{1} = 0.05*(100+debt_{0}) = 5
-    assert turns[1].values["ending_debt@0"] == pytest.approx(100.0)
-    assert turns[1].values["interest@0"] == pytest.approx(5.0)
 
 
 def test_pending_spec_seeds_back_edge_to_the_started_cell():
@@ -301,7 +261,7 @@ def test_context_max_iter_default_is_used():
             return prior + 1.0
 
     ctx = Context(max_iter=3)
-    with pytest.raises(ConvergenceError, match="after 3 Jacobi turns"):
+    with pytest.raises(ConvergenceError, match="after 3 iterations"):
         ctx.get(Grow("grow"))
 
 

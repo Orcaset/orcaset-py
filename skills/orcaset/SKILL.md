@@ -161,14 +161,12 @@ Always `yield from`. Treat missing data according to its economic meaning:
 
 Mutual `get_at` cycles raise `CycleError` unless the demand that observes an
 in-flight cell passes `seed` and `distance`. Both are typed against the fetched
-value: `seed` is that cell's initial Jacobi snapshot, `distance` maps two
-values to a residual (`abs_distance` for `float`, `maybe_abs_distance` for
-`Maybe[float]`, or a custom metric). Put `seed`/`distance` on every cyclic
-`get`/`get_at` so every unknown is enrolled. `Context` Jacobi-sweeps those
-unknowns (each turn reads only the previous snapshot).
-`Context(tol=..., max_iter=...)` sets solver defaults; per-demand `tol` /
-`max_iter` override them. A system that does not settle raises
-`ConvergenceError`; inspect `err.turns[k].values` for the vector on turn `k`.
+value: `seed` is the initial guess, `distance` maps two values to a residual
+(`abs_distance` for `float`, `maybe_abs_distance` for `Maybe[float]`, or a
+custom metric). Put `seed`/`distance` on every cyclic `get`/`get_at` so the
+cut does not depend on evaluation order. `Context(tol=..., max_iter=...)`
+sets solver defaults; per-demand `tol` / `max_iter` override them.
+A cycle that does not settle raises `ConvergenceError`.
 
 ## Queries
 

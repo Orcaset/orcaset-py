@@ -1,13 +1,14 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Average-balance interest solved as a typed Jacobi system.
+"""Average-balance interest solved as a typed demand cycle.
 
 Interest depends on ending debt, and ending debt includes that interest
 (payment-in-kind). Each cyclic ``get_at`` passes ``seed`` and ``distance``
 typed against the fetched value — here ``float``, because ``exact_or(0.0)``
-answers ``float`` rather than ``Maybe[float]``. Both edges are marked so each
-series is a Jacobi unknown; every turn reads only the previous snapshot.
+answers ``float`` rather than ``Maybe[float]``. Only the back-edge is used as
+the cut; the other spec makes the same cycle solvable if evaluation starts
+from the other series.
 
 A wrong seed type (for example ``seed="0"``) is a static error against the
 ``get_at`` return type. Custom value types follow the same pattern: provide a

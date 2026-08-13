@@ -17,12 +17,11 @@ change between minor releases.
   series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
   `PeriodSeries` / `DateSeries` and derived combinators both inherit from
   these bases so operator chaining stays closed over the surface type.
-- Added a Jacobi solver for demand cycles: `get` / `get_at` accept typed
-  `seed` and `distance` that enroll the fetched cell as a cyclic unknown.
-  Each turn recomputes every unknown from the previous snapshot only. A cycle
-  may mark every cyclic getter so the system is solvable from either entry.
-  `Context` sweeps until every unknown is close, or raises `ConvergenceError`
-  with inspectable `turns` (per-unknown values and residuals for each sweep).
+- Added an iterative solver for demand cycles: `get` / `get_at` accept typed
+  `seed` and `distance` used only when the demanded cell is already being
+  computed. A cycle may mark every cyclic getter; only the back-edge is used
+  as the cut, so the same cycle is solvable from either entry. `Context`
+  iterates until successive guesses are close, or raises `ConvergenceError`.
   `abs_distance` and `maybe_abs_distance` cover `float` and `Maybe[float]`;
   other value types supply their own metric. See `examples/circular.py`.
 
