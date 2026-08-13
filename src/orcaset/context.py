@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator, Hashable
-from dataclasses import dataclass
-from typing import Any, cast
+from dataclasses import dataclass, field
+from typing import Any, NoReturn, cast
 
-from orcaset.rule import _UNIT, KeyedRule, Rule, Step
+from orcaset.rule import _UNIT, Iterate, KeyedRule, Rule, Step
 
 type RuleKey = tuple[int, Hashable]
 type Target = KeyedRule[Any, Any] | Rule[Any]
@@ -17,7 +17,7 @@ _MISSING: Any = object()
 
 
 class CycleError(RuntimeError):
-    """Raised when a demand cycle is detected."""
+    """Raised when a demand cycle is detected and no iterate policy was given."""
 
     def __init__(self, path: tuple[RuleKey, ...], *, names: dict[int, str] | None = None) -> None:
         self.path = path
@@ -26,6 +26,43 @@ class CycleError(RuntimeError):
             _format_cell(names.get(cell[0], str(cell[0])), cell[1]) for cell in path
         )
         super().__init__(f"Demand cycle: {parts}")
+
+
+class ConvergenceError(RuntimeError):
+    """Raised when a cyclic demand does not converge within ``max_iter``.
+
+    ``values`` is the cut cell's seed followed by each computed iterate.
+    ``residuals[i]`` is ``distance(values[i], values[i + 1])``. Inspect them
+    to see oscillation, blow-up, or a slow crawl.
+    """
+
+    def __init__(
+        self,
+        cell: RuleKey,
+        *,
+        iterations: int,
+        residual: float,
+        tol: float,
+        values: tuple[Any, ...],
+        residuals: tuple[float, ...],
+        names: dict[int, str] | None = None,
+    ) -> None:
+        self.cell = cell
+        self.iterations = iterations
+        self.residual = residual
+        self.tol = tol
+        self.values = values
+        self.residuals = residuals
+        names = names or {}
+        label = _format_cell(names.get(cell[0], str(cell[0])), cell[1])
+        lines = [
+            (
+                f"Failed to converge {label} after {iterations} iterations "
+                f"(distance={residual}, tol={tol})"
+            ),
+            *_history_lines(values, residuals),
+        ]
+        super().__init__("\n".join(lines))
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,19 +95,53 @@ def _format_cell(name: str, key: Hashable) -> str:
     return f"{name}@{key!r}"
 
 
+_HISTORY_HEAD = 8
+_HISTORY_TAIL = 12
+_HISTORY_ALL = _HISTORY_HEAD + _HISTORY_TAIL
+
+
+def _history_lines(values: tuple[Any, ...], residuals: tuple[float, ...]) -> list[str]:
+    """Render seed + iterates; omit a middle span when the trace is long."""
+    lines = [f"  0: {values[0]!r}"]
+    for index, (value, residual) in enumerate(zip(values[1:], residuals, strict=True), start=1):
+        lines.append(f"  {index}: {value!r}  distance={residual}")
+    if len(lines) <= _HISTORY_ALL:
+        return lines
+    omitted = len(lines) - _HISTORY_HEAD - _HISTORY_TAIL
+    return [
+        *lines[:_HISTORY_HEAD],
+        f"  ... ({omitted} iterates omitted) ...",
+        *lines[-_HISTORY_TAIL:],
+    ]
+
+
 def _completed(value: Any) -> Step[Any]:
     """A step that immediately completes with `value`."""
     return value
     yield  # unreachable; makes this function a generator
 
 
+@dataclass(slots=True)
+class _FixedPoint:
+    spec: Iterate[Any]
+    seed: Any
+    iteration: int = 0
+    written: list[RuleKey] = field(default_factory=list)
+    guesses: list[Any] = field(default_factory=list)
+    residuals: list[float] = field(default_factory=list)
+
+
 class Context:
-    def __init__(self):
+    def __init__(self, *, tol: float = 1e-9, max_iter: int = 1000) -> None:
+        self._tol = tol
+        self._max_iter = max_iter
         self._compute_cache: dict[RuleKey, Any] = {}
         self._deps: dict[RuleKey, set[RuleKey]] = {}
         self._stack: list[RuleKey] = []
         self._on_stack: set[RuleKey] = set()
         self._targets: dict[int, Target] = {}
+        self._pending_spec: dict[RuleKey, Iterate[Any]] = {}
+        self._fp: dict[RuleKey, _FixedPoint] = {}
 
     def get_at[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> V:
         return self._resolve(rule, key, lambda: rule.compute(key))
@@ -107,8 +178,9 @@ class Context:
         # Suspending scheduler: each frame is a paused ``compute`` generator.
         # Yielded ``Demand``s either resolve from cache immediately or push a
         # new frame; finished frames send their return value back into the
-        # frame that demanded them. Every ``compute`` body runs exactly once
-        # per cell and no Python recursion is used.
+        # frame that demanded them. Acyclic ``compute`` bodies run exactly
+        # once per cell. Cyclic demands with an ``Iterate`` policy re-run the
+        # cut cell until successive values are close. No Python recursion.
         stack_start = len(self._stack)
         frames: list[Step[Any]] = []
         self._push(cell, compute(), frames)
@@ -121,8 +193,7 @@ class Context:
                     finished = self._stack.pop()
                     self._on_stack.discard(finished)
                     frames.pop()
-                    self._compute_cache[finished] = stop.value
-                    to_send = stop.value
+                    to_send = self._finish(finished, stop.value, frames)
                 else:
                     dep_target = demanded.target
                     child: RuleKey = (dep_target.id, demanded.key)
@@ -133,8 +204,10 @@ class Context:
                     if dep_cached is not _MISSING:
                         to_send = dep_cached
                     elif child in self._on_stack:
-                        self._raise_cycle(child)
+                        to_send = self._cut(child, demanded.iterate)
                     else:
+                        if demanded.iterate is not None:
+                            self._pending_spec.setdefault(child, demanded.iterate)
                         self._push(child, _start(dep_target, demanded.key), frames)
                         to_send = None
         finally:
@@ -154,7 +227,68 @@ class Context:
         else:
             frames.append(_completed(result))
 
-    def _raise_cycle(self, cell: RuleKey) -> None:
+    def _cut(self, child: RuleKey, iterate: Iterate[Any] | None) -> Any:
+        spec = iterate if iterate is not None else self._pending_spec.get(child)
+        if spec is None:
+            self._raise_cycle(child)
+        fp = self._fp.get(child)
+        if fp is None:
+            fp = _FixedPoint(spec=spec, seed=spec.seed, guesses=[spec.seed])
+            self._fp[child] = fp
+        return fp.seed
+
+    def _finish(self, finished: RuleKey, value: Any, frames: list[Step[Any]]) -> Any:
+        fp = self._fp.get(finished)
+        if fp is None:
+            return self._commit(finished, value)
+
+        fp.iteration += 1
+        residual = fp.spec.distance(fp.seed, value)
+        fp.guesses.append(value)
+        fp.residuals.append(residual)
+        spec_tol = fp.spec.tol
+        tol: float = self._tol if spec_tol is None else spec_tol
+        spec_max_iter = fp.spec.max_iter
+        max_iter: int = self._max_iter if spec_max_iter is None else spec_max_iter
+        if residual < tol:
+            del self._fp[finished]
+            return self._commit(finished, value)
+        if fp.iteration >= max_iter:
+            raise ConvergenceError(
+                finished,
+                iterations=fp.iteration,
+                residual=residual,
+                tol=tol,
+                values=tuple(fp.guesses),
+                residuals=tuple(fp.residuals),
+                names=self._target_names(),
+            )
+        self._invalidate(fp)
+        fp.seed = value
+        target = self._targets[finished[0]]
+        self._push(finished, _start(target, finished[1]), frames)
+        return None
+
+    def _commit(self, finished: RuleKey, value: Any) -> Any:
+        self._compute_cache[finished] = value
+        self._pending_spec.pop(finished, None)
+        self._note_written(finished)
+        return value
+
+    def _note_written(self, finished: RuleKey) -> None:
+        for cell, state in self._fp.items():
+            if cell in self._on_stack:
+                state.written.append(finished)
+
+    def _invalidate(self, fp: _FixedPoint) -> None:
+        for key in fp.written:
+            self._compute_cache.pop(key, None)
+            self._deps.pop(key, None)
+            self._pending_spec.pop(key, None)
+            self._fp.pop(key, None)
+        fp.written.clear()
+
+    def _raise_cycle(self, cell: RuleKey) -> NoReturn:
         cycle_start = self._stack.index(cell)
         path = tuple(self._stack[cycle_start:])
         raise CycleError(path, names=self._target_names())
@@ -167,10 +301,11 @@ class Context:
             return DepNode(name=name, key=key, value=value, deps=())
 
         seen = seen | {cell}
-        children = sorted(
-            self._deps.get(cell, ()),
-            key=lambda c: (self._targets[c[0]].name, repr(c[1]), c[0]),
-        )
+
+        def sort_key(child: RuleKey) -> tuple[str, str, int]:
+            return (self._targets[child[0]].name, repr(child[1]), child[0])
+
+        children = sorted(self._deps.get(cell, ()), key=sort_key)
         return DepNode(
             name=name,
             key=key,
