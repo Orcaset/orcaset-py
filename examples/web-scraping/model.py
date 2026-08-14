@@ -12,9 +12,8 @@ same seasonal path.
 
 from collections.abc import Iterator
 from csv import DictReader
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from dateutil.relativedelta import relativedelta
 from scrape import tsa_passengers
@@ -23,7 +22,6 @@ from orcaset import (
     YF,
     CellFactory,
     CellStream,
-    Context,
     Maybe,
     Period,
     PeriodSeries,
@@ -42,8 +40,6 @@ QUARTER = relativedelta(months=3, day=31)
 YEAR = relativedelta(years=1)
 ACCRUE = accrual(YF.cmonthly)
 CSV_PATH = Path(__file__).resolve().parent / "data" / "luv_operating_revenue.csv"
-OUTPUT_START = date(2024, 12, 31)
-EASTERN = ZoneInfo("America/New_York")
 COLUMNS = (
     "passenger_non_loyalty",
     "loyalty_air_transport",
@@ -53,23 +49,10 @@ COLUMNS = (
 )
 
 
-def as_of_date() -> date:
-    return datetime.now(EASTERN).date()
-
-
-def quarter_label(day: date) -> str:
-    return f"Q{(day.month - 1) // 3 + 1} {day.year}"
-
-
 def parse_quarter_label(label: str) -> Period:
     tag, year_text = label.split()
     end = date(int(year_text), int(tag[1:]) * 3, 1) + relativedelta(day=31)
     return Period(end - QUARTER, end)
-
-
-def reporting_quarters(today: date) -> list[Period]:
-    """Q1 2025 through Q4 of the next calendar (fiscal) year after ``today``."""
-    return Period.list(OUTPUT_START, QUARTER, date(today.year + 1, 12, 31))
 
 
 def load_history(path: Path = CSV_PATH) -> list[tuple[Period, dict[str, float]]]:
@@ -100,13 +83,6 @@ def qtd_windows(current: Period, last_observation: date) -> tuple[Period, Period
     )
 
 
-def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
-    days = list(ctx.get(tsa_passengers.keys()))
-    if not days:
-        raise RuntimeError("TSA checkpoint series is empty")
-    return qtd_windows(NOWCAST_QUARTER, days[-1].end)
-
-
 @PeriodSeries.define("TSA QTD factor", exact)
 def tsa_qtd_factor() -> CellStream[Period, float]:
     keys = yield from get(tsa_passengers.keys())
@@ -128,8 +104,6 @@ def tsa_qtd_factor() -> CellStream[Period, float]:
 
 
 def _line_item(name: str, column: str, *, scale_with_tsa: bool) -> PeriodSeries[Maybe[float]]:
-    forecast_end = date(as_of_date().year + 1, 12, 31)
-
     @PeriodSeries.define(name, ACCRUE)
     def series() -> Iterator[tuple[Period, float | CellFactory[float]]]:
         for period, values in HISTORY:
@@ -148,7 +122,7 @@ def _line_item(name: str, column: str, *, scale_with_tsa: bool) -> PeriodSeries[
 
         yield NOWCAST_QUARTER, nowcast
 
-        for key in Period.seq(NOWCAST_QUARTER.end, QUARTER, forecast_end):
+        for key in Period.seq(NOWCAST_QUARTER.end, QUARTER):
 
             def factory(period: Period = key) -> Step[float]:
                 prior = yield from get_at(series, period.shift(-QUARTER))

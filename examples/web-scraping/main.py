@@ -3,18 +3,42 @@
 
 """Run the web-scraping nowcast and print a quarterly operating-revenue table."""
 
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
 from model import (
     NOWCAST_QUARTER,
-    as_of_date,
-    nowcast_windows,
+    QUARTER,
     operating_revenue_stmt,
-    quarter_label,
-    reporting_quarters,
+    qtd_windows,
     tsa_qtd_factor,
 )
 from scrape import TSA_URL, tsa_passengers
 
-from orcaset import Context, fixed_width_table, isna
+from orcaset import Context, Period, fixed_width_table, isna
+
+OUTPUT_START = date(2024, 12, 31)
+EASTERN = ZoneInfo("America/New_York")
+
+
+def as_of_date() -> date:
+    return datetime.now(EASTERN).date()
+
+
+def quarter_label(day: date) -> str:
+    return f"Q{(day.month - 1) // 3 + 1} {day.year}"
+
+
+def reporting_quarters(today: date) -> list[Period]:
+    """Q1 2025 through Q4 of the next calendar (fiscal) year after ``today``."""
+    return Period.list(OUTPUT_START, QUARTER, date(today.year + 1, 12, 31))
+
+
+def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
+    days = list(ctx.get(tsa_passengers.keys()))
+    if not days:
+        raise RuntimeError("TSA checkpoint series is empty")
+    return qtd_windows(NOWCAST_QUARTER, days[-1].end)
 
 
 def _format_millions(value: float | None) -> str:

@@ -27,7 +27,7 @@ uvx pyrefly check
 | [`scrape.py`](scrape.py) | Download and parse the TSA table; expose `tsa_passengers` as a daily `PeriodSeries` |
 | [`data/luv_operating_revenue.csv`](data/luv_operating_revenue.csv) | Reported quarterly revenue ($ millions), loaded at runtime |
 | [`model.py`](model.py) | History, current-quarter nowcast, seasonal forecast, and nested `Stmt` layout |
-| [`main.py`](main.py) | Evaluate in a `Context` and print the table |
+| [`main.py`](main.py) | Reporting dates, evaluate in a `Context`, and print the table |
 
 The scrape is not a pre-step. `tsa_passengers` cells run on first demand in a `Context`. A single `tsa_qtd_factor` series demands those daily keys, then revenue lines `get_at` the factor like any other input.
 
