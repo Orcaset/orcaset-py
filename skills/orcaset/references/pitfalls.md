@@ -88,7 +88,7 @@ extra specs are unused for that evaluation order rather than nested solvers.
 
 ## Unsigned / double-negative expenses
 
-Pick one sign convention and stick to it. If costs are stored negative, add them to revenue; if positive, subtract. Capex and depreciation in rollforwards are easy to flip twice — match `examples/simple-three-statement.py`.
+Pick one sign convention and stick to it. If costs are stored negative, add them to revenue; if positive, subtract. Capex and depreciation in rollforwards are easy to flip twice — apply the same sign on the income statement and in the balance-sheet update.
 
 ## Generator returned as a cell value
 
