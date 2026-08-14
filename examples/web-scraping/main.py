@@ -3,8 +3,7 @@
 
 """Run the example. Scrapes TSA checkpoint volume to estimate current-quarter passenger revenue."""
 
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
 
 from model import NOWCAST_QUARTER, QUARTER, operating_revenue_stmt, qtd_windows
 from scrape import TSA_URL, tsa_passengers
@@ -12,11 +11,7 @@ from scrape import TSA_URL, tsa_passengers
 from orcaset import Context, Period, StatementResult, fixed_width_table, isna
 
 OUTPUT_START = date(2025, 12, 31)
-EASTERN = ZoneInfo("America/New_York")
-
-
-def as_of_date() -> date:
-    return datetime.now(EASTERN).date()
+OUTPUT_END = date(2026, 12, 31)
 
 
 def quarter_label(day: date) -> str:
@@ -26,9 +21,9 @@ def quarter_label(day: date) -> str:
     return f"Q{(day.month - 1) // 3 + 1} {day.year}"
 
 
-def reporting_quarters(today: date) -> list[Period]:
-    """Q1 2026 through Q4 of the next calendar (fiscal) year after ``today``."""
-    return Period.list(OUTPUT_START, QUARTER, date(today.year + 1, 12, 31))
+def reporting_quarters() -> list[Period]:
+    """Q1 2026 through Q4 2026."""
+    return Period.list(OUTPUT_START, QUARTER, OUTPUT_END)
 
 
 def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
@@ -43,7 +38,7 @@ def _format_value(value: float | None) -> str:
 
 
 def _quarterly_table(result: StatementResult) -> str:
-    """Quarter-end columns starting at Q1 2026, without the Start/Q4 2025 stub."""
+    """Quarter-end columns for Q1 2026 through Q4 2026."""
     table = fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_value)
     _start, end_header, *body = table.splitlines()
     if not end_header.startswith("End"):
@@ -53,7 +48,6 @@ def _quarterly_table(result: StatementResult) -> str:
 
 
 def main() -> None:
-    today = as_of_date()
     ctx = Context()
     qtd, prior_qtd = nowcast_windows(ctx)
     current_tsa = ctx.get_at(tsa_passengers, qtd)
@@ -74,7 +68,7 @@ def main() -> None:
     print(f"TSA QTD {prior_qtd.start.isoformat()} → {prior_qtd.end.isoformat()}: {prior_tsa:,.0f}")
     print()
 
-    result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters(today))
+    result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters())
     print(_quarterly_table(result))
 
 
