@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterator
 from datetime import date, timedelta
 
-import httpx
+import requests
 from bs4 import BeautifulSoup
 
 from orcaset import Period, PeriodSeries, accrual
@@ -27,7 +27,7 @@ _FIRST_REPORTING_YEAR = 2025
 
 
 def _get(url: str) -> str:
-    response = httpx.get(url, headers=_HEADERS, timeout=30.0, follow_redirects=True)
+    response = requests.get(url, headers=_HEADERS, timeout=30.0)
     response.raise_for_status()
     return response.text
 
