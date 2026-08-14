@@ -2,7 +2,7 @@
 
 This example inlines a live web scrape into an orcaset model. Daily [TSA checkpoint travel numbers](https://www.tsa.gov/travel/passenger-volumes) nowcast the current quarter of Southwest Airlines (LUV) passenger revenue; later quarters follow last year's seasonal quarter-on-quarter path.
 
-It is a standalone uv project so scraping libraries stay out of the orcaset package. orcaset is pinned to `0.7.1` and resolved from the repo checkout.
+It is a standalone uv project so scraping libraries stay out of the orcaset package. orcaset is pinned to `0.8.0` and resolved from the repo checkout.
 
 ## Run
 

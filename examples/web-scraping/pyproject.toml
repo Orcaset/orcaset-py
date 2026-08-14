@@ -6,7 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.13.0",
     "httpx>=0.28.0",
-    "orcaset==0.7.1",
+    "orcaset==0.8.0",
     "types-beautifulsoup4>=4.12.0",
 ]
 
