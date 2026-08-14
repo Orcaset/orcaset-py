@@ -110,22 +110,22 @@ def passenger() -> CellStream[Period, float]:
         yield key, hold
 
 
-def _held_after_history(name: str, column: str) -> PeriodSeries[Maybe[float]]:
-    @PeriodSeries.define(name, ACCRUE)
-    def series() -> Iterator[tuple[Period, float]]:
-        last_period, last_value = HISTORY[0][0], HISTORY[0][1][column]
-        for period, values in HISTORY:
-            last_period = period
-            last_value = values[column]
-            yield period, last_value
-        for key in Period.seq(last_period.end, QUARTER):
-            yield key, last_value
-
-    return series
+@PeriodSeries.define("Freight", ACCRUE)
+def freight() -> Iterator[tuple[Period, float]]:
+    for period, values in HISTORY:
+        yield period, values["freight"]
+    last_period, last_values = HISTORY[-1]
+    for key in Period.seq(last_period.end, QUARTER):
+        yield key, last_values["freight"]
 
 
-freight = _held_after_history("Freight", "freight")
-other = _held_after_history("Other", "other")
+@PeriodSeries.define("Other", ACCRUE)
+def other() -> Iterator[tuple[Period, float]]:
+    for period, values in HISTORY:
+        yield period, values["other"]
+    last_period, last_values = HISTORY[-1]
+    for key in Period.seq(last_period.end, QUARTER):
+        yield key, last_values["other"]
 
 total_operating_revenue: PeriodSeriesBase[Maybe[float]] = (passenger + freight + other).named(
     "Total operating revenue"
