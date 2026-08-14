@@ -37,7 +37,7 @@ def tsa_passengers() -> Iterator[tuple[Period, float]]:
 
 It defines the "TSA checkpoint passengers" line item. The line item is inert until it is evaluated. On first access, the `checkpoint_volumes` function runs, which scrapes the data from tsa.gov and returns a sequence of `(date, passenger count)` tuples. Since orcaset caches values, the scrape function will only be triggered once within an evaluation context.
 
-The scraping process uses well-known libraries from Python's open ecosystem. They are robust, actively maintained, and come for free as part of the open source Python ecosystem.
+The scraping process uses well-known libraries from Python's open ecosystem. They are robust, actively maintained, and come for free by simply using Python.
 
 * **`requests`:** Simple, synchronous HTTP client used to retrieve the webpage from tsa.gov. Maintained by the Python Software Foundation.
 * **`beautifulsoup4`:** HTML parsing library that finds and extracts the passenger data from the table in the webpage. Mature library with over twenty years of development.

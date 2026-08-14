@@ -20,10 +20,8 @@ from scrape import tsa_passengers
 from orcaset import (
     YF,
     CellStream,
-    Maybe,
     Period,
     PeriodSeries,
-    PeriodSeriesBase,
     Step,
     Stmt,
     Total,
@@ -81,9 +79,11 @@ def passenger() -> CellStream[Period, float]:
         raise RuntimeError("TSA checkpoint series is empty")
     qtd, prior_qtd = qtd_windows(NOWCAST_QUARTER, days[-1].end)
 
+    # Historical values
     for period, values in HISTORY:
         yield period, values["passenger_revenue"]
 
+    # Current quarter estimated values using TSA volume
     def estimate(
         period: Period = NOWCAST_QUARTER,
         qtd_period: Period = qtd,
@@ -100,6 +100,7 @@ def passenger() -> CellStream[Period, float]:
 
     yield NOWCAST_QUARTER, estimate
 
+    # Future values after the current quarter, held constant
     def hold() -> Step[float]:
         value = yield from get_at(passenger, NOWCAST_QUARTER)
         if isna(value):
@@ -112,6 +113,7 @@ def passenger() -> CellStream[Period, float]:
 
 @PeriodSeries.define("Freight", ACCRUE)
 def freight() -> Iterator[tuple[Period, float]]:
+    """Historical values, then held constant."""
     for period, values in HISTORY:
         yield period, values["freight"]
     last_period, last_values = HISTORY[-1]
@@ -121,13 +123,14 @@ def freight() -> Iterator[tuple[Period, float]]:
 
 @PeriodSeries.define("Other", ACCRUE)
 def other() -> Iterator[tuple[Period, float]]:
+    """Historical values, then held constant."""
     for period, values in HISTORY:
         yield period, values["other"]
     last_period, last_values = HISTORY[-1]
     for key in Period.seq(last_period.end, QUARTER):
         yield key, last_values["other"]
 
-total_operating_revenue: PeriodSeriesBase[Maybe[float]] = (passenger + freight + other).named(
+total_operating_revenue = (passenger + freight + other).named(
     "Total operating revenue"
 )
 

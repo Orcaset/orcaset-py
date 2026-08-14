@@ -69,5 +69,6 @@ def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
 
 @PeriodSeries.define("TSA checkpoint passengers", _BY_DAYS)
 def tsa_passengers() -> Iterator[tuple[Period, float]]:
+    """Historical daily TSA checkpoint volume. Scraped from tsa.gov on first access."""
     for travel_date, count in checkpoint_volumes():
         yield Period(travel_date - timedelta(days=1), travel_date), count
