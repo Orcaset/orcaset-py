@@ -9,18 +9,6 @@ change between minor releases.
 
 ## [Unreleased]
 
-### Added
-
-- Added `DateOffset`, a structural protocol for values accepted by
-  `Period.from_end`, `from_start`, `shift`, `seq`, and `list`.
-
-### Fixed
-
-- `Period` frequency/offset parameters no longer require a single
-  `dateutil.relativedelta` class identity, so `uvx pyrefly check` on a
-  consumer file does not report `relativedelta` as incompatible with
-  `relativedelta`.
-
 ## [0.8.0] - 2026-08-13
 
 ### Added
