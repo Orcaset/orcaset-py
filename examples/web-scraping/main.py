@@ -1,18 +1,12 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Run the web-scraping nowcast and print a quarterly operating-revenue table."""
+"""Run the example. Scrapes TSA checkpoint volume to estimate current-quarter passenger revenue."""
 
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from model import (
-    NOWCAST_QUARTER,
-    QUARTER,
-    operating_revenue_stmt,
-    qtd_windows,
-    tsa_qtd_factor,
-)
+from model import NOWCAST_QUARTER, QUARTER, operating_revenue_stmt, qtd_windows
 from scrape import TSA_URL, tsa_passengers
 
 from orcaset import Context, Period, fixed_width_table, isna
@@ -41,7 +35,7 @@ def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
     return qtd_windows(NOWCAST_QUARTER, days[-1].end)
 
 
-def _format_millions(value: float | None) -> str:
+def _format_value(value: float | None) -> str:
     return "" if value is None else f"{value:,.0f}"
 
 
@@ -51,15 +45,15 @@ def main() -> None:
     qtd, prior_qtd = nowcast_windows(ctx)
     current_tsa = ctx.get_at(tsa_passengers, qtd)
     prior_tsa = ctx.get_at(tsa_passengers, prior_qtd)
-    factor = ctx.get_at(tsa_qtd_factor, NOWCAST_QUARTER)
-    if isna(current_tsa) or isna(prior_tsa) or isna(factor):
-        raise RuntimeError("TSA QTD volumes are missing; cannot nowcast")
+    if isna(current_tsa) or isna(prior_tsa) or prior_tsa == 0.0:
+        raise RuntimeError("TSA QTD volumes are missing; cannot estimate passenger revenue")
+    factor = current_tsa / prior_tsa
 
     print("Southwest Airlines (LUV) operating revenue")
-    print("$ millions")
+    print("Revenue in $ millions; TSA checkpoint passengers in travelers")
     print()
     print(
-        f"Nowcast {quarter_label(NOWCAST_QUARTER.end)} passenger revenue "
+        f"Estimate {quarter_label(NOWCAST_QUARTER.end)} passenger revenue "
         f"from TSA checkpoint QTD vs the prior quarter ({factor:.4f})."
     )
     print(f"Source: {TSA_URL}")
@@ -68,7 +62,7 @@ def main() -> None:
     print()
 
     result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters(today))
-    print(fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_millions))
+    print(fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_value))
 
 
 if __name__ == "__main__":

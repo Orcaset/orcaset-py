@@ -7,6 +7,7 @@ Fetching runs when the series cells are first demanded in a ``Context``, so
 the revenue model can ``get_at`` passenger counts like any other line item.
 """
 
+import re
 from collections.abc import Iterator
 from datetime import date, timedelta
 
@@ -20,14 +21,19 @@ _HEADERS = {
     "User-Agent": "orcaset-web-scraping-example/0.1 (+https://github.com/orcaset/orcaset-py)",
     "Accept": "text/html,application/xhtml+xml",
 }
+_ARCHIVE_YEAR = re.compile(r"/travel/passenger-volumes/(\d{4})")
 _BY_DAYS = accrual(lambda start, end: float((end - start).days))
+_FIRST_REPORTING_YEAR = 2025
 
 
-def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
-    """Download and parse ``(travel date, checkpoint passengers)`` rows."""
+def _get(url: str) -> str:
     response = httpx.get(url, headers=_HEADERS, timeout=30.0, follow_redirects=True)
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+    return response.text
+
+
+def _parse_rows(html: str, url: str) -> list[tuple[date, float]]:
+    soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table", limit=1)
     if not tables:
         raise RuntimeError(f"no checkpoint table found at {url}")
@@ -44,10 +50,21 @@ def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
                 float(cells[1].replace(",", "")),
             )
         )
-    parsed.sort()
-    if not parsed:
-        raise RuntimeError(f"no checkpoint rows parsed from {url}")
     return parsed
+
+
+def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
+    """Download current and archived TSA tables as ``(travel date, passengers)``."""
+    html = _get(url)
+    by_date = dict(_parse_rows(html, url))
+    for year_text in sorted(set(_ARCHIVE_YEAR.findall(html))):
+        if int(year_text) < _FIRST_REPORTING_YEAR:
+            continue
+        archive_url = f"{url.rstrip('/')}/{year_text}"
+        by_date.update(_parse_rows(_get(archive_url), archive_url))
+    if not by_date:
+        raise RuntimeError(f"no checkpoint rows parsed from {url}")
+    return sorted(by_date.items())
 
 
 @PeriodSeries.define("TSA checkpoint passengers", _BY_DAYS)

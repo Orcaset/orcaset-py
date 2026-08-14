@@ -1,13 +1,12 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Southwest operating-revenue series: reported history, TSA nowcast, seasonal forecast.
+"""Southwest operating-revenue series from reported history and TSA checkpoint volumes.
 
-Passenger lines for the first unreported quarter scale last quarter by the TSA
-checkpoint QTD change versus the same elapsed window of the prior quarter.
-Later quarters apply last year's corresponding QoQ seasonal ratio. Freight and
-other hold the last reported value in the current quarter, then follow the
-same seasonal path.
+Passenger revenue for the first unreported quarter is prior-quarter passenger
+revenue times current QTD TSA volume over the same elapsed window of the prior
+quarter, then held constant. Freight and other stay at their last reported
+values.
 """
 
 from collections.abc import Iterator
@@ -20,7 +19,6 @@ from scrape import tsa_passengers
 
 from orcaset import (
     YF,
-    CellFactory,
     CellStream,
     Maybe,
     Period,
@@ -30,23 +28,15 @@ from orcaset import (
     Stmt,
     Total,
     accrual,
-    exact,
     get,
     get_at,
     isna,
 )
 
 QUARTER = relativedelta(months=3, day=31)
-YEAR = relativedelta(years=1)
 ACCRUE = accrual(YF.cmonthly)
 CSV_PATH = Path(__file__).resolve().parent / "data" / "luv_operating_revenue.csv"
-COLUMNS = (
-    "passenger_non_loyalty",
-    "loyalty_air_transport",
-    "ancillary",
-    "freight",
-    "other",
-)
+COLUMNS = ("passenger_revenue", "freight", "other")
 
 
 def parse_quarter_label(label: str) -> Period:
@@ -83,89 +73,65 @@ def qtd_windows(current: Period, last_observation: date) -> tuple[Period, Period
     )
 
 
-@PeriodSeries.define("TSA QTD factor", exact)
-def tsa_qtd_factor() -> CellStream[Period, float]:
+@PeriodSeries.define("Passenger", ACCRUE)
+def passenger() -> CellStream[Period, float]:
     keys = yield from get(tsa_passengers.keys())
     days = list(keys)
     if not days:
         raise RuntimeError("TSA checkpoint series is empty")
     qtd, prior_qtd = qtd_windows(NOWCAST_QUARTER, days[-1].end)
 
-    def factory() -> Step[float]:
-        current_tsa = yield from get_at(tsa_passengers, qtd)
-        prior_tsa = yield from get_at(tsa_passengers, prior_qtd)
-        if isna(current_tsa) or isna(prior_tsa):
-            raise ValueError("missing TSA QTD volumes")
+    for period, values in HISTORY:
+        yield period, values["passenger_revenue"]
+
+    def estimate(
+        period: Period = NOWCAST_QUARTER,
+        qtd_period: Period = qtd,
+        prior_qtd_period: Period = prior_qtd,
+    ) -> Step[float]:
+        prior = yield from get_at(passenger, period.shift(-QUARTER))
+        current_tsa = yield from get_at(tsa_passengers, qtd_period)
+        prior_tsa = yield from get_at(tsa_passengers, prior_qtd_period)
+        if isna(prior) or isna(current_tsa) or isna(prior_tsa):
+            raise ValueError(f"missing TSA QTD inputs for passenger revenue at {period}")
         if prior_tsa == 0.0:
             raise ValueError("prior-quarter TSA QTD is zero")
-        return current_tsa / prior_tsa
+        return prior * (current_tsa / prior_tsa)
 
-    yield NOWCAST_QUARTER, factory
+    yield NOWCAST_QUARTER, estimate
+
+    def hold() -> Step[float]:
+        value = yield from get_at(passenger, NOWCAST_QUARTER)
+        if isna(value):
+            raise ValueError("missing current-quarter passenger revenue")
+        return value
+
+    for key in Period.seq(NOWCAST_QUARTER.end, QUARTER):
+        yield key, hold
 
 
-def _line_item(name: str, column: str, *, scale_with_tsa: bool) -> PeriodSeries[Maybe[float]]:
+def _held_after_history(name: str, column: str) -> PeriodSeries[Maybe[float]]:
     @PeriodSeries.define(name, ACCRUE)
-    def series() -> Iterator[tuple[Period, float | CellFactory[float]]]:
+    def series() -> Iterator[tuple[Period, float]]:
+        last_period, last_value = HISTORY[0][0], HISTORY[0][1][column]
         for period, values in HISTORY:
-            yield period, values[column]
-
-        def nowcast(period: Period = NOWCAST_QUARTER) -> Step[float]:
-            prior = yield from get_at(series, period.shift(-QUARTER))
-            if isna(prior):
-                raise ValueError(f"missing {name} for {period.shift(-QUARTER)}")
-            if not scale_with_tsa:
-                return prior
-            factor = yield from get_at(tsa_qtd_factor, period)
-            if isna(factor):
-                raise ValueError(f"missing TSA QTD factor for {name} at {period}")
-            return prior * factor
-
-        yield NOWCAST_QUARTER, nowcast
-
-        for key in Period.seq(NOWCAST_QUARTER.end, QUARTER):
-
-            def factory(period: Period = key) -> Step[float]:
-                prior = yield from get_at(series, period.shift(-QUARTER))
-                seasonal_num = yield from get_at(series, period.shift(-YEAR))
-                seasonal_den = yield from get_at(series, period.shift(-YEAR).shift(-QUARTER))
-                if isna(prior) or isna(seasonal_num) or isna(seasonal_den):
-                    raise ValueError(f"missing seasonal inputs for {name} at {period}")
-                if seasonal_den == 0.0:
-                    raise ValueError(f"zero seasonal denominator for {name} at {period}")
-                return prior * (seasonal_num / seasonal_den)
-
-            yield key, factory
+            last_period = period
+            last_value = values[column]
+            yield period, last_value
+        for key in Period.seq(last_period.end, QUARTER):
+            yield key, last_value
 
     return series
 
 
-passenger_non_loyalty = _line_item(
-    "Passenger non-loyalty", "passenger_non_loyalty", scale_with_tsa=True
-)
-loyalty_air_transport = _line_item(
-    "Loyalty – air transport", "loyalty_air_transport", scale_with_tsa=True
-)
-ancillary = _line_item("Ancillary", "ancillary", scale_with_tsa=True)
-freight = _line_item("Freight", "freight", scale_with_tsa=False)
-other = _line_item("Other", "other", scale_with_tsa=False)
+freight = _held_after_history("Freight", "freight")
+other = _held_after_history("Other", "other")
 
-passenger_revenue: PeriodSeriesBase[Maybe[float]] = (
-    passenger_non_loyalty + loyalty_air_transport + ancillary
-).named("Passenger revenue")
-total_operating_revenue: PeriodSeriesBase[Maybe[float]] = (
-    passenger_revenue + freight + other
-).named("Total operating revenue")
+total_operating_revenue: PeriodSeriesBase[Maybe[float]] = (passenger + freight + other).named(
+    "Total operating revenue"
+)
 
 operating_revenue_stmt = Stmt(
-    Total(
-        total_operating_revenue,
-        [
-            Total(
-                passenger_revenue,
-                [passenger_non_loyalty, loyalty_air_transport, ancillary],
-            ),
-            freight,
-            other,
-        ],
-    )
+    tsa_passengers,
+    Total(total_operating_revenue, [passenger, freight, other]),
 )
