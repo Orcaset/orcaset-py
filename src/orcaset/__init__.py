@@ -17,7 +17,7 @@ from orcaset.formatters import (
     markdown_table,
 )
 from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
-from orcaset.period import Period, date_union, period_union
+from orcaset.period import DateOffset, Period, date_union, period_union
 from orcaset.period_series import (
     PeriodExtendSeries,
     PeriodMap2Series,
@@ -78,6 +78,7 @@ __all__ = [
     "DateFormatter",
     "DateMap2Series",
     "DateMapSeries",
+    "DateOffset",
     "DateSeries",
     "DateSeriesBase",
     "DateValue",

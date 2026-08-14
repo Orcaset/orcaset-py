@@ -10,6 +10,14 @@ from dateutil.relativedelta import relativedelta
 from orcaset import Period, date_union, period_union
 
 
+def test_from_end_and_shift_preserve_month_end_quarters():
+    q1 = Period(date(2025, 12, 31), date(2026, 3, 31))
+    quarter = relativedelta(months=3, day=31)
+
+    assert q1.from_end(quarter) == Period(date(2026, 3, 31), date(2026, 6, 30))
+    assert q1.shift(-quarter) == Period(date(2025, 9, 30), date(2025, 12, 31))
+
+
 def test_period_union_splits_at_every_source_boundary():
     monthly = Period.seq(
         date(2026, 1, 1),

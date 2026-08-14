@@ -6,9 +6,19 @@ from __future__ import annotations
 from collections.abc import Generator, Iterable, Iterator
 from datetime import date
 from heapq import merge
-from typing import NamedTuple
+from typing import NamedTuple, Protocol, Self
 
-from dateutil.relativedelta import relativedelta
+
+class DateOffset(Protocol):
+    """A duration that can be added to a `date` and scaled by an integer.
+
+    ``dateutil.relativedelta.relativedelta`` is the intended implementation.
+    The protocol is structural so type checkers do not require one
+    ``relativedelta`` class identity (stubs vs the installed package).
+    """
+
+    def __radd__(self, other: date) -> date: ...
+    def __mul__(self, other: int) -> Self: ...
 
 
 class InvalidPeriodError(Exception):
@@ -69,27 +79,27 @@ class Period(_Period):
     def __repr__(self) -> str:
         return f"Period({self.start.isoformat()}, {self.end.isoformat()})"
 
-    def from_end(self, offset: relativedelta) -> Period:
+    def from_end(self, offset: DateOffset) -> Period:
         """New period with dates `end` and `end + offset`."""
         a, b = self.end, self.end + offset
         return Period(min(a, b), max(a, b))
 
-    def from_start(self, offset: relativedelta) -> Period:
+    def from_start(self, offset: DateOffset) -> Period:
         """New period with dates `start` and `start + offset`."""
         a, b = self.start, self.start + offset
         return Period(min(a, b), max(a, b))
 
-    def shift(self, offset: relativedelta) -> Period:
+    def shift(self, offset: DateOffset) -> Period:
         """New period by shifting both start and end dates by `offset`."""
         return Period(self.start + offset, self.end + offset)
 
     @classmethod
-    def seq(cls, start: date, freq: relativedelta, end: date | None = None) -> Generator[Period]:
+    def seq(cls, start: date, freq: DateOffset, end: date | None = None) -> Generator[Period]:
         """
         Create a generator of periods with duration `freq`. Infinite if `end` is `None`.
 
         `freq` must monotonically advance the period in chronological order. Preserves month-end dates
-        by multiplying `freq * period_count`.
+        by multiplying `freq * period_count`. Typically a ``relativedelta``.
         """
         i = 0
         end = end or date.max
@@ -103,12 +113,12 @@ class Period(_Period):
             period = Period(start + (freq * i), min(start + (freq * (i + 1)), end))
 
     @classmethod
-    def list(cls, start: date, freq: relativedelta, end: date) -> list[Period]:
+    def list(cls, start: date, freq: DateOffset, end: date) -> list[Period]:
         """
         Create a list of periods with duration `freq` ending at `end`.
 
         `freq` must monotonically advance the period in chronological order. Preserves month-end dates
-        by multiplying `freq * period_count`.
+        by multiplying `freq * period_count`. Typically a ``relativedelta``.
         """
         return list(Period.seq(start, freq, end))
 
