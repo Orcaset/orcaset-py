@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from model import NOWCAST_QUARTER, QUARTER, operating_revenue_stmt, qtd_windows
 from scrape import TSA_URL, tsa_passengers
 
-from orcaset import Context, Period, fixed_width_table, isna
+from orcaset import Context, Period, StatementResult, fixed_width_table, isna
 
 OUTPUT_START = date(2025, 12, 31)
 EASTERN = ZoneInfo("America/New_York")
@@ -20,6 +20,9 @@ def as_of_date() -> date:
 
 
 def quarter_label(day: date) -> str:
+    """Label inclusive quarter-end dates. Blank the exclusive opening boundary."""
+    if day <= OUTPUT_START:
+        return ""
     return f"Q{(day.month - 1) // 3 + 1} {day.year}"
 
 
@@ -37,6 +40,16 @@ def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
 
 def _format_value(value: float | None) -> str:
     return "" if value is None else f"{value:,.0f}"
+
+
+def _quarterly_table(result: StatementResult) -> str:
+    """Quarter-end columns starting at Q1 2026, without the Start/Q4 2025 stub."""
+    table = fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_value)
+    _start, end_header, *body = table.splitlines()
+    if not end_header.startswith("End"):
+        raise RuntimeError("expected End header from fixed_width_table")
+    header = f"   {end_header[3:]}".rstrip()
+    return "\n".join((header, *body))
 
 
 def main() -> None:
@@ -62,7 +75,7 @@ def main() -> None:
     print()
 
     result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters(today))
-    print(fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_value))
+    print(_quarterly_table(result))
 
 
 if __name__ == "__main__":

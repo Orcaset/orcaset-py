@@ -44,7 +44,7 @@ cd examples/web-scraping
 uv run python main.py
 ```
 
-The run prints the TSA QTD factor, then a fixed-width table of quarterly TSA checkpoint volume and operating revenue from Q1 2026 through Q4 of the next calendar year (Southwest's fiscal year is the calendar year). Current-quarter TSA is quarter-to-date.
+The run prints the TSA QTD factor, then a fixed-width table of quarterly TSA checkpoint volume and operating revenue. Column labels are quarter-end dates from Q1 2026 through Q4 of the next calendar year (Southwest's fiscal year is the calendar year). Current-quarter TSA is quarter-to-date.
 
 ## Layout
 
