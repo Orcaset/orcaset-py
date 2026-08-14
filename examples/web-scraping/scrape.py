@@ -23,7 +23,7 @@ _HEADERS = {
 }
 _ARCHIVE_YEAR = re.compile(r"/travel/passenger-volumes/(\d{4})")
 _BY_DAYS = accrual(lambda start, end: float((end - start).days))
-_FIRST_REPORTING_YEAR = 2025
+_FIRST_REPORTING_YEAR = 2026
 
 
 def _get(url: str) -> str:

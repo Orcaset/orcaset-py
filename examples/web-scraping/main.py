@@ -11,7 +11,7 @@ from scrape import TSA_URL, tsa_passengers
 
 from orcaset import Context, Period, fixed_width_table, isna
 
-OUTPUT_START = date(2024, 12, 31)
+OUTPUT_START = date(2025, 12, 31)
 EASTERN = ZoneInfo("America/New_York")
 
 
@@ -24,7 +24,7 @@ def quarter_label(day: date) -> str:
 
 
 def reporting_quarters(today: date) -> list[Period]:
-    """Q1 2025 through Q4 of the next calendar (fiscal) year after ``today``."""
+    """Q1 2026 through Q4 of the next calendar (fiscal) year after ``today``."""
     return Period.list(OUTPUT_START, QUARTER, date(today.year + 1, 12, 31))
 
 
