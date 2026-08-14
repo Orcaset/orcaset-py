@@ -29,7 +29,7 @@ uvx pyrefly check
 | [`model.py`](model.py) | History, current-quarter nowcast, seasonal forecast, and nested `Stmt` layout |
 | [`main.py`](main.py) | Evaluate in a `Context` and print the table |
 
-The scrape is not a pre-step. `tsa_passengers` cells run on first demand in a `Context`. Revenue cells `yield from get(tsa_passengers.keys())` before emitting the grid, then `get_at` QTD passenger counts the same way they read any other series.
+The scrape is not a pre-step. `tsa_passengers` cells run on first demand in a `Context`. A single `tsa_qtd_factor` series demands those daily keys, then revenue lines `get_at` the factor like any other input.
 
 ## Nowcast
 
