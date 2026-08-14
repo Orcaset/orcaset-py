@@ -1,16 +1,16 @@
-# Web scraping
+# Embedded Web Scraping
 
-This example embeds a live web scrape into an orcaset model. It scrapes the daily [TSA checkpoint travel numbers](https://www.tsa.gov/travel/passenger-volumes) to build the current quarter's estimate of passenger revenue for Southwest Airlines (LUV).
+This example demonstrates inline data retrieval by embedding a live web scrape into an orcaset model. It scrapes the daily [TSA checkpoint travel numbers](https://www.tsa.gov/travel/passenger-volumes) to build the current quarter's estimate of passenger revenue for Southwest Airlines (LUV).
 
 ## Model Structure
 
-Southwest reports revenue in three segments: passenger, freight, and other. This projects builds a basic revenue model with the following structure:
+Southwest reports revenue in three segments: passenger, freight, and other. This project builds a basic revenue model with the following structure:
 
 * **Passenger:** Current quarter estimated using relative QTD change in checkpoint volume against the prior quarter (i.e. `(current QTD / prior QTD) * total prior quarter`). Constant dollar value thereafter.
 * **Freight:** Held constant at last quarterly value.
 * **Other:** Held constant at last quarterly value.
 
-The models is meant to highlight inline data retrieval and manipulation rather than a thoughtful revenue forecast.
+The model is meant to highlight inline data retrieval and manipulation rather than a thoughtful revenue forecast.
 
 ## Data Scraping
 
@@ -20,16 +20,27 @@ The scraping process is not a pre-calculation step. The model fetches data on-de
 flowchart TD
   A[1. Evaluate current-quarter passenger revenue] --> B[2. Scrape daily TSA volumes from tsa.gov]
   B --> C[3. Create a daily series of passenger flows]
-  C --> D[4. "Growth = current QTD / prior QTD"]
+  C --> D[4. Calculate "Growth = current QTD / prior QTD" by querying the daily series]
   D --> E[5. "Passenger = prior quarter revenue × growth"]
 ```
 
-The model embeds the data retrieval, extraction, and aggregation directly into the cell values. New values are automatically incorporated into the model as they become available. No copy-paste required.
+`tsa_passengers` is the key definition that ties the data retrieval into the model.
 
-The scraping process uses well-known libraries from Python's open ecosystem. They are robust, actively maintained, and come for free by simply using Python.
+```py
+# scrape.py
+@PeriodSeries.define("TSA checkpoint passengers", _BY_DAYS)
+def tsa_passengers() -> Iterator[tuple[Period, float]]:
+    """Historical daily TSA checkpoint volume. Scraped from tsa.gov on first access."""
+    for travel_date, count in checkpoint_volumes():
+        yield Period(travel_date - timedelta(days=1), travel_date), count
+```
 
-* **`requests`:** Simple, synchronous http client used to retrieve the webpage from tsa.gov. Maintained by the Python Software Foundation.
-* **`beautifulsoup4`:** HTML parsing library that finds and extracts the passenger data from the table in the webpage.  Mature library with over twenty years of development.
+It defines the "TSA checkpoint passengers" line item. The line item is inert until it is evaluated. On first access, the `checkpoint_volumes` function runs, which scrapes the data from tsa.gov and returns a sequence of `(date, passenger count)` tuples. Since orcaset caches values, the scrape function will only be triggered once within an evaluation context.
+
+The scraping process uses well-known libraries from Python's open ecosystem. They are robust, actively maintained, and come for free as part of the open source Python ecosystem.
+
+* **`requests`:** Simple, synchronous HTTP client used to retrieve the webpage from tsa.gov. Maintained by the Python Software Foundation.
+* **`beautifulsoup4`:** HTML parsing library that finds and extracts the passenger data from the table in the webpage. Mature library with over twenty years of development.
 
 ## Run
 
