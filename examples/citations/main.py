@@ -73,13 +73,16 @@ class CitedFloat(float):
 
 
 # Helper function to load a frame from the SEC API
-def load_frame(url: str, frame: str) -> tuple[float, str]:
-    """Return ``(value, accn)`` for the companyconcept row with ``frame``."""
+def load_frame(url: str, frame: str) -> CitedFloat:
+    """Return a ``CitedFloat`` for the companyconcept row with ``frame``."""
     with urlopen(Request(url, headers=_HEADERS), timeout=30.0) as response:
         payload: object = json.load(response)
     assert isinstance(payload, dict)
     fact = next(row for row in payload["units"]["USD"] if row.get("frame") == frame)
-    return float(fact["val"]), fact["accn"]
+    return CitedFloat(
+        float(fact["val"]),
+        EdgarCitation(accn=fact["accn"], frame=frame, url=url),
+    )
 
 
 # Define a revenue series that starts with Q2 2026 revenue fetched from EDGAR
@@ -87,8 +90,7 @@ def load_frame(url: str, frame: str) -> tuple[float, str]:
 @PeriodSeries.define("SpaceX revenue", exact)
 def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
     # Fetch Q2 2026 revenue from the EDGAR API and return it as a CitedFloat value
-    val, accn = load_frame(CONCEPT_URL, FRAME)
-    yield Q2_2026, CitedFloat(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
+    yield Q2_2026, load_frame(CONCEPT_URL, FRAME)
 
     # Grow the revenue at 10% per quarter thereafter
     for k in Period.seq(Q2_2026.end, QUARTER):
