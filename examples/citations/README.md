@@ -2,7 +2,7 @@
 
 This example shows how an orcaset model can carry a **citation** on a sourced number: where the figure came from, not just what it equals.
 
-It pulls one revenue figure from SpaceX’s Q2 2026 10-Q (the quarterly report public companies file with the SEC), wraps it as a `Cited` float, then annualizes it. The annualized figure is an ordinary number. To see the filing again, look at the **dependency tree**.
+It pulls one revenue figure from SpaceX’s Q2 2026 10-Q (the quarterly report public companies file with the SEC), wraps it as a `Cited` float, then grows that seed at 10% per quarter. Forecast quarters are ordinary numbers. To see the filing again, look at the **dependency tree**.
 
 ## The public number
 
@@ -23,7 +23,7 @@ Find the object whose `"frame"` is `"CY2026Q2"`. That is calendar Q2 2026 (April
 }
 ```
 
-`val` is revenue in US dollars: **$7,814,000,000**. `accn` is the EDGAR accession number — the filing’s ID. `frame` is the SEC’s label for that calendar quarter. The example hard-codes `CY2026Q2` so it always uses this row.
+`val` is revenue in US dollars: **$7,814,000,000**. `accn` is the EDGAR accession number — the filing’s ID. `frame` is the SEC’s label for that calendar quarter. The example hard-codes `CY2026Q2` as the seed row.
 
 ## Run
 
@@ -38,25 +38,32 @@ Output:
 ```txt
 Reported CY2026Q2 revenue: 7814000000.0 {'accn': '0001628280-26-052535', 'frame': 'CY2026Q2', 'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
   type: Cited
-Annualized (× 4):         31,256,000,000
-  type: float
 
-Dependency tree for annualized revenue:
-Annualized revenue@Period(2026-03-31, 2026-06-30) = 31256000000.0
-  SpaceX revenue@Period(2026-03-31, 2026-06-30) = Cited(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
-    SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
+Revenue by quarter-end (10% growth after the cited seed)
+  2026-06-30  7,814,000,000  Cited
+  2026-09-30  8,595,400,000  float
+  2026-12-31  9,454,940,000  float
+  2027-03-31  10,400,434,000  float
+  2027-06-30  11,440,477,400  float
+
+Dependency tree for the first forecast quarter:
+SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
+  SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
+  SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
     SpaceX revenue@Period(2026-03-31, 2026-06-30) = Cited(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
+      SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
+      SpaceX revenue@Period(2026-03-31, 2026-06-30) = Cited(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
 ```
 
-The reported line should match the JSON you opened. The annualized line is that amount times four.
+The Q2 2026 line should match the JSON you opened. Each later quarter is the prior quarter times 1.10.
 
 ## What to notice
 
 1. **The sourced cell is a `Cited`.** That type is a `float` with extra fields: accession number, frame, and the URL you just visited. Printing it shows the number and the citation together.
-2. **The derived cell is a plain `float`.** Multiplying by 4 is ordinary arithmetic, so the extra filing info does not stick to the result. That is deliberate: only the leaf (the number that came from the filing) is `Cited`.
-3. **The dependency tree is how you get the citation back.** `ctx.dependencies(annualized, q2)` shows that the $31.3B run-rate came from the `Cited` Q2 revenue. Transformations go through orcaset’s `get_at` / `.map` path, so provenance lives in the graph rather than on every intermediate value.
+2. **Forecast cells are plain `float`s.** `prior * 1.10` is ordinary arithmetic, so the extra filing info does not stick to the result. That is deliberate: only the leaf (the number that came from the filing) is `Cited`.
+3. **The dependency tree is how you get the citation back.** `ctx.dependencies(revenue, forecast_quarter)` shows that Q3 2026 came from the `Cited` Q2 seed. Growth goes through `get_at`, so provenance lives in the graph rather than on every intermediate value.
 
-The fetch runs the first time the revenue cell is demanded in a `Context`, then is cached. Re-printing with the same `Context` does not hit the SEC again.
+The fetch runs the first time the seed cell is demanded in a `Context`, then is cached. Re-printing with the same `Context` does not hit the SEC again.
 
 ## The types
 
@@ -77,10 +84,9 @@ class Cited(float):
     def __new__(cls, value: float, citation: EdgarCitation) -> Self: ...
 ```
 
-The series is one cell, looked up with `exact` (the period must match). Annualizing is a `.map` that multiplies the reported value by 4:
+The series seeds one `exact` cell from the filing, then each later quarter reads the prior period:
 
 ```py
-annualized = revenue.map("Annualized revenue", map_some(lambda reported: reported * 4))
+prior = yield from get_at(revenue, p.shift(-QUARTER))
+return prior * (1 + GROWTH)
 ```
-
-`map_some` means “if the input is missing (`Na`), stay missing.” Otherwise `reported * 4` uses `Cited`’s inherited float arithmetic and returns `float`.

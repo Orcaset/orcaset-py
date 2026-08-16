@@ -12,8 +12,9 @@ change between minor releases.
 ### Added
 
 - Added `examples/citations/`, a walkthrough that wraps a SpaceX 10-Q revenue
-  fact as a `Cited` float subclass so printouts and `ctx.dependencies(...)`
-  show the EDGAR accession, frame, and companyconcept URL.
+  fact as a `Cited` float subclass, grows it at 10% per quarter, and shows the
+  EDGAR accession, frame, and companyconcept URL via printouts and
+  `ctx.dependencies(...)`.
 
 ## [0.8.0] - 2026-08-13
 

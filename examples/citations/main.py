@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Cite a SpaceX 10-Q revenue fact, then annualize it with ``.map``."""
+"""Cite a SpaceX 10-Q revenue fact, then grow it at 10% per quarter."""
 
 from __future__ import annotations
 
@@ -12,13 +12,27 @@ from datetime import date, timedelta
 from typing import Self
 from urllib.request import Request, urlopen
 
-from orcaset import Context, Period, PeriodSeries, exact, isna, map_some
+from dateutil.relativedelta import relativedelta
+
+from orcaset import (
+    CellFactory,
+    Context,
+    Period,
+    PeriodSeries,
+    Step,
+    exact,
+    get_at,
+    isna,
+)
 
 CONCEPT_URL = (
     "https://data.sec.gov/api/xbrl/companyconcept/"
     "CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json"
 )
 FRAME = "CY2026Q2"
+QUARTER = relativedelta(months=3, day=31)
+GROWTH = 0.10
+FORECAST_END = date(2027, 6, 30)
 _HEADERS = {
     "User-Agent": "Orcaset Citations Example contact@orcaset.com",
     "Accept": "application/json",
@@ -73,36 +87,42 @@ def load_frame(url: str, frame: str) -> tuple[date, date, float, str]:
 
 
 @PeriodSeries.define("SpaceX revenue", exact)
-def revenue() -> Iterator[tuple[Period, Cited]]:
+def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
     start, end, val, accn = load_frame(CONCEPT_URL, FRAME)
-    yield (
-        Period(start - timedelta(days=1), end),
-        Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL)),
-    )
+    seed = Period(start - timedelta(days=1), end)
+    yield seed, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
 
+    for k in Period.seq(seed.end, QUARTER, FORECAST_END):
 
-annualized = revenue.map("Annualized revenue", map_some(lambda reported: reported * 4))
+        def factory(p: Period = k) -> Step[float]:
+            prior = yield from get_at(revenue, p.shift(-QUARTER))
+            if isna(prior):
+                raise ValueError(f"missing prior revenue for {p}")
+            return prior * (1 + GROWTH)
+
+        yield k, factory
 
 
 def main() -> None:
     ctx = Context()
-    keys = list(ctx.get(revenue.keys()))
-    if len(keys) != 1:
-        raise RuntimeError(f"expected one SpaceX revenue period, got {len(keys)}")
-    q2 = keys[0]
-
-    reported = ctx.get_at(revenue, q2)
-    run_rate = ctx.get_at(annualized, q2)
-    if isna(reported) or isna(run_rate):
+    periods = list(ctx.get(revenue.keys()))
+    seed, *forecast = periods
+    reported = ctx.get_at(revenue, seed)
+    if isna(reported):
         raise RuntimeError("missing SpaceX revenue")
 
     print(f"Reported {FRAME} revenue: {reported}")
     print(f"  type: {type(reported).__name__}")
-    print(f"Annualized (× 4):         {run_rate:,.0f}")
-    print(f"  type: {type(run_rate).__name__}")
     print()
-    print("Dependency tree for annualized revenue:")
-    print(ctx.dependencies(annualized, q2))
+    print("Revenue by quarter-end (10% growth after the cited seed)")
+    for period in periods:
+        value = ctx.get_at(revenue, period)
+        if isna(value):
+            raise RuntimeError(f"missing SpaceX revenue for {period}")
+        print(f"  {period.end:%Y-%m-%d}  {float(value):,.0f}  {type(value).__name__}")
+    print()
+    print("Dependency tree for the first forecast quarter:")
+    print(ctx.dependencies(revenue, forecast[0]))
 
 
 if __name__ == "__main__":
