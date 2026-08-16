@@ -88,5 +88,5 @@ The series seeds one `exact` cell from the filing, then each later quarter reads
 
 ```py
 prior = yield from get_at(revenue, p.shift(-QUARTER))
-return prior * (1 + GROWTH)
+return prior * 1.10
 ```

@@ -30,21 +30,20 @@ CONCEPT_URL = (
     "CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json"
 )
 FRAME = "CY2026Q2"
-SEED = Period(date(2026, 3, 31), date(2026, 6, 30))
+Q2_2026 = Period(date(2026, 3, 31), date(2026, 6, 30))
 QUARTER = relativedelta(months=3, day=31)
-GROWTH = 0.10
-FORECAST_END = date(2027, 6, 30)
 _HEADERS = {
     "User-Agent": "Orcaset Citations Example contact@orcaset.com",
     "Accept": "application/json",
 }
 
 
+# Classes defining the provenance of a cited value
 @dataclass(frozen=True, slots=True)
 class EdgarCitation:
-    accn: str
-    frame: str
-    url: str
+    accn: str  # Filing accession number
+    frame: str  # XBRL frame (e.g. CY2026Q2)
+    url: str  # Source EDGAR URL
 
     def __str__(self) -> str:
         return str({"accn": self.accn, "frame": self.frame, "url": self.url})
@@ -73,6 +72,7 @@ class Cited(float):
         return format(float(self), spec)
 
 
+# Helper function to load a frame from the SEC API
 def load_frame(url: str, frame: str) -> tuple[float, str]:
     """Return ``(value, accn)`` for the companyconcept row with ``frame``."""
     with urlopen(Request(url, headers=_HEADERS), timeout=30.0) as response:
@@ -82,43 +82,41 @@ def load_frame(url: str, frame: str) -> tuple[float, str]:
     return float(fact["val"]), fact["accn"]
 
 
+# Define a revenue series that starts with Q2 2026 revenue fetched from EDGAR
+# and grows at 10% per quarter thereafter
 @PeriodSeries.define("SpaceX revenue", exact)
 def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
+    # Fetch Q2 2026 revenue from the EDGAR API and return it as a Cited value
     val, accn = load_frame(CONCEPT_URL, FRAME)
-    yield SEED, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
+    yield Q2_2026, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
 
-    for k in Period.seq(SEED.end, QUARTER, FORECAST_END):
+    # Grow the revenue at 10% per quarter thereafter
+    for k in Period.seq(Q2_2026.end, QUARTER):
 
         def factory(p: Period = k) -> Step[float]:
             prior = yield from get_at(revenue, p.shift(-QUARTER))
             if isna(prior):
                 raise ValueError(f"missing prior revenue for {p}")
-            return prior * (1 + GROWTH)
+            return prior * 1.10
 
         yield k, factory
 
 
-def main() -> None:
-    ctx = Context()
-    periods = list(ctx.get(revenue.keys()))
-    seed, *forecast = periods
-    reported = ctx.get_at(revenue, seed)
-    if isna(reported):
-        raise RuntimeError("missing SpaceX revenue")
+ctx = Context()
+periods = Period.list(Q2_2026.start, QUARTER, date(2027, 6, 30))
+reported = ctx.get_at(revenue, Q2_2026)
+if isna(reported):
+    raise RuntimeError("missing SpaceX revenue")
 
-    print(f"Reported {FRAME} revenue: {reported}")
-    print(f"  type: {type(reported).__name__}")
-    print()
-    print("Revenue by quarter-end (10% growth after the cited seed)")
-    for period in periods:
-        value = ctx.get_at(revenue, period)
-        if isna(value):
-            raise RuntimeError(f"missing SpaceX revenue for {period}")
-        print(f"  {period.end:%Y-%m-%d}  {float(value):,.0f}  {type(value).__name__}")
-    print()
-    print("Dependency tree for the first forecast quarter:")
-    print(ctx.dependencies(revenue, forecast[0]))
-
-
-if __name__ == "__main__":
-    main()
+print(f"Reported {FRAME} revenue: {reported}")
+print(f"  type: {type(reported).__name__}")
+print()
+print("Revenue by quarter-end (10% growth after the cited seed)")
+for period in periods:
+    value = ctx.get_at(revenue, period)
+    if isna(value):
+        raise RuntimeError(f"missing SpaceX revenue for {period}")
+    print(f"  {period.end:%Y-%m-%d}  {float(value):,.0f}  {type(value).__name__}")
+print()
+print("Dependency tree for the first forecast quarter:")
+print(ctx.dependencies(revenue, periods[1]))
