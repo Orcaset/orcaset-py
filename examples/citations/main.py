@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Self
 from urllib.request import Request, urlopen
 
@@ -30,6 +30,7 @@ CONCEPT_URL = (
     "CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json"
 )
 FRAME = "CY2026Q2"
+SEED = Period(date(2026, 3, 31), date(2026, 6, 30))
 QUARTER = relativedelta(months=3, day=31)
 GROWTH = 0.10
 FORECAST_END = date(2027, 6, 30)
@@ -72,27 +73,21 @@ class Cited(float):
         return format(float(self), spec)
 
 
-def load_frame(url: str, frame: str) -> tuple[date, date, float, str]:
-    """Return ``(start, end, value, accn)`` for the companyconcept row with ``frame``."""
+def load_frame(url: str, frame: str) -> tuple[float, str]:
+    """Return ``(value, accn)`` for the companyconcept row with ``frame``."""
     with urlopen(Request(url, headers=_HEADERS), timeout=30.0) as response:
         payload: object = json.load(response)
     assert isinstance(payload, dict)
     fact = next(row for row in payload["units"]["USD"] if row.get("frame") == frame)
-    return (
-        date.fromisoformat(fact["start"]),
-        date.fromisoformat(fact["end"]),
-        float(fact["val"]),
-        fact["accn"],
-    )
+    return float(fact["val"]), fact["accn"]
 
 
 @PeriodSeries.define("SpaceX revenue", exact)
 def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
-    start, end, val, accn = load_frame(CONCEPT_URL, FRAME)
-    seed = Period(start - timedelta(days=1), end)
-    yield seed, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
+    val, accn = load_frame(CONCEPT_URL, FRAME)
+    yield SEED, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
 
-    for k in Period.seq(seed.end, QUARTER, FORECAST_END):
+    for k in Period.seq(SEED.end, QUARTER, FORECAST_END):
 
         def factory(p: Period = k) -> Step[float]:
             prior = yield from get_at(revenue, p.shift(-QUARTER))
