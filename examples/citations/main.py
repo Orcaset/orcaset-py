@@ -127,10 +127,7 @@ print(f"\ntype(q2_2026_revenue): {type(q2_2026_revenue)}")
 # type(q2_2026_revenue): <class '__main__.CitedFloat'>
 if isinstance(q2_2026_revenue, CitedFloat):
     print(f"Q2 2026 revenue citation: {q2_2026_revenue.citation}\n")
-# Q2 2026 revenue citation:
-# {'accn': '0001628280-26-052535',
-#  'frame': 'CY2026Q2',
-#  'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
+# Q2 2026 revenue citation: {'accn': '0001628280-26-052535', 'frame': 'CY2026Q2', 'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
 
 # Q3 2026 revenue dependency tree showing link to source citation
 Q3_2026 = Period(date(2026, 6, 30), date(2026, 9, 30))

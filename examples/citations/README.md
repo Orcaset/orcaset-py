@@ -138,10 +138,7 @@ print(f"\ntype(q2_2026_revenue): {type(q2_2026_revenue)}")
 # type(q2_2026_revenue): <class '__main__.CitedFloat'>
 if isinstance(q2_2026_revenue, CitedFloat):
     print(f"Q2 2026 revenue citation: {q2_2026_revenue.citation}\n")
-# Q2 2026 revenue citation:
-# {'accn': '0001628280-26-052535',
-#  'frame': 'CY2026Q2',
-#  'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
+# Q2 2026 revenue citation: {'accn': '0001628280-26-052535', 'frame': 'CY2026Q2', 'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
 ```
 
 `get_at` is typed as `Maybe[float]` (`float | Na`), so the `isinstance` check both skips misses and narrows to `CitedFloat` before reading `.citation`.
