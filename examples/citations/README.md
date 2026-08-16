@@ -1,8 +1,8 @@
 # Citations and Data Provenance
 
-This example shows how values in an orcaset model can carry lineage information, allowing users to trace values all the way through to their originating source.
+This example shows how values in an orcaset model can carry data provenance information, allowing users to trace values all the way through to their originating source.
 
-The example model fetchings SpaceX's Q2 2026 revenue from the SEC API (EDGAR) and creates a simple revenue model projection revenue at 10% quarterly growth. The Q2 2026 revenue value carries filling and URL metadata allow users to trace and verify its value back to the source document.
+The example fetches SpaceX's Q2 2026 revenue from the SEC API (EDGAR) and creates a simple revenue model projecting revenue at 10% quarterly growth. The Q2 2026 revenue value carries filing and URL metadata, allowing users to trace and verify its value back to the source document.
 
 ## Custom Values
 
@@ -10,9 +10,10 @@ Orcaset models can carry any value type, not just regular numerical types. In th
 
 ### `EdgarCitation`
 
-Carries the data provenance information, specifically the filing identifier, period info (or "frame" in XBRL terms), and the source SEC URL.
+Holds the filing identifier, period info (or "frame" in XBRL terms), and the source SEC URL.
 
 ```py
+@dataclass(frozen=True, slots=True)
 class EdgarCitation:
     accn: str  # Filing accession number
     frame: str  # XBRL frame (e.g. CY2026Q2)
@@ -24,7 +25,7 @@ class EdgarCitation:
 
 ### `CitedFloat`
 
-
+This is the numerical type that holds the value and source metadata. It is a subclass of the built-in `float` type, which means it behaves the same way as any other `float`. Any function that accepts a `float` will also accept a `CitedFloat`. The only difference is that it carries a `citation` field with an `EdgarCitation` object tracking the value's source.
 
 ```py
 class CitedFloat(float):
@@ -50,10 +51,13 @@ class CitedFloat(float):
         return format(float(self), spec)
 ```
 
+> `float` is an immutable type, so subclassing is done by overriding `__new__` rather than the typical `__init__` override.
+
+Note that the result of transforming a `CitedFloat` with standard arithmetic operators (e.g. addition, subtraction, multiplication) is a regular `float`, *not* a `CitedFloat`. Generally that's fine because provenance for derived values can still be traced through the dependency edges tracked by orcaset's effect handlers.
 
 ## Fetching Data from EDGAR
 
-The model pulls revenue from the SEC uisng the `companyconcept` endpoint. You can visit the URL in a browser here: [https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json](https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json).
+The model pulls revenue from the SEC using the `companyconcept` endpoint. You can visit the URL in a browser here: [https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json](https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json).
 
 The URL returns data in JSON format.
 
@@ -84,87 +88,90 @@ The URL returns data in JSON format.
 }
 ```
 
-Open this URL in a browser. It is a small JSON file from the SEC:
+The `load_frame(url: str, frame: str) -> CitedFloat` function fetches the JSON from the URL, finds the USD row whose `frame` matches, and returns a `CitedFloat`.
 
-[SpaceX revenue (companyconcept)](https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json)
+## Revenue Definition
 
-Find the object whose `"frame"` is `"CY2026Q2"`. That is calendar Q2 2026 (April–June). It looks like:
+The example builds a toy revenue model for SpaceX. It starts with Q2 2026 actual revenue from EDGAR and continues by growing 10% quarterly thereafter.
 
-```json
-{
-  "start": "2026-04-01",
-  "end": "2026-06-30",
-  "val": 7814000000,
-  "accn": "0001628280-26-052535",
-  "form": "10-Q",
-  "frame": "CY2026Q2"
-}
+```py
+@PeriodSeries.define("SpaceX revenue", accrual(YF.cmonthly))
+def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
+    # Fetch Q2 2026 revenue from the EDGAR API and return it as a CitedFloat value
+    yield Q2_2026, load_frame(CONCEPT_URL, FRAME)
+
+    # Grow the revenue at 10% per quarter thereafter
+    for k in Period.seq(Q2_2026.end, QUARTER):
+
+        # Get the prior quarter's value and grow it by 10%
+        def factory(p: Period = k) -> Step[float]:
+            prior = yield from get_at(revenue, p.from_start(-QUARTER))
+            if isna(prior):
+                raise ValueError(f"missing prior revenue for {p}")
+            return prior * 1.10
+
+        yield k, factory
 ```
 
-`val` is revenue in US dollars: **$7,814,000,000**. `accn` is the EDGAR accession number — the filing’s ID. `frame` is the SEC’s label for that calendar quarter. The example hard-codes `CY2026Q2` as the seed row.
+Orcaset uses generic types over a series' values to make sure models compose correctly. The revenue line item has type `PeriodSeries[Maybe[float]]`, which captures the common type of the initial and subsequent values. Orcaset will still raise type errors if we try to apply operations on `revenue` that don't work with floats.
 
-## Run
+## Tracking Data Provenance
+
+`revenue` can be used as if it held regular `float` values. Formatting, arithmetic, and other transformations work and type check correctly.
+
+```py
+ctx = Context()
+
+# Print the first three quarters of revenue
+for p in Period.seq(Q2_2026.start, QUARTER, date(2026, 12, 31)):
+    print(f"{p} revenue: {ctx.get_at(revenue, p):,.0f}")
+# Period(2026-03-31, 2026-06-30) revenue: 7,814,000,000
+# Period(2026-06-30, 2026-09-30) revenue: 8,595,400,000
+# Period(2026-09-30, 2026-12-31) revenue: 9,454,940,000
+```
+
+Inspecting the value for Q2 2026 reveals it is indeed a `CitedFloat` object linking its value back to the SEC origin URL.
+
+```py
+q2_2026_revenue = ctx.get_at(revenue, Q2_2026)
+print(f"\ntype(q2_2026_revenue): {type(q2_2026_revenue)}")
+# type(q2_2026_revenue): <class '__main__.CitedFloat'>
+if isinstance(q2_2026_revenue, CitedFloat):
+    print(f"Q2 2026 revenue citation: {q2_2026_revenue.citation}\n")
+# Q2 2026 revenue citation:
+# {'accn': '0001628280-26-052535',
+#  'frame': 'CY2026Q2',
+#  'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
+```
+
+`get_at` is typed as `Maybe[float]` (`float | Na`), so the `isinstance` check both skips misses and narrows to `CitedFloat` before reading `.citation`.
+
+Even though the Q3 2026 value is a regular `float` without source metadata, it is still indirectly linked to the Q2 metadata by tracing the dependency from Q3 to Q2. We can verify this by printing the dependency tree for Q3.
+
+```py
+Q3_2026 = Period(date(2026, 6, 30), date(2026, 9, 30))
+print(f"Q3 2026 value type: {type(ctx.get_at(revenue, Q3_2026))}")
+# Q3 2026 value type: <class 'float'>
+
+print(ctx.dependencies(revenue, Q3_2026))
+# SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
+#   SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
+#   SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
+#     SpaceX revenue@Period(2026-03-31, 2026-06-30) = CitedFloat(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
+#       SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
+#       SpaceX revenue@Period(2026-03-31, 2026-06-30) = CitedFloat(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
+```
+
+Reviewing the dependency tree shows the full calculation graph from the SEC origin to the Q3 revenue value.
+
+## Auditability and Reproducibility
+
+Orcaset's openness and flexibility give it strong audit and reproducibility capabilities. Users can define values in any shape, attaching custom metadata, lineage, or validation rules. Unlike spreadsheets, which require special add-ins to link cell values with metadata or validation rules, orcaset incorporates robust custom value types as a core feature. It offers a strongly typed framework for using complex value types that catches incompatible transformations early so users, or their agents, can run analysis with confidence.
+
+## Run the Example
 
 From the repository root (Python 3.14+, network access to `data.sec.gov`):
 
 ```sh
 uv run python examples/citations/main.py
-```
-
-Output:
-
-```txt
-Reported CY2026Q2 revenue: 7814000000.0 {'accn': '0001628280-26-052535', 'frame': 'CY2026Q2', 'url': 'https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'}
-  type: CitedFloat
-
-Revenue by quarter-end (10% growth after the cited seed)
-  2026-06-30  7,814,000,000  CitedFloat
-  2026-09-30  8,595,400,000  float
-  2026-12-31  9,454,940,000  float
-  2027-03-31  10,400,434,000  float
-  2027-06-30  11,440,477,400  float
-
-Dependency tree for the first forecast quarter:
-SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
-  SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
-  SpaceX revenue@Period(2026-06-30, 2026-09-30) = 8595400000.0
-    SpaceX revenue@Period(2026-03-31, 2026-06-30) = CitedFloat(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
-      SpaceX revenue.cells = <orcaset.series.Replayable object at 0x...>
-      SpaceX revenue@Period(2026-03-31, 2026-06-30) = CitedFloat(7814000000.0, EdgarCitation(accn='0001628280-26-052535', frame='CY2026Q2', url='https://data.sec.gov/api/xbrl/companyconcept/CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json'))
-```
-
-The Q2 2026 line should match the JSON you opened. Each later quarter is the prior quarter times 1.10.
-
-## What to notice
-
-1. **The sourced cell is a `CitedFloat`.** That type is a `float` with extra fields: accession number, frame, and the URL you just visited. Printing it shows the number and the citation together.
-2. **Forecast cells are plain `float`s.** `prior * 1.10` is ordinary arithmetic, so the extra filing info does not stick to the result. That is deliberate: only the leaf (the number that came from the filing) is `CitedFloat`.
-3. **The dependency tree is how you get the citation back.** `ctx.dependencies(revenue, forecast_quarter)` shows that Q3 2026 came from the `CitedFloat` Q2 seed. Growth goes through `get_at`, so provenance lives in the graph rather than on every intermediate value.
-
-The fetch runs the first time the seed cell is demanded in a `Context`, then is cached. Re-printing with the same `Context` does not hit the SEC again.
-
-## The types
-
-`EdgarCitation` is the filing pointer:
-
-```py
-@dataclass(frozen=True, slots=True)
-class EdgarCitation:
-    accn: str
-    frame: str
-    url: str
-```
-
-`CitedFloat` is a `float` subclass. You can multiply it like a number; the product is a regular `float`. Override `__str__` / `__repr__` so printouts and the dependency tree show the citation.
-
-```py
-class CitedFloat(float):
-    def __new__(cls, value: float, citation: EdgarCitation) -> Self: ...
-```
-
-The series seeds one `exact` cell from the filing, then each later quarter reads the prior period:
-
-```py
-prior = yield from get_at(revenue, p.shift(-QUARTER))
-return prior * 1.10
 ```
