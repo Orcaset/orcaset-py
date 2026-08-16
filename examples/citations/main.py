@@ -49,7 +49,7 @@ class EdgarCitation:
         return str({"accn": self.accn, "frame": self.frame, "url": self.url})
 
 
-class Cited(float):
+class CitedFloat(float):
     """A floating point number that carries EDGAR provenance. Arithmetic returns a plain float."""
 
     citation: EdgarCitation
@@ -64,7 +64,7 @@ class Cited(float):
         return f"{float(self)} {self.citation}"
 
     def __repr__(self) -> str:
-        return f"Cited({float(self)!r}, {self.citation!r})"
+        return f"CitedFloat({float(self)!r}, {self.citation!r})"
 
     def __format__(self, spec: str) -> str:
         if spec == "":
@@ -86,9 +86,9 @@ def load_frame(url: str, frame: str) -> tuple[float, str]:
 # and grows at 10% per quarter thereafter
 @PeriodSeries.define("SpaceX revenue", exact)
 def revenue() -> Iterator[tuple[Period, float | CellFactory[float]]]:
-    # Fetch Q2 2026 revenue from the EDGAR API and return it as a Cited value
+    # Fetch Q2 2026 revenue from the EDGAR API and return it as a CitedFloat value
     val, accn = load_frame(CONCEPT_URL, FRAME)
-    yield Q2_2026, Cited(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
+    yield Q2_2026, CitedFloat(val, EdgarCitation(accn=accn, frame=FRAME, url=CONCEPT_URL))
 
     # Grow the revenue at 10% per quarter thereafter
     for k in Period.seq(Q2_2026.end, QUARTER):
