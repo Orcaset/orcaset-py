@@ -17,18 +17,14 @@ orcaset builds financial models as typed Python series resolved in a `Context`.
 Dependencies come from `yield from get_at(...)` / `get(...)`, not spreadsheet
 addresses.
 
-API is experimental (`0.x`).
+API is experimental (`0.x`); prefer public exports from `orcaset`.
 
-# Environment
-
-- Requires Python >= 3.14
-- All code should type check; prefer `pyrefly` but other checkers may work; warn the user if no type checker is available
-- If `orcaset` is not already available, install it from PyPI with `uv add orcaset` (preferred) or `pip install orcaset`
-- Prefer Python and project management with uv
+If `orcaset` is not already available, install it from PyPI with
+`uv add orcaset` (preferred) or `pip install orcaset`.
 
 ## Mental model
 
-1. **Keys**: flow items use `Period`; stocks use `date` if applicable to a single date or `Period` if applicable to a time span.
+1. **Keys**: flow items use `Period`; stocks use `date`.
 2. **Series**: `PeriodSeries` / `DateSeries` (or `Series`) hold named cells + a query (`accrual` / `covered` / `exact`).
 3. **Cells**: constants or `CellFactory` generators that `yield from get_at` / `get`.
 4. **Compose**: arithmetic (`+`, `-`, `*`, `/`), `.named(...)` for labels, and
@@ -38,7 +34,7 @@ API is experimental (`0.x`).
 
 ## Period convention
 
-Interpret named financial periods as `(start, end)` tuples bounded by
+Interpret named financial periods as `(exclusive start, inclusive end]` bounded by
 month-end dates unless the user explicitly specifies another convention.
 
 - `January 2027` -> `Period(date(2026, 12, 31), date(2027, 1, 31))`
@@ -139,7 +135,7 @@ mechanisms are strictly prohibited.
 
 | Need | Pattern |
 |------|---------|
-| Recursive / dependent series | `@PeriodSeries.define(name, query)` + factories |
+| Recursive / dependent cells | `@PeriodSeries.define(name, query)` + factories |
 | Constant each period | `PeriodSeries(name, lambda: zip(Period.seq(...), repeat(x)), query)` |
 | Scalar-driven line | `(base * rate).named("...")` |
 | Sum / difference | `(a + b).named("...")` or `(a - b).named("...")` |
@@ -166,48 +162,15 @@ Always `yield from`. Treat missing data according to its economic meaning:
 - Use an explicit seed or opening balance for the first modeled period.
 - Do not convert `Na` to zero merely to make a model run.
 
-## Cyclic value dependencies
-
-Cycles are supported. Mutual `get` / `get_at` calls raise `CycleError` unless
-the demand that observes an in-flight cell passes **both** `seed` and
-`distance`. They are typed against the fetched value: `seed` is the initial
-guess, `distance` maps two values to a residual.
-
-```python
-end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
-```
-
-- `abs_distance` for `float` (`exact_or` / `accrual_or`); `maybe_abs_distance`
-  for `Maybe[float]` (`exact` / `accrual` / `last`); custom types supply their
-  own metric.
-- One `seed` / `distance` cut is enough to break a cycle. Put it on the
-  `get` / `get_at` that observes the in-flight cell (the back-edge). Other
-  edges in the cycle do not need a spec.
-- They are ignored when the target is not already on the stack — not a default
-  for missing keys.
-
-Use iteration when the economics are simultaneous (average-balance interest,
-cash sweeps). *Prefer timing* when a cycle can be broken (e.g. depreciation
-reads *beginning* PPE).
-
-## Inspecting dependencies
-
-`Context` records the `get` / `get_at` graph for the current run. Reuse the
-same `ctx` used to evaluate the model. Inspect the dependency graph to confirm
-or debug model results.
-
-```python
-tree = ctx.dependencies(series, key)  # keyed series
-print(tree)  # indented name@key = value tree
-print(tree.value, tree.deps)
-
-print(ctx.rule_dependencies(series.keys()))  # unkeyed Rule
-```
-
-`dependencies` / `rule_dependencies` resolve first, then return a `DepNode`
-(`name`, `key`, `value`, `deps`). Use after a surprising value. Inspect at
-least one ordinary forecast period and one historical/forecast or frequency
-boundary.
+Mutual `get_at` cycles raise `CycleError` unless the demand that observes an
+in-flight cell passes `seed` and `distance`. Both are typed against the fetched
+value: `seed` is the initial guess, `distance` maps two values to a residual
+(`abs_distance` for `float`, `maybe_abs_distance` for `Maybe[float]`, or a
+custom metric). Put `seed`/`distance` on every cyclic `get`/`get_at` so the
+cut does not depend on evaluation order. `Context(tol=..., max_iter=...)`
+sets solver defaults; per-demand `tol` / `max_iter` override them.
+A cycle that does not settle raises `ConvergenceError`; inspect `err.values`
+(seed then each iterate) and `err.residuals` for oscillation or blow-up.
 
 ## Queries
 
@@ -232,6 +195,5 @@ aggregation for averages and other non-additive metrics.
 
 ## Additional resources
 
-- API summary: [references/api.md](references/api.md)
 - Statement and series patterns: [references/patterns.md](references/patterns.md)
 - Common mistakes: [references/pitfalls.md](references/pitfalls.md)
