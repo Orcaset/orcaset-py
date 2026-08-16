@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Self
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from orcaset import Context, Period, PeriodSeries, exact, isna, map_some
@@ -37,7 +36,7 @@ class EdgarCitation:
 
 
 class Cited(float):
-    """A float that carries EDGAR provenance. Arithmetic returns a plain float."""
+    """A floating point number that carries EDGAR provenance. Arithmetic returns a plain float."""
 
     citation: EdgarCitation
     __slots__ = ("citation",)
@@ -59,47 +58,18 @@ class Cited(float):
         return format(float(self), spec)
 
 
-def _as_mapping(value: object, label: str) -> Mapping[str, object]:
-    if not isinstance(value, dict):
-        raise TypeError(f"{label} is not a JSON object")
-    return {str(key): item for key, item in value.items()}
-
-
-def _as_list(value: object, label: str) -> list[object]:
-    if not isinstance(value, list):
-        raise TypeError(f"{label} is not a JSON array")
-    return list(value)
-
-
 def load_frame(url: str, frame: str) -> tuple[date, date, float, str]:
     """Return ``(start, end, value, accn)`` for the companyconcept row with ``frame``."""
-    request = Request(url, headers=_HEADERS)
-    try:
-        with urlopen(request, timeout=30.0) as response:
-            payload: object = json.loads(response.read().decode())
-    except HTTPError as error:
-        raise RuntimeError(
-            f"SEC request failed ({error.code}). The companyconcept API requires an "
-            "identifying User-Agent that includes a contact email."
-        ) from error
-
-    units = _as_mapping(_as_mapping(payload, "companyconcept").get("units"), "units")
-    for raw in _as_list(units.get("USD"), "units.USD"):
-        fact = _as_mapping(raw, "USD fact")
-        if fact.get("frame") != frame:
-            continue
-        start, end, val, accn = (
-            fact.get("start"),
-            fact.get("end"),
-            fact.get("val"),
-            fact.get("accn"),
-        )
-        if not isinstance(start, str) or not isinstance(end, str) or not isinstance(accn, str):
-            raise TypeError(f"{frame} is missing start, end, or accn")
-        if not isinstance(val, int | float) or isinstance(val, bool):
-            raise TypeError(f"{frame} value is not a number")
-        return date.fromisoformat(start), date.fromisoformat(end), float(val), accn
-    raise RuntimeError(f"no USD fact with frame {frame!r} at {url}")
+    with urlopen(Request(url, headers=_HEADERS), timeout=30.0) as response:
+        payload: object = json.load(response)
+    assert isinstance(payload, dict)
+    fact = next(row for row in payload["units"]["USD"] if row.get("frame") == frame)
+    return (
+        date.fromisoformat(fact["start"]),
+        date.fromisoformat(fact["end"]),
+        float(fact["val"]),
+        fact["accn"],
+    )
 
 
 @PeriodSeries.define("SpaceX revenue", exact)
