@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Simple income statement from derived series and nested Totals."""
+"""Series composition with arithmetic operators and nested Totals."""
 
 from collections.abc import Iterator
 from datetime import date
@@ -59,13 +59,12 @@ sga = PeriodSeries(
 income = (gross_profit + rd + sga).named("income")
 
 ctx = Context()
-q = Period(date(2027, 3, 1), date(2027, 4, 1))
-print(ctx.get_at(revenue, q))
-print(ctx.get_at(cogs, q))
-print(ctx.get_at(gross_profit, q))
-print(ctx.get_at(rd, q))
-print(ctx.get_at(sga, q))
-print(ctx.get_at(income, q))
+q = Period(date(2027, 3, 1), date(2027, 5, 15))
+
+print("\nQuery line items over arbitrary periods:")
+print(f"  Revenue @ {q}: \t{ctx.get_at(revenue, q):>10.2f}")
+print(f"  COGS @ {q}: \t{ctx.get_at(cogs, q):>10.2f}")
+print(f"{'-' * 58}\nGross profit @ {q}: \t{ctx.get_at(gross_profit, q):>10.2f}")
 
 quarters = Period.list(
     date(2026, 1, 1),
@@ -81,4 +80,3 @@ quarterly_statement = Stmt(
 
 print("\nQuarterly statement")
 print(fixed_width_table(quarterly_statement))
-# print(ctx.dependencies(gross_profit, q))

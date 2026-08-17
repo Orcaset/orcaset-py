@@ -1,10 +1,13 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Quarterly history continued by a monthly growth forecast.
+"""Horizontal composition of a finite historical series and a later forecast.
 
-Historicals use ``covered`` so intra-quarter queries are ``Na``. The forecast
-uses ``accrual``. Queries that cross the seam are split and added.
+``hist_revenue`` is the left-hand base (quarterly, ``covered``). ``revenue``
+appends a monthly continuation that starts at the last historical end. Queries
+that stay inside history never materialize the forecast; queries after the
+seam use only the continuation; queries that cross the last historical end are
+split and added.
 """
 
 import operator
@@ -80,14 +83,14 @@ def show(value: Maybe[float] | float) -> str:
     return "Na" if isna(value) else f"{value:.4f}"
 
 
-print("Historical quarters")
+print("Left of seam (historical quarters)")
 for q in quarters:
     print(f"  {q}: {show(ctx.get_at(revenue, q))}")
 
 intra = Period(date(2025, 9, 1), date(2025, 10, 1))
-print(f"\nIntra-quarter historical ({intra}): {show(ctx.get_at(revenue, intra))}")
+print(f"\nPartial historical period stays Na ({intra}): {show(ctx.get_at(revenue, intra))}")
 
-print("\nMonthly projection (1% growth off last-quarter run-rate)")
+print("\nRight of seam (monthly projection, 1% growth off last-quarter run-rate)")
 for q in forecast_months:
     print(f"  {q}: {show(ctx.get_at(revenue, q))}")
 
@@ -97,9 +100,9 @@ quarterly_statement = Stmt(revenue).values_for_periods(
     [*quarters, projected_quarter],
 )
 
-print("\nQuarterly statement")
+print("\nOne composed row")
 print(fixed_width_table(quarterly_statement))
 
 aligned = Period(date(2025, 7, 1), date(2025, 12, 1))
-print(f"\nDeps: revenue @ {aligned}\n")
+print(f"\nDeps: revenue @ {aligned} (query crosses the seam)\n")
 print(ctx.dependencies(revenue, aligned))

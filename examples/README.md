@@ -1,13 +1,16 @@
 # Orcaset Examples
 
-This directory holds orcaset examples that demonstrate common modeling patterns and library capabilities.
+These self-contained examples demonstrate common financial-modeling patterns and orcaset features.
 
-## Index
+## Examples
 
-- [`circular.py`](circular.py) — Payment-in-kind interest on average debt, solved as a typed `get_at(..., seed=, distance=)` demand cycle rather than broken with timing.
-- [`projection.py`](projection.py) — Extends quarterly historicals (`covered`) with a monthly growth forecast (`accrual`) via `PeriodExtendSeries`, and uses `Stmt` to materialize a quarterly view.
-- [`units.py`](units.py) — Uses distinct USD/EUR value types so a ``map2`` sum across currencies is a static type error rather than a silent numeric bug.
-- [`income.py`](income.py) — Builds a simple income statement from derived series (`*`, `+`), nested `Total`s, and a fixed-width quarterly table.
-- [`capex.py`](capex.py) — Turns annual capex into per-spend cohort depreciation schedules via `MapItemsSeries`, then aggregates them into total depreciation. Demonstrates nested series-in-series value structure.
-- [`balance.py`](balance.py) — Models a point-in-time balance that compounds from period-domain interest, with balance keys derived from the interest series.
-- [`web-scraping/`](web-scraping/) — Standalone example project that inlines a TSA checkpoint scrape into a Southwest (LUV) quarterly revenue estimate. See [`web-scraping/README.md`](web-scraping/README.md).
+| Example | Feature |
+| --- | --- |
+| [Capex cohorts](capex-cohorts/) | Maps each capex period to a nested depreciation schedule, then rolls the cohorts into total depreciation. |
+| [Extend series](extend-series/) | Composes a finite historical series with a later forecast so one line answers both sides of the seam. |
+| [Iterative solver](iterative-solver/) | Solves a cyclic value dependency for capitalized interest on average debt. |
+| [Series composition](series-composition/) | Combine series efficiently using type-safe arithmetic operators. |
+| [Typed units](typed-units/) | Prevents accidental cross-currency combinations using custom value types. |
+| [Web scraping](web-scraping/) | Embeds inline data retrieval over the web and JSON parsing to directly ingest data from an outside data source. |
+
+Open an example's README for its model structure, highlighted feature, and run instructions.
