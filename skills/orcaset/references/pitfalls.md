@@ -44,10 +44,10 @@ use `covered` (sum of complete cells only). Dated balance lookups should stay
 ## History and forecast on one spine
 
 Do not `map2` a coalesce of historicals and projections: a query that crosses
-the cutoff will keep a partial historical answer and drop the forecast. Use
-`PeriodExtendSeries` (flows) or `DateExtendSeries` (stocks). Do not seed
-the first forecast period with a lookback that is finer than the historical
-grid when historicals use `covered`.
+the cutoff will keep a partial historical answer and drop the forecast. Compose
+them horizontally with `PeriodExtendSeries` (flows) or `DateExtendSeries`
+(stocks). Do not seed the first forecast period with a lookback that is finer
+than the historical grid when historicals use `covered`.
 
 ## Aggregating ratios like flows
 

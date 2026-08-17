@@ -124,18 +124,19 @@ results = stmt.values(ctx, periods)
 
 ## Cohort schedules
 
-When each spend period opens a multi-period schedule, use `MapItemsSeries` (see `examples/capex.py`): map each source key to a child `Series`, then map again to sum cohorts at a query period.
+When each spend period opens a multi-period schedule, use `MapItemsSeries` (see `examples/capex-cohorts/main.py`): map each source key to a child `Series`, then map again to sum cohorts at a query period.
 
-## Historical and forecast periods
+## Horizontal series composition
 
 Keep sourced historical values, forecast assumptions, and calculated outputs
 conceptually separate. Put historicals on their own series (`covered` when
 intra-period queries should be undefined) and append the forecast with
-`PeriodExtendSeries` / `DateExtendSeries`. The continuation factory
-receives the last historical key; seed the first forecast cell from that key
-(`get_at(hist, last)`), not from a sub-period lookback that `covered` will
-refuse. Pass `map2_some(operator.add)` as `combine` for additive flows. Test
-the first forecast period and at least one query that crosses the seam.
+`PeriodExtendSeries` / `DateExtendSeries` (see `examples/extend-series/main.py`).
+The continuation factory receives the last historical key; seed the first
+forecast cell from that key (`get_at(hist, last)`), not from a sub-period
+lookback that `covered` will refuse. Pass `map2_some(operator.add)` as
+`combine` for additive flows. Test the first forecast period and at least one
+query that crosses the seam.
 
 For stocks, `DateExtendSeries` dispatches dates before the continuation's
 first cell to the historicals, so a `last`-queried base carries the balance

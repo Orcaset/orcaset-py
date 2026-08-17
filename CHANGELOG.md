@@ -23,7 +23,7 @@ change between minor releases.
   the seam are split and folded with a required `combine`; date queries are
   dispatched to one side — the continuation owns dates at or after its first
   key, so an as-of (`last`) base query carries forward across any gap before
-  the continuation's first cell. See `examples/projection.py`.
+  the continuation's first cell. See `examples/extend-series/main.py`.
 - Added `PeriodSeriesBase` and `DateSeriesBase` as the shared period/date
   series surface (`map`, `map2`, Na-aware arithmetic). Cell-backed
   `PeriodSeries` / `DateSeries` and derived combinators both inherit from
@@ -36,7 +36,7 @@ change between minor releases.
   unless overridden), or raises `ConvergenceError`
   with the cut cell's seed and every iterate (and residuals) so oscillation
   or blow-up is visible. `abs_distance` and `maybe_abs_distance` cover `float` and `Maybe[float]`;
-  other value types supply their own metric. See `examples/circular.py`.
+  other value types supply their own metric. See `examples/iterative-solver/main.py`.
 
 ### Changed
 

@@ -29,10 +29,11 @@ API is experimental (`0.x`).
 ## Mental model
 
 1. **Keys**: flow items use `Period`; stocks use `date` if applicable to a single date or `Period` if applicable to a time span.
-2. **Series**: `PeriodSeries` / `DateSeries` (or `Series`) hold named cells + a query (`accrual` / `covered` / `exact`).
+2. **Series**: `PeriodSeries` / `DateSeries` (or `Series`) hold named cells + a query (`accrual(...)` / `covered` / `exact`).
 3. **Cells**: constants or `CellFactory` generators that `yield from get_at` / `get`.
 4. **Compose**: arithmetic (`+`, `-`, `*`, `/`), `.named(...)` for labels, and
-   `PeriodExtendSeries` / `DateExtendSeries` to append a later regime.
+   `PeriodExtendSeries` / `DateExtendSeries` to compose a later regime onto a
+   finite base.
 5. **Evaluate**: `Context().get_at(series, key)` or `Stmt(...).values(ctx, periods)`.
 6. **Format**: `fixed_width_table` / `csv_table` / `markdown_table`.
 
@@ -145,7 +146,7 @@ mechanisms are strictly prohibited.
 | Sum / difference | `(a + b).named("...")` or `(a - b).named("...")` |
 | Sign flip | `(-series).named("...")` |
 | Point-in-time balances | `DateSeries(name, cells_fn, exact)` (or `last` for as-of carry-forward) |
-| History then forecast | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
+| Horizontal composition | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
 
 **Closure rule:** capture the loop key with a default arg (`def factory(p: Period = k)`), never close over the loop variable alone.
 
@@ -178,7 +179,7 @@ end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
 ```
 
 - `abs_distance` for `float` (`exact_or` / `accrual_or`); `maybe_abs_distance`
-  for `Maybe[float]` (`exact` / `accrual` / `last`); custom types supply their
+  for `Maybe[float]` (`exact` / `accrual(...)` / `last`); custom types supply their
   own metric.
 - One `seed` / `distance` cut is enough to break a cycle. Put it on the
   `get` / `get_at` that observes the in-flight cell (the back-edge). Other
@@ -218,7 +219,7 @@ boundary.
 - `accrual_or(yf, default)` / `exact_or(default)` — substitute a default on miss instead of `Na`.
 
 Do not model ratios, rates, prices, or per-share measures as additive flows and
-then aggregate them with `accrual`. Derive reporting-period ratios from the
+then aggregate them with `accrual(...)`. Derive reporting-period ratios from the
 reporting-period numerator and denominator, and document the intended
 aggregation for averages and other non-additive metrics.
 
