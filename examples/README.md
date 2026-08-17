@@ -7,6 +7,7 @@ These self-contained examples demonstrate common financial-modeling patterns and
 | Example | Feature |
 | --- | --- |
 | [Capex cohorts](capex-cohorts/) | Maps each capex period to a nested depreciation schedule, then rolls the cohorts into total depreciation. |
+| [Citations](citations/) | Attaches filing metadata to sourced values via a float subclass so provenance travels with the leaf while derived cells stay ordinary numbers. |
 | [Extend series](extend-series/) | Composes a finite historical series with a later forecast so one line answers both sides of the seam. |
 | [Iterative solver](iterative-solver/) | Solves a cyclic value dependency for capitalized interest on average debt. |
 | [Series composition](series-composition/) | Combine series efficiently using type-safe arithmetic operators. |
