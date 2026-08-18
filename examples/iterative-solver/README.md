@@ -13,13 +13,13 @@ flowchart LR
 
 ## How It Works
 
-For each month, ending `debt` equals beginning debt plus `interest`. Interest is the monthly rate multiplied by the average of beginning and ending debt. The lookup of ending debt from the interest formula is the cycle's back-edge:
+For each month, ending `debt` equals beginning debt plus `interest`. Interest is the monthly rate multiplied by the average of beginning and ending debt. The lookup of ending debt from the interest formula is the cycle's cut:
 
 ```py
 end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
 ```
 
-`seed` provides the first guess and `distance` measures the residual between successive guesses. `Context` iterates until that residual is within its tolerance. Both arguments are typed against the fetched value, so an invalid seed type is caught by a static type checker.
+`seed` provides the first guess and `distance` measures the residual between successive guesses. `Context` iterates until every seeded cell in the cycle is within its tolerance. One seed-distance spec is enough no matter which series is queried first. Both arguments are typed against the fetched value, so an invalid seed type is caught by a static type checker.
 
 Confirm the first period is solved correctly:
 

@@ -64,27 +64,30 @@ accrual, or a specified day-count convention.
 
 ## Cycles
 
-Mutual `get_at` cycles raise `CycleError` at resolve time unless the demand
-that closes the cycle provides a typed `seed` and `distance`:
+Mutual `get_at` cycles raise `CycleError` at resolve time unless some demand
+in the cycle provides a typed `seed` and `distance`. One spec is enough from
+any query entrypoint (including through `+` / `map2`); put it on the
+economically unknown access:
 
 ```python
 end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
 ```
 
 `seed` and `distance` are checked against the fetched type (here `float` from
-`exact_or`). They are ignored when the target is not already on the stack, so
-they are not a default for missing keys. Prefer `exact_or` / `accrual_or` for
+`exact_or`). They are ignored when the demand is not part of a cycle, so they
+are not a default for missing keys. Prefer `exact_or` / `accrual_or` for
 circular items that always exist, so `abs_distance` matches; `exact` answers
 `Maybe[float]` and needs `maybe_abs_distance`. Custom types supply their own
 metric. A cycle that does not settle raises `ConvergenceError`; inspect
 `err.values` (seed then each iterate) and `err.residuals` to see oscillation
-or blow-up.
+or blow-up. Extra specs in the same cycle are additional residuals, not
+nested solvers — iteration continues until every seeded cell observed this
+iteration is within its own tolerance. A seeded demand that stops executing
+(a dropped sweep/trigger branch) is skipped, not treated as failure.
 
 Timing can still break a cycle without iteration (e.g. depreciation reads
 *beginning* PPE, PPE update applies dep at period end). Use iteration when the
-economics are simultaneous (average-balance interest, cash sweeps). Mark every
-cyclic `get` / `get_at` with `seed`/`distance`: only the back-edge is cut, so
-extra specs are unused for that evaluation order rather than nested solvers.
+economics are simultaneous (average-balance interest, cash sweeps).
 
 ## Unsigned / double-negative expenses
 

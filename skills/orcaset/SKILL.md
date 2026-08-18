@@ -170,9 +170,11 @@ Always `yield from`. Treat missing data according to its economic meaning:
 ## Cyclic value dependencies
 
 Cycles are supported. Mutual `get` / `get_at` calls raise `CycleError` unless
-the demand that observes an in-flight cell passes **both** `seed` and
-`distance`. They are typed against the fetched value: `seed` is the initial
-guess, `distance` maps two values to a residual.
+some demand in the cycle passes **both** `seed` and `distance`. They are typed
+against the fetched value: `seed` is the initial guess, `distance` maps two
+values to a residual. Put the spec on the economically unknown access (for
+example ending debt from interest). One cut is enough from any query
+entrypoint, including through composed series (`ebitda + interest`).
 
 ```python
 end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
@@ -181,10 +183,11 @@ end = yield from get_at(debt, p.end, seed=0.0, distance=abs_distance)
 - `abs_distance` for `float` (`exact_or` / `accrual_or`); `maybe_abs_distance`
   for `Maybe[float]` (`exact` / `accrual(...)` / `last`); custom types supply their
   own metric.
-- One `seed` / `distance` cut is enough to break a cycle. Put it on the
-  `get` / `get_at` that observes the in-flight cell (the back-edge). Other
-  edges in the cycle do not need a spec.
-- They are ignored when the target is not already on the stack — not a default
+- Extra specs in the same cycle are extra residuals, not nested solvers.
+  Iteration continues until every seeded cell observed this iteration is
+  within its own tolerance. A seeded demand that stops executing (dropped
+  sweep/trigger) is skipped, not treated as failure.
+- They are ignored when the demand is not part of a cycle — not a default
   for missing keys.
 
 Use iteration when the economics are simultaneous (average-balance interest,
