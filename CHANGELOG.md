@@ -9,6 +9,18 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Demand-cycle iteration no longer requires a seed on the runtime back-edge.
+  A `seed`/`distance` spec on any executed demand in the cycle is enough from
+  any query entrypoint, including through composed series (`+`, `map2`).
+  Extra specs in the same cycle are additional residuals, not nested solvers:
+  iteration continues until every seeded cell *observed this iteration* is
+  within its own tolerance. Seeded demands that stop executing (a dropped
+  sweep/trigger branch) are skipped, not treated as failure. Dependents are
+  recomputed from the committed cut so cached values stay consistent. See
+  `examples/iterative-solver/main.py`.
+
 ## [0.8.0] - 2026-08-13
 
 ### Added

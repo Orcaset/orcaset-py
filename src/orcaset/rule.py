@@ -22,10 +22,11 @@ _MISSING: Any = object()
 class Iterate[V]:
     """Fixed-point policy for a cyclic ``get`` / ``get_at``.
 
-    ``seed`` is the initial guess for the demanded value, used only when that
-    cell is already being computed. ``distance`` measures successive guesses
-    of the same type; the context iterates until ``distance(prev, next)`` is
-    strictly less than ``tol`` (or the context default).
+    ``seed`` is the initial guess for the demanded value. ``distance`` measures
+    successive guesses of the same type. Registering a spec on any demand in a
+    cycle is enough: the context uses that target as a cut from any query
+    entrypoint, and iterates until every seeded cell in the cycle satisfies
+    ``distance(prev, next) < tol`` (or the context default).
     """
 
     seed: V
@@ -70,9 +71,9 @@ class Demand[V]:
     as the result of the ``yield`` expression. Prefer ``get`` / ``get_at`` over
     yielding ``Demand`` directly.
 
-    ``iterate`` is used only when ``target`` at ``key`` is already on the
-    resolve stack: the scheduler injects ``iterate.seed`` and re-runs the
-    cycle until successive values are close under ``iterate.distance``.
+    ``iterate`` registers a cut on ``target`` at ``key``. When a demand cycle
+    includes that cell, the scheduler injects ``iterate.seed`` and re-runs the
+    component until every seeded cell is close under its ``distance``.
     """
 
     __slots__ = ("iterate", "key", "target")
@@ -126,7 +127,8 @@ def get_at[K: Hashable, V](
     To solve a demand cycle, pass ``seed`` and ``distance`` together. Both are
     typed against this call's return type ``V``: ``seed`` is an initial guess
     for the fetched value, and ``distance`` maps two ``V``s to a residual.
-    They are ignored when ``rule`` at ``key`` is not already being computed.
+    One spec anywhere in the cycle is enough, from any query entrypoint; they
+    are ignored when the demand is not part of a cycle.
     """
     value = yield Demand(rule, key, _iterate(seed, distance, tol, max_iter))
     return cast(V, value)
@@ -163,6 +165,7 @@ def get[V](
 
     ``seed`` and ``distance`` have the same cyclic-solve meaning as in
     ``get_at``, and are typed against this call's return type ``V``.
+    One spec anywhere in the cycle is enough, from any query entrypoint.
     """
     value = yield Demand(rule, _UNIT, _iterate(seed, distance, tol, max_iter))
     return cast(V, value)
@@ -192,7 +195,7 @@ class Rule[V](_Identity, ABC):
         computations with ``value = yield from get(rule)`` or
         ``get_at(keyed, key)`` and ``return`` the result. Acyclic bodies run
         exactly once; cyclic ``get``/``get_at`` calls that pass ``seed`` and
-        ``distance`` re-run the cut cell until successive values are close.
+        ``distance`` re-run the component until every seeded cell is close.
         Leaf rules may return a plain value.
 
         Note: a plain return value must not itself be a generator, since a

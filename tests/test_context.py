@@ -320,6 +320,191 @@ def test_iterate_dataclass_matches_get_kwargs():
     assert spec.max_iter == 10
 
 
+@pytest.mark.parametrize("enter", ["a", "b", "c"])
+def test_one_seed_solves_three_node_cycle_from_any_entry(enter: str):
+    class A(Rule[float]):
+        def compute(self) -> Step[float]:
+            return (yield from get(b))
+
+    class B(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(c, seed=0.0, distance=abs_distance)
+            return 0.5 * prior + 1.0
+
+    class C(Rule[float]):
+        def compute(self) -> Step[float]:
+            return (yield from get(a))
+
+    a = A("a")
+    b = B("b")
+    c = C("c")
+    ctx = Context()
+    start = {"a": a, "b": b, "c": c}[enter]
+    assert isclose(ctx.get(start), 2.0)
+    assert isclose(ctx.get(a), 2.0)
+    assert isclose(ctx.get(b), 2.0)
+    assert isclose(ctx.get(c), 2.0)
+
+
+def test_joint_residuals_keep_iterating_when_cut_tol_is_loose():
+    class A(Rule[float]):
+        def compute(self) -> Step[float]:
+            other = yield from get(b, seed=0.0, distance=abs_distance, tol=1e-12)
+            return 0.5 * other + 1.0
+
+    class B(Rule[float]):
+        def compute(self) -> Step[float]:
+            other = yield from get(a, seed=0.0, distance=abs_distance, tol=1.0)
+            return 0.5 * other + 1.0
+
+    a = A("a")
+    b = B("b")
+    ctx = Context()
+    # Entering through A, the back-edge is B→A with loose tol=1. B's tight
+    # spec must still be satisfied, otherwise iteration would stop around 1.875.
+    value = ctx.get(a)
+    assert isclose(value, 2.0, abs_tol=1e-9)
+    assert isclose(ctx.get(b), 2.0, abs_tol=1e-9)
+
+
+def test_freeze_recomputes_dependents_from_committed_cut():
+    class A(Rule[float]):
+        def compute(self) -> Step[float]:
+            other = yield from get(b)
+            return 0.5 * other + 1.0
+
+    class B(Rule[float]):
+        def compute(self) -> Step[float]:
+            other = yield from get(a, seed=0.0, distance=abs_distance, tol=0.1)
+            return 0.5 * other + 1.0
+
+    a = A("a")
+    b = B("b")
+    ctx = Context()
+    end = ctx.get(a)
+    other = ctx.get(b)
+    assert other == 0.5 * end + 1.0
+
+
+def test_nested_independent_cycles_each_need_a_seed():
+    class Inner(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(self, seed=1.0, distance=abs_distance)
+            return 0.5 * prior + 1.0
+
+    inner = Inner("inner")
+
+    class Outer(Rule[float]):
+        def compute(self) -> Step[float]:
+            inner_val = yield from get(inner)
+            prior = yield from get(self, seed=0.0, distance=abs_distance)
+            return 0.5 * prior + inner_val
+
+    ctx = Context()
+    assert isclose(ctx.get(Outer("outer")), 4.0)
+    assert isclose(ctx.get(inner), 2.0)
+
+
+def test_seeded_cell_behind_dropped_branch_does_not_block():
+    """A sweep/trigger seed that stops being demanded must not stall the solve."""
+
+    class Side(Rule[float]):
+        def compute(self) -> Step[float]:
+            return (yield from get(loop))
+
+    side = Side("side")
+
+    class Loop(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(self, seed=0.0, distance=abs_distance)
+            if prior < 1.9:
+                extra = yield from get(side, seed=0.0, distance=abs_distance)
+                return 0.5 * prior + 1.0 + 0.0 * extra
+            return 0.5 * prior + 1.0
+
+    loop = Loop("loop")
+    ctx = Context()
+    assert isclose(ctx.get(loop), 2.0)
+
+
+def test_convergence_error_names_unobserved_seeded_cell():
+    class Side(Rule[float]):
+        def compute(self) -> Step[float]:
+            return (yield from get(loop))
+
+    side = Side("side")
+
+    class Loop(Rule[float]):
+        def compute(self) -> Step[float]:
+            prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=3)
+            if prior == 0.0:
+                extra = yield from get(side, seed=0.0, distance=abs_distance)
+                return 0.5 * prior + 1.0 + 0.0 * extra
+            return prior + 1.0
+
+    loop = Loop("loop")
+    ctx = Context()
+    with pytest.raises(ConvergenceError) as caught:
+        ctx.get(loop)
+    err = caught.value
+    assert err.unobserved
+    assert "side" in str(err)
+    assert "not observed this iteration" in str(err)
+
+
+def test_composed_series_cycle_with_one_seed_from_either_entry():
+    start = date(2022, 12, 31)
+    period = next(Period.seq(start, relativedelta(years=1, day=31)))
+    opening = 100.0
+    ebitda_amt = 20.0
+    rate = 0.10
+
+    def require(value: Maybe[float]) -> float:
+        if isna(value):
+            raise AssertionError("expected a float, got Na")
+        return value
+
+    ebitda = PeriodSeries("EBITDA", lambda: ((period, ebitda_amt),), exact_or(0.0))
+
+    def interest_cells() -> Iterator[tuple[Period, CellFactory[float]]]:
+        def factory() -> Step[float]:
+            end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
+            return -rate * (opening + end) / 2.0
+
+        yield period, factory
+
+    interest = PeriodSeries("Interest", interest_cells, exact_or(0.0))
+    fcf = (ebitda + interest).named("FCF")
+
+    def debt_cells() -> Iterator[tuple[date, float | CellFactory[float]]]:
+        yield start, opening
+
+        def factory() -> Step[float]:
+            fcf_val = require((yield from get_at(fcf, period)))
+            return opening - fcf_val
+
+        yield period.end, factory
+
+    debt = DateSeries("Debt", debt_cells, exact_or(0.0))
+    # ending = opening - ebitda + rate * (opening + ending) / 2
+    expected_end = (opening * (1.0 + rate / 2.0) - ebitda_amt) / (1.0 - rate / 2.0)
+
+    def assert_solved(ctx: Context) -> None:
+        end = ctx.get_at(debt, period.end)
+        flow = require(ctx.get_at(fcf, period))
+        amount = ctx.get_at(interest, period)
+        assert isclose(end, expected_end, rel_tol=1e-9)
+        assert isclose(flow, opening - end, rel_tol=1e-9)
+        assert isclose(amount, flow - ebitda_amt, rel_tol=1e-9)
+
+    ctx_fcf = Context()
+    ctx_fcf.get_at(fcf, period)
+    assert_solved(ctx_fcf)
+    ctx_debt = Context()
+    ctx_debt.get_at(debt, period.end)
+    assert_solved(ctx_debt)
+
+
 def test_period_and_date_series_circular_interest():
     start = date(2025, 12, 31)
     month = relativedelta(months=1, day=31)

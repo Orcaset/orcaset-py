@@ -7,12 +7,13 @@ Interest depends on ending debt, and ending debt includes that interest
 (payment-in-kind). The cyclic ``get_at`` of ending debt passes ``seed`` and
 ``distance`` typed against the fetched value — here ``float``, because
 ``exact_or(0.0)`` answers ``float`` rather than ``Maybe[float]``. That
-back-edge is the cut; debt's demand of interest does not need a spec when
-evaluation starts from debt.
+spec is the cycle's cut: it is enough from any query entrypoint, so debt's
+demand of interest does not need a spec.
 
-A wrong seed type (for example ``seed="0"``) is a static error against the
-``get_at`` return type. Custom value types follow the same pattern: provide a
-``seed`` of that type and a ``distance`` that maps two of them to a residual.
+A wrong seed type (for example ``seed="0"`` passing a ``str``) is a static
+error against the ``get_at`` return type. Custom value types follow the same
+pattern: provide a ``seed`` of that type and a ``distance`` that maps two of
+them to a residual.
 """
 
 from collections.abc import Iterator
@@ -45,6 +46,7 @@ def debt() -> Iterator[tuple[date, float | CellFactory[float]]]:
     for p in Period.seq(MODEL_START, MONTH):
 
         def factory(period: Period = p) -> Step[float]:
+            # No seed or distance function passed in either `get_at` here
             begin = yield from get_at(debt, period.start)
             interest_amt = yield from get_at(interest, period)
             return begin + interest_amt
@@ -57,6 +59,8 @@ def interest() -> Iterator[tuple[Period, CellFactory[float]]]:
     for p in Period.seq(MODEL_START, MONTH):
 
         def factory(period: Period = p) -> Step[float]:
+            # Seed and distance function passed to the ending debt query here
+            # The solver will use this single cut to break the cycle and find a solution
             begin = yield from get_at(debt, period.start)
             end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
             return RATE * 0.5 * (begin + end)

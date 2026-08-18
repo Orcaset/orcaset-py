@@ -33,7 +33,7 @@ class Context:
     def dependencies[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> DepNode:
     def rule_dependencies[V](self, rule: Rule[V]) -> DepNode:
 
-class CycleError(RuntimeError):  # Demand cycle with no seed/distance iterate policy
+class CycleError(RuntimeError):  # Demand cycle with no seed/distance on any cell
     path: tuple[tuple[int, Hashable], ...]
 
 class ConvergenceError(RuntimeError):  # Cyclic demand did not settle within max_iter
@@ -41,8 +41,10 @@ class ConvergenceError(RuntimeError):  # Cyclic demand did not settle within max
     iterations: int
     residual: float
     tol: float
-    values: tuple[Any, ...]  # Seed then each iterate
+    values: tuple[Any, ...]  # Seed then each iterate of the cut cell
     residuals: tuple[float, ...]  # distance(values[i], values[i + 1])
+    seeded_residuals: tuple[tuple[tuple[int, Hashable], float, float], ...]  # (cell, last residual, tol) per observed seeded cell
+    unobserved: tuple[tuple[int, Hashable], ...]  # seeded cells not demanded this iteration
 
 class DepNode:
     name: str
@@ -378,7 +380,11 @@ class Demand[V]:
     iterate: Iterate[V] | None
 
 class Iterate[V]:
-    """Fixed-point policy for a cyclic ``get`` / ``get_at``."""
+    """Fixed-point policy for a cyclic ``get`` / ``get_at``.
+
+    One spec anywhere in the cycle is enough from any query entrypoint.
+    Extra specs are extra residuals, not nested solvers.
+    """
     seed: V
     distance: Callable[[V, V], float]
     tol: float | None = None
@@ -396,6 +402,7 @@ def get_at[K: Hashable, V](
     """Request ``rule`` at ``key`` from within ``compute``. Always ``yield from``.
 
     Pass ``seed`` and ``distance`` together to solve a demand cycle.
+    One spec anywhere in the cycle is enough from any query entrypoint.
     """
 
 def get[V](
@@ -406,7 +413,10 @@ def get[V](
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Step[V]:
-    """Request an unkeyed ``Rule`` from within ``compute``. Always ``yield from``."""
+    """Request an unkeyed ``Rule`` from within ``compute``. Always ``yield from``.
+
+    ``seed`` and ``distance`` have the same cyclic-solve meaning as in ``get_at``.
+    """
 
 def abs_distance(a: float, b: float) -> float:
 def maybe_abs_distance(a: Maybe[float], b: Maybe[float]) -> float:  # Na vs non-Na is infinite
