@@ -1,4 +1,4 @@
-# Simple LBO
+# Paper LBO
 
 This example models a basic leveraged buyout with pro forma financials, sources and uses, and IRR sensitivity analysis.
 
@@ -9,6 +9,6 @@ This is a standalone uv project with its own library dependencies. orcaset is pi
 Requires Python 3.14+.
 
 ```sh
-cd examples/simple-lbo
+cd examples/paper-lbo
 uv run python main.py
 ```

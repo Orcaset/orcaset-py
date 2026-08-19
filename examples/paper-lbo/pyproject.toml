@@ -1,5 +1,5 @@
 [project]
-name = "simple-lbo"
+name = "paper-lbo"
 version = "0.1.0"
 description = "Simple leveraged buyout model with IRR sensitivity"
 requires-python = ">=3.14"
