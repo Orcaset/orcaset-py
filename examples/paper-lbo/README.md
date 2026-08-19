@@ -1,22 +1,61 @@
 # Paper LBO
 
-This example builds a model for a simple paper LBO practice case. It highlights sensitivity analysis using custom rules, solving circularity for swept cash, and concise code expression relative to the equivalent Excel build scripts.
+This example builds a model for a simple paper LBO practice case. It highlights concise code relative to equivalent Excel build scripts and sensitivity analysis with custom rules.
 
-The case is from Wharton's career office: [LBO Practice Model](https://careerservices.upenn.edu/resources/lbo-practice-model/).
+The case is from Wharton Career Services: [LBO Practice Model](https://careerservices.upenn.edu/resources/lbo-practice-model/).
 
 ## Analysis in fewer tokens
 
-The `main.py` file uses significantly fewer tokens than the equivalent build scripts written by Claude Code or ChatGPT to solve this case study in Excel. Orcaset is able to define line items more concisely than Excel build scripts. For example, EBT is define in a single line `ebt = (ebit + interest).named("EBT")`.
+The `main.py` file uses significantly fewer tokens than equivalent build scripts written by Claude Code or ChatGPT to solve this case study in Excel. Orcaset defines line items more concisely than Excel build scripts. For example, EBT is defined in a single line: `ebt = (ebit + interest).named("EBT")`.
 
 This table compares the analysis script in this example using orcaset against Excel scripts from Claude Code and ChatGPT.
 
-| Tool | Tokens | Increase from orcaset |
+| Tool | Tokens | Multiple of orcaset |
 | --- | ---: | ---: |
 | orcaset | 3,322 | 1.0x |
 | Claude Code | 7,944 | 2.4x |
 | ChatGPT | 9,381 | 2.8x |
 
-*These results are averages over a small number of runs using different Opus and Sol class models. Claude Code was instructed to use the `/xlsx` skill and ChatGPT told to use the `$spreadsheet` plugin. Both were told to use minimal formatting. Resulting scripts were within a relatively tight band of tokens.*
+*These results are averages over a small number of runs using different Opus and Sol class models. Claude Code was instructed to use the `/xlsx` skill and ChatGPT was told to use the `$spreadsheet` plugin. Both were told to use minimal formatting. Resulting scripts fell within a relatively tight band of token counts.*
+
+## Sensitivity analysis
+
+The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and custom `Rule` assumptions. For each pair, update the assumptions and compute IRR in a fresh context.
+
+The example defines a `Rule` subclass that `get` resolves through the effect handler:
+
+```py
+class Assumption(Rule[float]):
+    def __init__(self, name: str, value: float) -> None:
+        super().__init__(name)
+        self.value = value
+
+    def compute(self) -> float:
+        return self.value
+```
+
+> `Rule` and its sibling class `KeyedRule` are abstract classes that `get` and `get_at` resolve through the abstract method `compute`. Series types such as `PeriodSeries` and `DateSeries` are concrete `KeyedRule` implementations.
+
+The exit multiple and revenue growth rate are defined as assumptions and accessed with `get`:
+
+```py
+exit_multiple = Assumption("Exit multiple", 5.0)
+annual_revenue_growth = Assumption("Revenue growth rate", 0.1)
+```
+
+The sensitivity analysis loops over the assumption ranges, updates each assumption, and computes IRR in a fresh context. Use a new `Context` for every iteration; otherwise stale cached values will be reused.
+
+```py
+for multiple in (3.0, ..., 7.0):
+    for growth_rate in (0.06, ..., 0.14):
+        exit_multiple.value = multiple
+        annual_revenue_growth.value = growth_rate
+        ctx = Context()
+        # Continue solving for IRR
+        # ...
+```
+
+Unlike what-if tables, which are limited to two variables, orcaset has no such limit. You can nest loops over additional assumptions to explore higher-dimensional interactions.
 
 ## Reference
 
@@ -24,8 +63,8 @@ This table compares the analysis script in this example using orcaset against Ex
 
 ## Highlights
 
-* **Circularity:** Enabled by passing `seed` and a `distance` function to at least one accessor function that cuts the cycle. No circuit breaker required — orcaset can't get stuck in the same way.
-* **Concise:** Significantly more concise than the Python script for building the Excel version.
+* **Circularity:** Enabled by passing `seed` and a `distance` function to at least one accessor function that cuts the cycle. No circuit breaker is required — orcaset cannot get stuck in the same way.
+* **Concise:** Significantly more concise than the Python scripts for building the Excel version.
 * **Sensitivity:** Sensitize variables by making them rules set to different values in different contexts.
 
 ## Run
