@@ -69,7 +69,7 @@ Unlike what-if tables, which are limited to two variables, orcaset has no such l
 
 ## Run
 
-This is a standalone uv project with its own library dependencies. orcaset is pinned to `0.8.0` and resolved from the repo checkout.
+This is a standalone uv project with its own library dependencies. orcaset is pinned to `0.8.1` and resolved from the repo checkout.
 
 Requires Python 3.14+.
 
