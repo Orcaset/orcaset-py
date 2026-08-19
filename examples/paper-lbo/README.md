@@ -1,6 +1,6 @@
 # Paper LBO
 
-This example builds a model for a simple paper LBO practice case. It highlights concise code relative to equivalent Excel build scripts and sensitivity analysis with custom rules.
+This example models a basic paper LBO case with IRR sensitivity. It highlights concise code relative to equivalent Excel scripts and sensitivity analysis with custom rules.
 
 The case is from Wharton Career Services: [LBO Practice Model](https://careerservices.upenn.edu/resources/lbo-practice-model/).
 
@@ -57,15 +57,7 @@ for multiple in (3.0, ..., 7.0):
 
 Unlike what-if tables, which are limited to two variables, orcaset has no such limit. You can nest loops over additional assumptions to explore higher-dimensional interactions.
 
-## Reference
-
-[`reference/wharton-lbo-practice-model.xlsx`](reference/wharton-lbo-practice-model.xlsx) — Wharton Career Services LBO practice workbook (blank model, answer key, and notes). Source: [careerservices.upenn.edu](https://careerservices.upenn.edu/resources/lbo-practice-model/).
-
-## Highlights
-
-* **Circularity:** Enabled by passing `seed` and a `distance` function to at least one accessor function that cuts the cycle. No circuit breaker is required — orcaset cannot get stuck in the same way.
-* **Concise:** Significantly more concise than the Python scripts for building the Excel version.
-* **Sensitivity:** Sensitize variables by making them rules set to different values in different contexts.
+It is also worth noting orcaset does not need the circularity circuit breaker used in the reference model. Circular dependencies are cut once in the `interest` definition. Evaluation either resolves or raises an exception.
 
 ## Run
 
@@ -135,3 +127,17 @@ IRR sensitivity
   6.0x   24.10%   27.46%   30.72%   33.89%   36.99%
   7.0x   29.29%   32.60%   35.82%   38.98%   42.06%
 ```
+
+## Layout
+
+| File | Role |
+| --- | --- |
+| [`main.py`](main.py) | Assumptions, pro forma income statement and cash flow, debt schedule, levered cash flows, sources and uses, and IRR sensitivity |
+
+## References
+
+| File | Role |
+| --- | --- |
+| [Wharton LBO Practice Model](https://careerservices.upenn.edu/resources/lbo-practice-model/) | Original case study |
+| [`reference/example-opus-excel-build-script.py`](reference/example-opus-excel-build-script.py) | Example Claude Code Excel build script used in the token comparison |
+| [`reference/example-sol-excel-build-script.mjs`](reference/example-sol-excel-build-script.mjs) | Example ChatGPT Excel build script used in the token comparison |
