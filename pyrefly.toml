@@ -1,7 +1,7 @@
 # Each example under `examples/` has its own pyrefly.toml so their local `model`
 # packages don't collide on a shared search-path. Run pyrefly from inside each
 # example to check it.
-project-excludes = [".venv", "**/__pycache__", "examples/web-scraping"]
+project-excludes = [".venv", "**/__pycache__", "examples/web-scraping", "examples/simple-lbo"]
 search-path = ["src"]
 strict-callable-subtyping = true
 
