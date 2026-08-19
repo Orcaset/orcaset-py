@@ -1,6 +1,14 @@
 # Paper LBO
 
-This example models a basic leveraged buyout with pro forma financials, sources and uses, and IRR sensitivity analysis.
+Simple LBO model from Wharton. The goal of this example is to highlight model comparisons to the Excel implementation in a simple format.
+
+Follows the case study at [LBO Practice Model](https://careerservices.upenn.edu/resources/lbo-practice-model/).
+
+## Highlights
+
+* **Circularity:** Enabled by passing `seed` and a `distance` function to at least one accessor function that cuts the cycle. No circuit breaker required — orcaset can't get stuck in the same way.
+* **Concise:** Significantly more concise than the Python script for building the Excel version.
+* **Sensitivity:** Sensitize variables by making them rules set to different values in different contexts.
 
 ## Run
 
