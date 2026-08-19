@@ -44,7 +44,7 @@ The scraping process uses well-known libraries from Python's open ecosystem. The
 
 ## Run
 
-This is a standalone uv project with its own library dependencies. orcaset is pinned to `0.8.0` and resolved from the repo checkout.
+This is a standalone uv project with its own library dependencies. orcaset is pinned to `0.8.1` and resolved from the repo checkout.
 
 Requires Python 3.14+ and a network path to `tsa.gov`.
 
