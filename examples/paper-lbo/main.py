@@ -299,8 +299,8 @@ print(f"IRR: {float(npf.irr(cashflows)):.2%}")
 
 ## Source and uses
 loan = ctx.get_at(debt_balance, acquisition_date)
-equity = ctx.get_at(levered_cash_flow, acquisition_date)
-pp = ctx.get_at(purchase_price, acquisition_date)
+equity = -ctx.get_at(levered_cash_flow, acquisition_date)
+pp = -ctx.get_at(purchase_price, acquisition_date)
 
 print()
 print(
