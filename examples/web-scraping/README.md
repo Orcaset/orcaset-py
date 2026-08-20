@@ -18,10 +18,10 @@ The scraping process is not a pre-calculation step. The model fetches data on-de
 
 ```mermaid
 flowchart TD
-  A[1. Evaluate current-quarter passenger revenue] --> B[2. Scrape daily TSA volumes from tsa.gov]
-  B --> C[3. Create a daily series of passenger flows]
-  C --> D[4. Calculate "Growth = current QTD / prior QTD" by querying the daily series]
-  D --> E[5. "Passenger = prior quarter revenue × growth"]
+  A["1. Evaluate current-quarter passenger revenue"] --> B["2. Scrape daily TSA volumes from tsa.gov"]
+  B --> C["3. Create a daily series of passenger flows"]
+  C --> D["4. Calculate Growth = current QTD / prior QTD by querying the daily series"]
+  D --> E["5. Passenger = prior quarter revenue × growth"]
 ```
 
 `tsa_passengers` is the key definition that ties the data retrieval into the model.

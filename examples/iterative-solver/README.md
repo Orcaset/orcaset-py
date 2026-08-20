@@ -4,8 +4,8 @@ This example demonstrates orcaset's iterative solver for a genuine circular form
 
 ```mermaid
 flowchart LR
-  interest["Capitalized interest"] -->|"beginning debt + interest"| end["Ending debt"]
-  end -->|"avg(beginning debt, ending debt)"| avg["Average debt"]
+  interest["Capitalized interest"] -->|"beginning debt + interest"| ending["Ending debt"]
+  ending -->|"avg(beginning debt, ending debt)"| avg["Average debt"]
   avg -->|"rate × average balance"| interest
 ```
 
