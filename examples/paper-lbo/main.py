@@ -4,6 +4,7 @@ from itertools import pairwise, repeat
 
 import numpy_financial as npf
 from dateutil.relativedelta import relativedelta
+
 from orcaset import (
     YF,
     CellFactory,
