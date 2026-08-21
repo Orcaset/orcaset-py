@@ -24,6 +24,8 @@ change between minor releases.
   subclassed them and overrode `compute` should subclass `RuleBase` /
   `KeyedRuleBase` instead. `isinstance(series, KeyedRule)` is now false;
   use `KeyedRuleBase`. `get` / `get_at` / `Context` accept the base types.
+  The paper LBO example uses `Rule(name, fn)` for growth and exit multiple
+  (replace `fn` between scenarios).
 
 ## [0.8.1] - 2026-08-18
 
