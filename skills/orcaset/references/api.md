@@ -5,12 +5,12 @@
 ```py
 type DayCount = Callable[[date, date], float]  # Length of an ordered date pair (year fraction, days, …)
 
-def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:  # Point lookup, or Na
+def exact[K: Key, V](q: K, cells: Iterable[tuple[K, RuleBase[V]]]) -> Step[Maybe[V]]:  # Point lookup, or Na
 def exact_or[K: Key, V](default: V) -> QueryFn[K, K, V, V]:  # Like exact, but default on miss
-def last[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:  # Latest cell at or before q, or Na
+def last[K: Key, V](q: K, cells: Iterable[tuple[K, RuleBase[V]]]) -> Step[Maybe[V]]:  # Latest cell at or before q, or Na
 def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:  # Weight overlapping cells by yf
 def accrual_or(yf: DayCount, default: float) -> QueryFn[Period, Period, float, float]:  # Like accrual, but default on miss
-def covered(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[Maybe[float]]:  # Sum cells that exactly tile q; Na on gap or partial overlap
+def covered(q: Period, cells: Iterable[tuple[Period, RuleBase[float]]]) -> Step[Maybe[float]]:  # Sum cells that exactly tile q; Na on gap or partial overlap
 ```
 
 ## yf
@@ -28,10 +28,10 @@ class YF:
 ```py
 class Context:
     def __init__(self, *, tol: float = 1e-9, max_iter: int = 1000) -> None:
-    def get_at[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> V:
-    def get[V](self, rule: Rule[V]) -> V:
-    def dependencies[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> DepNode:
-    def rule_dependencies[V](self, rule: Rule[V]) -> DepNode:
+    def get_at[K: Hashable, V](self, rule: KeyedRuleBase[K, V], key: K) -> V:
+    def get[V](self, rule: RuleBase[V]) -> V:
+    def dependencies[K: Hashable, V](self, rule: KeyedRuleBase[K, V], key: K) -> DepNode:
+    def rule_dependencies[V](self, rule: RuleBase[V]) -> DepNode:
 
 class CycleError(RuntimeError):  # Demand cycle with no seed/distance on any cell
     path: tuple[tuple[int, Hashable], ...]
@@ -272,7 +272,7 @@ type CellsFn[K: Key, V] = Callable[
     CellStream[K, V] | Iterable[tuple[K, V | CellFactory[V]]],
 ]
 type QueryFn[Q, K: Key, V, W] = Callable[
-    [Q, Iterable[tuple[K, Rule[V]]]],
+    [Q, Iterable[tuple[K, RuleBase[V]]]],
     Step[W] | W,
 ]
 
@@ -282,14 +282,14 @@ class Replayable[T](Iterable[T]):
     def __init__(self, iterable: Iterable[T]) -> None:
 
 
-class BaseSeries[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
+class BaseSeries[Q: Hashable, K: Key, W](KeyedRuleBase[Q, W], ABC):
     """A demandable rule with an explicit time domain.
 
     Values are only reachable through ``compute``, so every answer is
     dependency-tracked. Prefer ``PeriodSeries`` / ``DateSeries`` when ``Q`` and
     ``K`` are ``Period`` or ``date``.
     """
-    def keys(self) -> Rule[Iterable[K]]:  # Demandable ascending domain (strictly ascending, possibly infinite)
+    def keys(self) -> RuleBase[Iterable[K]]:  # Demandable ascending domain (strictly ascending, possibly infinite)
     def map[V](self, name: str, fn: Callable[[W], V]) -> BaseSeries[Q, K, V]:
     def map2[W2, V](
         self,
@@ -302,7 +302,7 @@ class BaseSeries[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
 
 
 class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
-    """Series backed by a lazy stream of ``(K, Rule[V])`` cells."""
+    """Series backed by a lazy stream of ``(K, RuleBase[V])`` cells."""
     def __init__(
         self,
         name: str,
@@ -354,28 +354,44 @@ class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
 type Step[V] = Generator[Demand[Any], Any, V]
 
 
-class Rule[V](ABC):
-    """A single memoized computation (no key)."""
+class RuleBase[V](ABC):
+    """A single memoized computation (no key). Subclass to override ``compute``."""
     @property
     def id(self) -> int:
     @property
     def name(self) -> str:
     def compute(self) -> Step[V] | V:
 
-class KeyedRule[K: Hashable, V](ABC):
-    """A keyed family of memoized computations."""
+class KeyedRuleBase[K: Hashable, V](ABC):
+    """A keyed family of memoized computations. Subclass to override ``compute``."""
     @property
     def id(self) -> int:
     @property
     def name(self) -> str:
     def compute(self, key: K, /) -> Step[V] | V:
 
+class Rule[V](RuleBase[V]):
+    """Unkeyed rule whose ``compute`` delegates to a public zero-arg ``fn``."""
+    fn: Callable[[], Step[V] | V]
+    def __init__(self, name: str, fn: Callable[[], Step[V] | V]) -> None: ...
+    @classmethod
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Rule[V2]]: ...
+
+class KeyedRule[K: Hashable, V](KeyedRuleBase[K, V]):
+    """Keyed rule whose ``compute`` delegates to a public one-arg ``fn``."""
+    fn: Callable[[K], Step[V] | V]
+    def __init__(self, name: str, fn: Callable[[K], Step[V] | V]) -> None: ...
+    @classmethod
+    def define[K2: Hashable, V2](
+        cls, name: str,
+    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedRule[K2, V2]]: ...
+
 class Demand[V]:
     """A request for another computation's value, yielded from ``compute``.
 
     Prefer ``get`` / ``get_at`` over yielding ``Demand`` directly.
     """
-    target: KeyedRule[Any, V] | Rule[V]
+    target: KeyedRuleBase[Any, V] | RuleBase[V]
     key: Hashable
     iterate: Iterate[V] | None
 
@@ -391,7 +407,7 @@ class Iterate[V]:
     max_iter: int | None = None
 
 def get_at[K: Hashable, V](
-    rule: KeyedRule[K, V],
+    rule: KeyedRuleBase[K, V],
     key: K,
     *,
     seed: V = ...,
@@ -406,14 +422,14 @@ def get_at[K: Hashable, V](
     """
 
 def get[V](
-    rule: Rule[V],
+    rule: RuleBase[V],
     *,
     seed: V = ...,
     distance: Callable[[V, V], float] = ...,
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Step[V]:
-    """Request an unkeyed ``Rule`` from within ``compute``. Always ``yield from``.
+    """Request an unkeyed ``RuleBase`` from within ``compute``. Always ``yield from``.
 
     ``seed`` and ``distance`` have the same cyclic-solve meaning as in ``get_at``.
     """

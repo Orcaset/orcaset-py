@@ -20,12 +20,12 @@ This table compares the analysis script in this example using orcaset against Ex
 
 ## Sensitivity analysis
 
-The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and custom `Rule` assumptions. For each pair, update the assumptions and compute IRR in a fresh context.
+The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and custom `RuleBase` assumptions. For each pair, update the assumptions and compute IRR in a fresh context.
 
-The example defines a `Rule` subclass that `get` resolves through the effect handler:
+The example defines a `RuleBase` subclass that `get` resolves through the effect handler:
 
 ```py
-class Assumption(Rule[float]):
+class Assumption(RuleBase[float]):
     def __init__(self, name: str, value: float) -> None:
         super().__init__(name)
         self.value = value
@@ -34,7 +34,7 @@ class Assumption(Rule[float]):
         return self.value
 ```
 
-> `Rule` and its sibling class `KeyedRule` are abstract classes that `get` and `get_at` resolve through the abstract method `compute`. Series types such as `PeriodSeries` and `DateSeries` are concrete `KeyedRule` implementations.
+> `RuleBase` and `KeyedRuleBase` are the abstract `compute` protocol that `get` / `get_at` resolve. `Rule` / `KeyedRule` wrap a public `fn` for one-off bodies; series types such as `PeriodSeries` and `DateSeries` are `KeyedRuleBase` implementations.
 
 The exit multiple and revenue growth rate are defined as assumptions and accessed with `get`:
 

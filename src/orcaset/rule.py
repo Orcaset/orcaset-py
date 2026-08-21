@@ -48,7 +48,7 @@ def maybe_abs_distance(a: Maybe[float], b: Maybe[float]) -> float:
 
 
 class _Identity:
-    """Shared id/name for ``Rule`` and ``KeyedRule``."""
+    """Shared id/name for ``RuleBase`` and ``KeyedRuleBase``."""
 
     def __init__(self, name: str) -> None:
         self._name = name
@@ -80,7 +80,7 @@ class Demand[V]:
 
     def __init__(
         self,
-        target: KeyedRule[Any, V] | Rule[V],
+        target: KeyedRuleBase[Any, V] | RuleBase[V],
         key: Hashable,
         iterate: Iterate[V] | None = None,
     ) -> None:
@@ -94,12 +94,12 @@ type Step[V] = Generator[Demand[Any], Any, V]
 
 
 @overload
-def get_at[K: Hashable, V](rule: KeyedRule[K, V], key: K) -> Step[V]: ...
+def get_at[K: Hashable, V](rule: KeyedRuleBase[K, V], key: K) -> Step[V]: ...
 
 
 @overload
 def get_at[K: Hashable, V](
-    rule: KeyedRule[K, V],
+    rule: KeyedRuleBase[K, V],
     key: K,
     *,
     seed: V,
@@ -110,7 +110,7 @@ def get_at[K: Hashable, V](
 
 
 def get_at[K: Hashable, V](
-    rule: KeyedRule[K, V],
+    rule: KeyedRuleBase[K, V],
     key: K,
     *,
     seed: V | Any = _MISSING,
@@ -135,12 +135,12 @@ def get_at[K: Hashable, V](
 
 
 @overload
-def get[V](rule: Rule[V]) -> Step[V]: ...
+def get[V](rule: RuleBase[V]) -> Step[V]: ...
 
 
 @overload
 def get[V](
-    rule: Rule[V],
+    rule: RuleBase[V],
     *,
     seed: V,
     distance: Callable[[V, V], float],
@@ -150,14 +150,14 @@ def get[V](
 
 
 def get[V](
-    rule: Rule[V],
+    rule: RuleBase[V],
     *,
     seed: V | Any = _MISSING,
     distance: Callable[[V, V], float] | Any = _MISSING,
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Step[V]:
-    """Request the value of an unkeyed ``Rule`` from within ``compute``.
+    """Request the value of an unkeyed ``RuleBase`` from within ``compute``.
 
     Use with ``yield from``:
 
@@ -184,8 +184,12 @@ def _iterate[V](
     return Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
 
 
-class Rule[V](_Identity, ABC):
-    """A single memoized computation (no key)."""
+class RuleBase[V](_Identity, ABC):
+    """A single memoized computation (no key).
+
+    Subclass to override ``compute``. For a one-off body, use ``Rule`` or
+    ``@Rule.define`` instead.
+    """
 
     @abstractmethod
     def compute(self) -> Step[V] | V:
@@ -205,15 +209,80 @@ class Rule[V](_Identity, ABC):
         ...
 
 
-class KeyedRule[K: Hashable, V](_Identity, ABC):
-    """A keyed family of memoized computations."""
+class KeyedRuleBase[K: Hashable, V](_Identity, ABC):
+    """A keyed family of memoized computations.
+
+    Subclass to override ``compute`` (as ``PeriodSeries`` does). For a one-off
+    body, use ``KeyedRule`` or ``@KeyedRule.define`` instead.
+    """
 
     @abstractmethod
     def compute(self, key: K, /) -> Step[V] | V:
         """Compute the value of this rule at ``key``.
 
-        Same generator conventions as ``Rule.compute``, but keyed. The parameter
-        is positional-only so overrides may rename it for their key space
-        (e.g. ``q`` for query-keyed rules).
+        Same generator conventions as ``RuleBase.compute``, but keyed. The
+        parameter is positional-only so overrides may rename it for their key
+        space (e.g. ``q`` for query-keyed rules).
         """
         ...
+
+
+class Rule[V](RuleBase[V]):
+    """Unkeyed rule whose ``compute`` delegates to a zero-arg ``fn``.
+
+    ``fn`` is public and may be replaced; a new ``Context`` is required for a
+    later ``get`` to see the change. Subclass ``RuleBase`` when ``compute``
+    needs extra state or methods.
+    """
+
+    def __init__(self, name: str, fn: Callable[[], Step[V] | V]) -> None:
+        super().__init__(name)
+        self.fn = fn
+
+    def compute(self) -> Step[V] | V:
+        return self.fn()
+
+    @classmethod
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Rule[V2]]:
+        """Decorator: build a ``Rule`` from a zero-arg compute function.
+
+        The decorated function becomes the rule, so its body can close over
+        that name — including ``get`` of itself for a demand cycle.
+        """
+
+        def decorator(fn: Callable[[], Step[V2] | V2]) -> Rule[V2]:
+            return cls(name, fn)
+
+        return decorator
+
+
+class KeyedRule[K: Hashable, V](KeyedRuleBase[K, V]):
+    """Keyed rule whose ``compute`` delegates to a one-arg ``fn``.
+
+    ``fn`` is public and may be replaced; a new ``Context`` is required for a
+    later ``get_at`` to see the change. Subclass ``KeyedRuleBase`` when
+    ``compute`` needs extra state or methods.
+    """
+
+    def __init__(self, name: str, fn: Callable[[K], Step[V] | V]) -> None:
+        super().__init__(name)
+        self.fn = fn
+
+    def compute(self, key: K, /) -> Step[V] | V:
+        return self.fn(key)
+
+    @classmethod
+    def define[K2: Hashable, V2](
+        cls,
+        name: str,
+    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedRule[K2, V2]]:
+        """Decorator: build a ``KeyedRule`` from a keyed compute function.
+
+        The decorated function becomes the rule, so its body can close over
+        that name.
+        """
+
+        def decorator(fn: Callable[[K2], Step[V2] | V2]) -> KeyedRule[K2, V2]:
+            return cls(name, fn)
+
+        return decorator

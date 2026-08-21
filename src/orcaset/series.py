@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
 from itertools import chain
 from typing import Any, Protocol, Self, cast
 
-from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
+from orcaset.rule import Demand, KeyedRuleBase, Rule, RuleBase, Step, get, get_at
 
 # ---------- keys ----------
 
@@ -61,12 +61,12 @@ pair is seen the remainder is driven as a plain pairs iterator.
 """
 
 type QueryFn[Q, K: Key, V, W] = Callable[
-    [Q, Iterable[tuple[K, Rule[V]]]],
+    [Q, Iterable[tuple[K, RuleBase[V]]]],
     Step[W] | W,
 ]
 """Fold a query over a lazy cell stream into an answer.
 
-Each cell is a ``Rule[V]`` — force with ``yield from get(cell)``. May scan
+Each cell is a ``RuleBase[V]`` — force with ``yield from get(cell)``. May scan
 without forcing every cell (early-terminate, skip). Fixed per series at
 construction so a series cannot be read under another convention.
 """
@@ -109,15 +109,15 @@ class Replayable[T](Iterable[T]):
 # ---------- series ----------
 
 
-class BaseSeries[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
+class BaseSeries[Q: Hashable, K: Key, W](KeyedRuleBase[Q, W], ABC):
     """A demandable rule with an explicit time domain.
 
-    Public surface: ``compute`` (via ``KeyedRule``) and ``keys()``. Values are only
+    Public surface: ``compute`` (via ``KeyedRuleBase``) and ``keys()``. Values are only
     reachable through ``compute``, so every answer is dependency-tracked.
     """
 
     @abstractmethod
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         """Demandable ascending domain (strictly ascending, possibly infinite)."""
         ...
 
@@ -158,7 +158,7 @@ class MapSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
         self._source = source
         self._fn = fn
 
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         return self._source.keys()
 
     def compute(self, q: Q, /) -> Step[V]:
@@ -186,9 +186,9 @@ class MapNSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
         super().__init__(name)
         self._sources = sources
         self._fn = fn
-        self._keys: Rule[Iterable[K]] = _MapNKeys(name, sources, merge_keys)
+        self._keys: RuleBase[Iterable[K]] = _MapNKeys(name, sources, merge_keys)
 
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         return self._keys
 
     def compute(self, q: Q, /) -> Step[V]:
@@ -218,9 +218,9 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](BaseSeries[Q, K, V]):
         self._left = left
         self._right = right
         self._fn = fn
-        self._keys: Rule[Iterable[K]] = _MapNKeys(name, (left, right), merge_keys)
+        self._keys: RuleBase[Iterable[K]] = _MapNKeys(name, (left, right), merge_keys)
 
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         return self._keys
 
     def compute(self, q: Q, /) -> Step[V]:
@@ -230,7 +230,7 @@ class Map2Series[Q: Hashable, K: Key, W1, W2, V](BaseSeries[Q, K, V]):
 
 
 class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
-    """Series backed by a lazy stream of ``(K, Rule[V])`` cells.
+    """Series backed by a lazy stream of ``(K, RuleBase[V])`` cells.
 
     ``cells`` is a zero-arg factory yielding or returning ``(key, value | factory)``
     pairs, where each value is plain or a factory ``() -> Step[V] | V``. It may
@@ -252,8 +252,8 @@ class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
         query: QueryFn[Q, K, V, W],
     ) -> None:
         super().__init__(name)
-        self._cells: Rule[Iterable[tuple[K, Rule[V]]]] = _Cells(name, cells)
-        self._keys: Rule[Iterable[K]] = _GridKeys(name, self._cells)
+        self._cells: RuleBase[Iterable[tuple[K, RuleBase[V]]]] = _Cells(name, cells)
+        self._keys: RuleBase[Iterable[K]] = _GridKeys(name, self._cells)
         self._query = query
 
     @classmethod
@@ -285,7 +285,7 @@ class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
 
         return decorator
 
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         return self._keys
 
     def compute(self, q: Q, /) -> Step[W]:
@@ -310,10 +310,10 @@ class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
     ) -> None:
         super().__init__(name)
         self._source = source
-        self._cells: Rule[Iterable[tuple[K, Rule[V]]]] = _ItemCells(name, source, fn)
+        self._cells: RuleBase[Iterable[tuple[K, RuleBase[V]]]] = _ItemCells(name, source, fn)
         self._query = query
 
-    def keys(self) -> Rule[Iterable[K]]:
+    def keys(self) -> RuleBase[Iterable[K]]:
         return self._source.keys()
 
     def compute(self, q: Q, /) -> Step[A]:
@@ -324,19 +324,8 @@ class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
 # ---------- internal glue ----------
 
 
-class _CellRule[V](Rule[V]):
-    """One memoized cell value, forced via ``get(cell)``."""
-
-    def __init__(self, name: str, factory: CellFactory[V]) -> None:
-        super().__init__(name)
-        self._factory = factory
-
-    def compute(self) -> Step[V]:
-        return (yield from _as_step(self._factory()))
-
-
-class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
-    """Per-context cell stream: Replayable buffer of ``(K, Rule[V])``.
+class _Cells[K: Key, V](RuleBase[Iterable[tuple[K, RuleBase[V]]]]):
+    """Per-context cell stream: Replayable buffer of ``(K, RuleBase[V])``.
 
     The factory may return an iterable of pairs, be a generator that yields
     pairs, or be a ``Step`` that demands other rules before yielding/returning
@@ -350,7 +339,7 @@ class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
         self._series_name = name
         self._cells = cells
 
-    def compute(self) -> Step[Iterable[tuple[K, Rule[V]]]]:
+    def compute(self) -> Step[Iterable[tuple[K, RuleBase[V]]]]:
         result = self._cells()
         if not isinstance(result, Generator):
             raw = result
@@ -379,7 +368,7 @@ class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
             return Replayable(_cell_pairs(self._series_name, pairs))
 
 
-class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
+class _ItemCells[K: Key, W, V](RuleBase[Iterable[tuple[K, RuleBase[V]]]]):
     """Cell stream: for each source key, a rule that runs ``fn(k, source)``."""
 
     def __init__(
@@ -393,7 +382,7 @@ class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
         self._source = source
         self._fn = fn
 
-    def compute(self) -> Step[Iterable[tuple[K, Rule[V]]]]:
+    def compute(self) -> Step[Iterable[tuple[K, RuleBase[V]]]]:
         keys = yield from get(self._source.keys())
 
         def factories() -> Iterator[tuple[K, CellFactory[V]]]:
@@ -407,13 +396,13 @@ class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
         return Replayable(_cell_pairs(self._series_name, factories()))
 
 
-class _GridKeys[K: Key, V](Rule[Iterable[K]]):
+class _GridKeys[K: Key, V](RuleBase[Iterable[K]]):
     """Domain projected from cells; ``get(_cells)`` records the dependency."""
 
     def __init__(
         self,
         name: str,
-        cells: Rule[Iterable[tuple[K, Rule[V]]]],
+        cells: RuleBase[Iterable[tuple[K, RuleBase[V]]]],
     ) -> None:
         super().__init__(f"{name}.keys")
         self._cells = cells
@@ -426,7 +415,7 @@ class _GridKeys[K: Key, V](Rule[Iterable[K]]):
 class _KeyProj[K: Key, V](Iterable[K]):
     """Re-iterable key view over a shared pairs buffer."""
 
-    def __init__(self, pairs: Iterable[tuple[K, Rule[V]]]) -> None:
+    def __init__(self, pairs: Iterable[tuple[K, RuleBase[V]]]) -> None:
         self._pairs = pairs
 
     def __iter__(self) -> Iterator[K]:
@@ -434,7 +423,7 @@ class _KeyProj[K: Key, V](Iterable[K]):
             yield k
 
 
-class _MapNKeys[Q: Hashable, K: Key](Rule[Iterable[K]]):
+class _MapNKeys[Q: Hashable, K: Key](RuleBase[Iterable[K]]):
     """Demandable, replayable domain derived from several source domains."""
 
     def __init__(
@@ -464,7 +453,7 @@ def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
         yield k
 
 
-class _ContinueFrom[K: Key, S](Rule[S]):
+class _ContinueFrom[K: Key, S](RuleBase[S]):
     """Exhaust ``base.keys()``, then build ``S`` from the last key.
 
     The base domain must be finite. Memoized per context so the scan runs once.
@@ -489,14 +478,14 @@ class _ContinueFrom[K: Key, S](Rule[S]):
         return self._fn(last)
 
 
-class _ContinueKeys[K: Key](Rule[Iterable[K]]):
+class _ContinueKeys[K: Key](RuleBase[Iterable[K]]):
     """Concatenated domain: ``base.keys()`` then continuation keys."""
 
     def __init__(
         self,
         name: str,
         base: BaseSeries[Any, K, Any],
-        continuation: Rule[Any],
+        continuation: RuleBase[Any],
     ) -> None:
         super().__init__(f"{name}.keys")
         self._base = base
@@ -511,7 +500,7 @@ class _ContinueKeys[K: Key](Rule[Iterable[K]]):
 def _cell_pairs[K: Key, V](
     series_name: str,
     source: Iterable[tuple[K, V | CellFactory[V]]],
-) -> Iterator[tuple[K, Rule[V]]]:
+) -> Iterator[tuple[K, RuleBase[V]]]:
     prev: K | None = None
     for item in source:
         if isinstance(item, Demand):
@@ -524,7 +513,7 @@ def _cell_pairs[K: Key, V](
         if prev is not None and not prev < k:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
-        yield k, _CellRule(f"{series_name}@{k}", _as_factory(v))
+        yield k, Rule(f"{series_name}@{k}", _as_factory(v))
 
 
 def _as_factory[V](value: V | CellFactory[V]) -> CellFactory[V]:

@@ -14,7 +14,7 @@ from orcaset import (
     Group,
     Period,
     PeriodSeries,
-    Rule,
+    RuleBase,
     Step,
     Stmt,
     Total,
@@ -42,7 +42,7 @@ purchase_multiple = 5.0
 ltv = 0.6
 
 
-class Assumption(Rule[float]):
+class Assumption(RuleBase[float]):
     def __init__(self, name: str, value: float) -> None:
         super().__init__(name)
         self.value = value

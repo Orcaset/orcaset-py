@@ -10,14 +10,14 @@ from datetime import date
 
 from orcaset.maybe import Maybe, Na
 from orcaset.period import Period
-from orcaset.rule import Rule, Step, get
+from orcaset.rule import RuleBase, Step, get
 from orcaset.series import Key, QueryFn
 
 type DayCount = Callable[[date, date], float]
 """Maps an ordered date pair to a length (year fraction, days, …)."""
 
 
-def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:
+def exact[K: Key, V](q: K, cells: Iterable[tuple[K, RuleBase[V]]]) -> Step[Maybe[V]]:
     """Point lookup: return the cell at ``q``, or ``Na`` if missing.
 
     Scans an ascending key stream; overlapping but non-equal keys are skipped
@@ -37,7 +37,7 @@ def exact[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]
 def exact_or[K: Key, V](default: V) -> QueryFn[K, K, V, V]:
     """Like ``exact``, but answer ``default`` instead of ``Na`` on a miss."""
 
-    def query(q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[V]:
+    def query(q: K, cells: Iterable[tuple[K, RuleBase[V]]]) -> Step[V]:
         for k, cell in cells:
             if k < q:
                 continue
@@ -50,14 +50,14 @@ def exact_or[K: Key, V](default: V) -> QueryFn[K, K, V, V]:
     return query
 
 
-def last[K: Key, V](q: K, cells: Iterable[tuple[K, Rule[V]]]) -> Step[Maybe[V]]:
+def last[K: Key, V](q: K, cells: Iterable[tuple[K, RuleBase[V]]]) -> Step[Maybe[V]]:
     """As-of lookup: return the latest cell at or before ``q``, or ``Na``.
 
     Scans an ascending key stream without forcing cells that are strictly
     before a later candidate. Stops at the first key strictly after ``q``.
     Query key and domain key are the same type.
     """
-    pending: Rule[V] | None = None
+    pending: RuleBase[V] | None = None
     for k, cell in cells:
         if k < q:
             pending = cell
@@ -81,7 +81,7 @@ def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:
     when misses should be a concrete value.
     """
 
-    def query(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[Maybe[float]]:
+    def query(q: Period, cells: Iterable[tuple[Period, RuleBase[float]]]) -> Step[Maybe[float]]:
         total = 0.0
         hit = False
         for k, cell in cells:
@@ -104,7 +104,7 @@ def accrual(yf: DayCount) -> QueryFn[Period, Period, float, Maybe[float]]:
 def accrual_or(yf: DayCount, default: float) -> QueryFn[Period, Period, float, float]:
     """Like ``accrual(yf)``, but answer ``default`` instead of ``Na`` on a miss."""
 
-    def query(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[float]:
+    def query(q: Period, cells: Iterable[tuple[Period, RuleBase[float]]]) -> Step[float]:
         total = 0.0
         hit = False
         for k, cell in cells:
@@ -124,7 +124,7 @@ def accrual_or(yf: DayCount, default: float) -> QueryFn[Period, Period, float, f
     return query
 
 
-def covered(q: Period, cells: Iterable[tuple[Period, Rule[float]]]) -> Step[Maybe[float]]:
+def covered(q: Period, cells: Iterable[tuple[Period, RuleBase[float]]]) -> Step[Maybe[float]]:
     """Sum cells that exactly tile ``q``; ``Na`` on any gap or partial overlap.
 
     Unlike ``exact``, a query that is the union of adjacent cells is answered.

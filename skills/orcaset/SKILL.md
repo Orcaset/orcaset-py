@@ -147,6 +147,7 @@ mechanisms are strictly prohibited.
 | Sign flip | `(-series).named("...")` |
 | Point-in-time balances | `DateSeries(name, cells_fn, exact)` (or `last` for as-of carry-forward) |
 | Horizontal composition | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
+| Unkeyed input / derived scalar | `Rule(name, fn)` or `@Rule.define(name)`; subclass `RuleBase` for extra state |
 
 **Closure rule:** capture the loop key with a default arg (`def factory(p: Period = k)`), never close over the loop variable alone.
 
