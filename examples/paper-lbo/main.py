@@ -1,6 +1,7 @@
+import operator
 from collections.abc import Iterable
 from datetime import date
-from itertools import pairwise, repeat
+from itertools import repeat
 
 import numpy_financial as npf
 from dateutil.relativedelta import relativedelta
@@ -12,7 +13,9 @@ from orcaset import (
     CellStream,
     Context,
     DateSeries,
+    DateSeriesBase,
     Group,
+    Maybe,
     Period,
     PeriodSeries,
     Step,
@@ -25,7 +28,11 @@ from orcaset import (
     get_at,
     isna,
     last,
+    map_some,
     maybe_abs_distance,
+    multiply_some,
+    some,
+    value_or,
 )
 
 acquisition_date = date(2022, 12, 31)
@@ -49,13 +56,12 @@ exit_multiple = Cell("Exit multiple", lambda: 5.0)
 @PeriodSeries.define("Revenue", accrual(YF.cmonthly))
 def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     periods = Period.seq(acquisition_date, year_offset)
-    yield next(periods), initial_revenue
     for k in periods:
 
         def cell(p: Period = k) -> Step[float]:
             prior = yield from get_at(revenue, p.from_start(-year_offset))
             if isna(prior):
-                raise ValueError(f"missing prior revenue for {p}")
+                return initial_revenue
             growth = yield from get(annual_revenue_growth)
             return prior * (1 + growth)
 
@@ -77,12 +83,13 @@ def interest() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     for period in Period.seq(acquisition_date, year_offset, hold_end):
 
         def cell(p: Period = period) -> Step[float]:
-            beginning_debt = yield from get_at(debt_balance, p.start)
-            sweep = yield from get_at(cash_sweep, p, seed=0.0, distance=maybe_abs_distance)
-            if isna(beginning_debt) or isna(sweep):
+            beginning = yield from get_at(debt_before_balloon, p.start)
+            ending = yield from get_at(
+                debt_before_balloon, p.end, seed=0.0, distance=maybe_abs_distance
+            )
+            if isna(beginning) or isna(ending):
                 return 0.0
-            ending_debt = beginning_debt - sweep
-            return (beginning_debt + ending_debt) / 2 * -interest_rate
+            return (beginning + ending) / 2 * -interest_rate
 
         yield period, cell
 
@@ -101,88 +108,100 @@ fcf = (ebitda + taxes + interest + capex + change_in_nwc).named("FCF")
 
 
 # Debt
-@DateSeries.define("Debt", last)
-def debt_balance() -> CellStream[date, float]:
-    dt = acquisition_date
+exact_or_zero = exact_or(some(0.0))
 
-    ntm_purchase_ebitda = yield from get_at(ebitda, Period(dt, dt + year_offset))
-    if isna(ntm_purchase_ebitda):
-        raise ValueError(f"missing EBITDA for {Period(dt, dt + year_offset)}")
-    opening = ntm_purchase_ebitda * purchase_multiple * ltv
-    yield dt, opening
-    for p in Period.seq(dt, year_offset, dt + hold_period):
 
-        def factory(period: Period = p) -> Step[float]:
-            begin = yield from get_at(debt_balance, period.start)
-            if isna(begin):
-                raise ValueError(f"missing beginning debt for {period.start}")
-            sweep = yield from get_at(cash_sweep, period)
-            if isna(sweep):
-                raise ValueError(f"missing cash sweep for {period}")
-            balloon = yield from get_at(balloon_payment, period)
-            if isna(balloon):
-                raise ValueError(f"missing balloon payment for {period}")
-            return begin - sweep - balloon
+@DateSeries.define("Draws", exact_or_zero)
+def draws() -> CellStream[date, Maybe[float]]:
+    def cell() -> Step[Maybe[float]]:
+        entry_period = Period(acquisition_date, acquisition_date + year_offset)
+        ntm_purchase_ebitda = yield from get_at(ebitda, entry_period)
+        return multiply_some((ntm_purchase_ebitda, purchase_multiple, ltv))
 
-        yield p.end, factory
+    yield acquisition_date, cell
 
 
 @PeriodSeries.define("Cash sweep", accrual(YF.cmonthly))
-def cash_sweep() -> Iterable[tuple[Period, float | CellFactory[float]]]:
+def debt_sweep() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     hold_end = acquisition_date + hold_period
     for period in Period.seq(acquisition_date, year_offset, hold_end):
 
         def cell(p: Period = period) -> Step[float]:
-            db = yield from get_at(debt_balance, p.start)
+            db = yield from get_at(debt_before_balloon, p.start)
             if isna(db):
                 return 0.0
             fcf_sweep = yield from get_at(fcf, p)
             if isna(fcf_sweep):
                 return 0.0
-            return min(db, fcf_sweep)
+            return -min(db, fcf_sweep)
 
         yield period, cell
 
 
-@PeriodSeries.define("Balloon payment", accrual(YF.cmonthly))
-def balloon_payment() -> Iterable[tuple[Period, float | CellFactory[float]]]:
+@DateSeries.define("Sweep payments", exact_or_zero)
+def sweep_payments() -> CellStream[date, float]:
+    keys = yield from get(debt_sweep.keys())
+    for p in keys:
+
+        def cell(p: Period = p) -> Step[float]:
+            sweep = yield from get_at(debt_sweep, p)
+            return value_or(sweep, 0.0)
+
+        yield p.end, cell
+
+
+def cumulate(name: str, flows: DateSeriesBase[Maybe[float]]) -> DateSeries[Maybe[float]]:
+    """Accumulate a date-keyed flow series into a running balance (stock)."""
+
+    @DateSeries.define(name, last)
+    def balance() -> CellStream[date, Maybe[float]]:
+        prev: date | None = None
+        for d in (yield from get(flows.keys())):
+
+            def cell(d: date = d, prev: date | None = prev) -> Step[Maybe[float]]:
+                prior = 0.0 if prev is None else (yield from get_at(balance, prev))
+                flow = yield from get_at(flows, d)
+                if isna(prior):
+                    return flow
+                return prior + value_or(flow, 0.0)
+
+            yield d, cell
+            prev = d
+
+    return balance
+
+
+pre_balloon_debt_flows = (draws + sweep_payments).named("Pre-balloon debt flows")
+debt_before_balloon = cumulate("Debt before balloon", pre_balloon_debt_flows)
+
+
+@DateSeries.define("Balloon payment", exact_or_zero)
+def balloon_payment() -> CellStream[date, float]:
     hold_end = acquisition_date + hold_period
-    for period in Period.seq(acquisition_date, year_offset, hold_end):
-        if period.end != hold_end:
-            yield period, 0.0
-            continue
 
-        def cell(p: Period = period) -> Step[float]:
-            begin = yield from get_at(debt_balance, p.start)
-            if isna(begin):
-                return 0.0
-            sweep = yield from get_at(cash_sweep, p)
-            if isna(sweep):
-                return begin
-            return begin - sweep
+    def cell() -> Step[float]:
+        remaining = yield from get_at(debt_before_balloon, hold_end)
+        return -value_or(remaining, 0.0)
 
-        yield period, cell
+    yield hold_end, cell
+
+
+debt_cash_flows = (pre_balloon_debt_flows + balloon_payment).named("Debt cash flows")
+debt_balance = cumulate("Debt balance", debt_cash_flows)
 
 
 # Levered cash flow
-exact_or_zero = exact_or(0.0)
-
-
 @DateSeries.define("Purchase price", exact_or_zero)
-def purchase_price() -> CellStream[date, float]:
+def purchase_price() -> CellStream[date, Maybe[float]]:
     entry_ebitda = yield from get_at(
         ebitda, Period(acquisition_date, acquisition_date + year_offset)
     )
-    if isna(entry_ebitda):
-        raise ValueError(
-            f"missing EBITDA for {Period(acquisition_date, acquisition_date + year_offset)}"
-        )
-    yield acquisition_date, entry_ebitda * -purchase_multiple
+    yield acquisition_date, multiply_some((entry_ebitda, -purchase_multiple))
 
 
 @DateSeries.define("Exit value", exact_or_zero)
-def exit_value() -> CellStream[date, float]:
-    def factory() -> Step[float]:
+def exit_value() -> CellStream[date, Maybe[float]]:
+    def factory() -> Step[Maybe[float]]:
         exit_ebitda = yield from get_at(
             ebitda,
             Period(
@@ -190,10 +209,8 @@ def exit_value() -> CellStream[date, float]:
                 acquisition_date + hold_period + year_offset,
             ),
         )
-        if isna(exit_ebitda):
-            raise ValueError(f"missing EBITDA for {acquisition_date + hold_period}")
-        multiple = yield from get(exit_multiple)
-        return exit_ebitda * multiple
+        multiple: Maybe[float] = yield from get(exit_multiple)
+        return multiply_some((exit_ebitda, multiple))
 
     yield acquisition_date + hold_period, factory
 
@@ -204,39 +221,9 @@ def year_end_fcf_payment() -> CellStream[date, float]:
 
         def cell(p: Period = p) -> Step[float]:
             fcf_pmt = yield from get_at(fcf, p)
-            if isna(fcf_pmt):
-                return 0.0
-            return fcf_pmt
+            return value_or(fcf_pmt, 0.0)
 
         yield p.end, cell
-
-
-@DateSeries.define("Debt cash flows", exact_or_zero)
-def debt_cash_flows() -> CellStream[date, float]:
-    """Yield changes in debt balance as a DateSeries to show debt cash flows."""
-    dates = list((yield from get(debt_balance.keys())))
-    if not dates:
-        return
-
-    def opening(d: date = dates[0]) -> Step[float]:
-        end = yield from get_at(debt_balance, d)
-        if isna(end):
-            raise ValueError(f"missing debt balance for {d}")
-        return end
-
-    yield dates[0], opening
-    for prev, curr in pairwise(dates):
-
-        def cell(d: date = curr, prior: date = prev) -> Step[float]:
-            begin = yield from get_at(debt_balance, prior)
-            end = yield from get_at(debt_balance, d)
-            if isna(begin):
-                raise ValueError(f"missing debt balance for {prior}")
-            if isna(end):
-                raise ValueError(f"missing debt balance for {d}")
-            return end - begin
-
-        yield curr, cell
 
 
 levered_cash_flow = (purchase_price + exit_value + year_end_fcf_payment + debt_cash_flows).named(
@@ -254,9 +241,11 @@ stmt = Stmt(
     ),
     Group(
         [
-            debt_balance,
-            cash_sweep,
+            draws,
+            debt_sweep,
+            debt_before_balloon,
             balloon_payment,
+            debt_balance,
             debt_cash_flows,
         ]
     ),
@@ -291,8 +280,8 @@ print(f"IRR: {float(npf.irr(cashflows)):.2%}")
 
 ## Source and uses
 loan = ctx.get_at(debt_balance, acquisition_date)
-equity = -ctx.get_at(levered_cash_flow, acquisition_date)
-pp = -ctx.get_at(purchase_price, acquisition_date)
+equity = map_some(operator.neg)(ctx.get_at(levered_cash_flow, acquisition_date))
+pp = map_some(operator.neg)(ctx.get_at(purchase_price, acquisition_date))
 
 print()
 print(

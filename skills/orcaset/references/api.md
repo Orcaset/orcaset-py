@@ -156,6 +156,23 @@ class PeriodExtendSeries[W](PeriodSeriesBase[W]):
         combine: Callable[[W2, W2], W2],
     ) -> Callable[[Callable[[Period], PeriodSeriesBase[W2]]], PeriodExtendSeries[W2]]:
         """Decorator: build a ``PeriodExtendSeries`` from a continuation factory."""
+
+def paired[W, V, A](
+    name: str,
+    balances: DateSeriesBase[W],
+    fn: Callable[[W, W], V],
+    query: QueryFn[Period, Period, V, A],
+) -> PeriodSeries[A]:
+    """Pair consecutive dates of a date-keyed series into period cells.
+
+    For each adjacent pair of ``balances`` keys, yields a cell keyed
+    ``Period(prev, curr)`` valued ``fn(begin, end)``, where ``begin`` and
+    ``end`` are ``balances``' resolved answers at the two dates. Both are
+    resolved answers and include any miss sentinel returned by ``balances``'
+    query; ``fn`` decides how misses propagate (e.g.
+    ``map2_some(operator.sub)`` for balance deltas). The inverse transform is
+    ``scan``.
+    """
 ```
 
 ## date_series
@@ -248,6 +265,29 @@ class DateExtendSeries[W](DateSeriesBase[W]):
         base: DateSeriesBase[W2],
     ) -> Callable[[Callable[[date], DateSeriesBase[W2]]], DateExtendSeries[W2]]:
         """Decorator: build a ``DateExtendSeries`` from a continuation factory."""
+
+def scan[W, V, A](
+    name: str,
+    flows: PeriodSeriesBase[W],
+    opening: V | CellFactory[V],
+    combine: Callable[[A, W], V],
+    query: QueryFn[date, date, V, A],
+) -> DateSeries[A]:
+    """Accumulate a period-keyed series into a date-keyed series.
+
+    Yields ``opening`` at the first flow period's ``start``, then one cell at
+    each period ``end`` valued ``combine(prior, flow)``, where ``prior`` is
+    this series' own answer at the period ``start`` and ``flow`` is ``flows``'
+    answer over the period. Both are resolved answers and include any miss
+    sentinel returned by the source queries; ``combine`` decides how misses
+    propagate (e.g. ``map2_some(operator.add)``).
+
+    Each cell reads the prior value through ``query`` rather than a running
+    total, so cells stay lazy and independently memoized, and cyclic models
+    (a flow that reads this series at its own period ``start``) still resolve.
+    ``last`` gives as-of balance semantics. The inverse transform is
+    ``paired``.
+    """
 ```
 
 ## series
@@ -445,10 +485,13 @@ Na: _NaType  # Singleton miss sentinel; test with isna(value) or value is Na
 type Maybe[V] = V | _NaType
 
 def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
+def some[V](value: V) -> Maybe[V]:  # widen V to Maybe[V]
+def value_or[V](value: Maybe[V], default: V) -> V:  # value if not Na, else default
 def map_some[A, B](fn: Callable[[A], B]) -> Callable[[Maybe[A]], Maybe[B]]:  # Na stays Na
 def map2_some[A, B, C](fn: Callable[[A, B], C]) -> Callable[[Maybe[A], Maybe[B]], Maybe[C]]:  # Na if either side is Na
-def combine_values[V](values: tuple[Maybe[V], ...], combine: Callable[[V, V], V]) -> Maybe[V]:  # Fold nonempty values; Na if empty or any Na
-def add_values(values: tuple[Maybe[float], ...]) -> Maybe[float]:  # Sum floats, propagating Na
+def combine_some[V](values: tuple[Maybe[V], ...], combine: Callable[[V, V], V]) -> Maybe[V]:  # Fold nonempty values; Na if empty or any Na
+def add_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:  # Sum floats, propagating Na; empty is Na
+def multiply_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:  # Product of floats, propagating Na; empty is Na
 ```
 
 ## stmt

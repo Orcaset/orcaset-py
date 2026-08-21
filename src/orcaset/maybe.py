@@ -38,6 +38,20 @@ def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
     return value is Na
 
 
+def some[V](value: V) -> Maybe[V]:
+    """Return a value as a ``Maybe``."""
+    return value
+
+
+def value_or[V](value: Maybe[V], default: V) -> V:
+    """Return `value` if not `Na`, otherwise `default`."""
+    match value:
+        case _NaType():
+            return default
+        case _:
+            return value
+
+
 def map_some[A, B](fn: Callable[[A], B]) -> Callable[[Maybe[A]], Maybe[B]]:
     """Lift ``fn`` over ``Maybe``: ``Na`` stays ``Na``."""
 
@@ -58,8 +72,8 @@ def map2_some[A, B, C](
     return apply
 
 
-def combine_values[V](
-    values: tuple[Maybe[V], ...],
+def combine_some[V](
+    values: tuple[Maybe[V] | V, ...],
     combine: Callable[[V, V], V],
 ) -> Maybe[V]:
     """Fold nonempty values with ``combine``, propagating ``Na``.
@@ -80,10 +94,19 @@ def combine_values[V](
     return result
 
 
-def add_values(values: tuple[Maybe[float], ...]) -> Maybe[float]:
+def add_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:
     """Add float values, propagating ``Na``; an empty tuple returns ``Na``."""
-    return combine_values(values, _add_floats)
+    return combine_some(values, _add_floats)
+
+
+def multiply_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:
+    """Multiply float values, propagating ``Na``; an empty tuple returns ``Na``."""
+    return combine_some(values, _multiply_floats)
 
 
 def _add_floats(left: float, right: float) -> float:
     return left + right
+
+
+def _multiply_floats(left: float, right: float) -> float:
+    return left * right

@@ -11,12 +11,32 @@ change between minor releases.
 
 ### Added
 
+- `scan` and `paired`, inverse period <-> date transforms. `scan(name, flows,
+  opening, combine, query)` accumulates a period-keyed series into a
+  date-keyed series: `opening` at the first period's start, then
+  `combine(prior, flow)` at each period end, where `prior` is the series' own
+  answer at the period start (lazy, memoized, cycle-friendly — a flow may read
+  the scanned series at its own period start). `paired(name, balances, fn,
+  query)` pairs consecutive dates of a date-keyed series into
+  `Period(prev, curr)` cells valued `fn(begin, end)` (e.g.
+  `map2_some(operator.sub)` for balance deltas). `combine`/`fn` receive
+  resolved answers including miss sentinels, matching `map`/`map2`.
 - `Cell(name, fn)` and `KeyedCell(name, fn)` wrap a public `fn` for one-off
   unkeyed and keyed bodies. `@Cell.define` / `@KeyedCell.define` bind the
   function as the cell so the body can close over that name. Subclass `Rule` /
   `KeyedRule` to override `compute` with extra state. Series cells are stored
   as `Cell` instances. The paper LBO example uses `Cell` for growth and exit
   multiple (replace `fn` between scenarios).
+- `multiply_some(...)` for Na-propagating float products over a tuple of
+  `Maybe[float]` values.
+- `some(value)` widens `V` to `Maybe[V]` for type inference (runtime identity).
+- `value_or(value, default)` unwraps a `Maybe`: the value if present, otherwise
+  `default`.
+
+### Changed
+
+- Renamed `combine_values` to `combine_some` and `add_values` to `add_some` to
+  match `map_some` / `map2_some`.
 
 ## [0.8.1] - 2026-08-18
 

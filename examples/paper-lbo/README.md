@@ -12,9 +12,9 @@ This table compares the analysis script in this example using orcaset against Ex
 
 | Tool | Tokens | Multiple of orcaset |
 | --- | ---: | ---: |
-| orcaset | 3,322 | 1.0x |
-| Claude Code | 7,944 | 2.4x |
-| ChatGPT | 9,381 | 2.8x |
+| orcaset | 3,111 | 1.0x |
+| Claude Code | 7,944 | 2.6x |
+| ChatGPT | 9,381 | 3.0x |
 
 *These results are averages over a small number of runs using different Opus and Sol class models. Claude Code was instructed to use the `/xlsx` skill and ChatGPT was told to use the `$spreadsheet` plugin. Both were told to use minimal formatting. Resulting scripts fell within a relatively tight band of token counts.*
 
@@ -45,7 +45,7 @@ for multiple in (3.0, ..., 7.0):
 
 Unlike what-if tables, which are limited to two variables, orcaset has no such limit. You can nest loops over additional assumptions to explore higher-dimensional interactions.
 
-It is also worth noting orcaset does not need the circularity circuit breaker used in the reference model. Circular dependencies are cut once in the `interest` definition. Evaluation either resolves or raises an exception.
+It is also worth noting orcaset does not need the circularity circuit breaker used in the reference model. Circular dependencies are cut once in the `interest` definition, which averages beginning and ending `debt_before_balloon`. Evaluation either resolves or raises an exception.
 
 ## Run
 
@@ -84,9 +84,12 @@ End                     2022-12-31  2023-12-31  2024-12-31  2025-12-31  2026-12-
   FCF                                     4.95        6.18        7.59        9.18       10.98
 
 
-  Debt                      120.00      115.05      108.87      101.28       92.11        0.00        0.00
+  Draws                     120.00      120.00      120.00      120.00      120.00      120.00      120.00
   Cash sweep                              4.95        6.18        7.59        9.18       10.98
-  Balloon payment                         0.00        0.00        0.00        0.00       81.13
+  Sweep paydown               0.00       -4.95      -11.13      -18.72      -27.89      -38.87      -38.87
+  Debt before balloon       120.00      115.05      108.87      101.28       92.11       81.13       81.13
+  Balloon payment             0.00        0.00        0.00        0.00        0.00      -81.13      -81.13
+  Debt                      120.00      115.05      108.87      101.28       92.11        0.00        0.00
   Debt cash flows           120.00       -4.95       -6.18       -7.59       -9.18      -92.11        0.00
 
   Purchase price           -200.00        0.00        0.00        0.00        0.00        0.00        0.00

@@ -8,6 +8,7 @@ from orcaset.date_series import (
     DateMapSeries,
     DateSeries,
     DateSeriesBase,
+    scan,
 )
 from orcaset.formatters import (
     DateFormatter,
@@ -16,7 +17,18 @@ from orcaset.formatters import (
     fixed_width_table,
     markdown_table,
 )
-from orcaset.maybe import Maybe, Na, add_values, combine_values, isna, map2_some, map_some
+from orcaset.maybe import (
+    Maybe,
+    Na,
+    add_some,
+    combine_some,
+    isna,
+    map2_some,
+    map_some,
+    multiply_some,
+    some,
+    value_or,
+)
 from orcaset.period import Period, date_union, period_union
 from orcaset.period_series import (
     PeriodExtendSeries,
@@ -24,6 +36,7 @@ from orcaset.period_series import (
     PeriodMapSeries,
     PeriodSeries,
     PeriodSeriesBase,
+    paired,
 )
 from orcaset.query import DayCount, accrual, accrual_or, covered, exact, exact_or, last
 from orcaset.rule import (
@@ -121,8 +134,8 @@ __all__ = [
     "abs_distance",
     "accrual",
     "accrual_or",
-    "add_values",
-    "combine_values",
+    "add_some",
+    "combine_some",
     "covered",
     "csv_table",
     "date_union",
@@ -137,5 +150,10 @@ __all__ = [
     "map_some",
     "markdown_table",
     "maybe_abs_distance",
+    "multiply_some",
+    "paired",
     "period_union",
+    "scan",
+    "some",
+    "value_or",
 ]

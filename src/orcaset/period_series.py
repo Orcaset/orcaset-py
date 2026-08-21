@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import itertools
 import operator
 from abc import ABC
 from collections.abc import Callable, Iterable
-from typing import Any
+from datetime import date
+from typing import TYPE_CHECKING, Any
 
 from orcaset.maybe import Maybe, map2_some, map_some
 from orcaset.period import Period, period_union
@@ -14,6 +16,7 @@ from orcaset.rule import Rule, Step, get, get_at
 from orcaset.series import (
     BaseSeries,
     CellsFn,
+    CellStream,
     QueryFn,
     _as_step,
     _Cells,
@@ -22,6 +25,9 @@ from orcaset.series import (
     _GridKeys,
     _MapNKeys,
 )
+
+if TYPE_CHECKING:
+    from orcaset.date_series import DateSeriesBase
 
 
 def _identity[T](value: T) -> T:
@@ -297,3 +303,34 @@ class PeriodExtendSeries[W](PeriodSeriesBase[W]):
             right = yield from get_at(cont, Period(last.end, q.end))
             return self._combine(left, right)
         return (yield from get_at(cont, q))
+
+
+def paired[W, V, A](
+    name: str,
+    balances: DateSeriesBase[W],
+    fn: Callable[[W, W], V],
+    query: QueryFn[Period, Period, V, A],
+) -> PeriodSeries[A]:
+    """Pair consecutive dates of a date-keyed series into period cells.
+
+    For each adjacent pair of ``balances`` keys, yields a cell keyed
+    ``Period(prev, curr)`` valued ``fn(begin, end)``, where ``begin`` and
+    ``end`` are ``balances``' resolved answers at the two dates. Both are
+    resolved answers and include any miss sentinel returned by ``balances``'
+    query; ``fn`` decides how misses propagate (e.g.
+    ``map2_some(operator.sub)`` for balance deltas). The inverse transform is
+    ``orcaset.date_series.scan``.
+    """
+
+    def cells() -> CellStream[Period, V]:
+        keys = yield from get(balances.keys())
+        for prev, curr in itertools.pairwise(keys):
+
+            def cell(prev: date = prev, curr: date = curr) -> Step[V]:
+                begin = yield from get_at(balances, prev)
+                end = yield from get_at(balances, curr)
+                return fn(begin, end)
+
+            yield Period(prev, curr), cell
+
+    return PeriodSeries(name, cells, query)

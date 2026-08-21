@@ -3,18 +3,18 @@ from datetime import date
 from orcaset import (
     Context,
     DateValue,
-    Series,
     Group,
     GroupRow,
     LineRow,
     MapNSeries,
     Period,
     PeriodValue,
+    Series,
     StatementResult,
     Stmt,
     Total,
     TotalRow,
-    add_values,
+    add_some,
     exact,
     period_union,
 )
@@ -78,7 +78,7 @@ def test_stmt_total_uses_real_series_and_nests_children():
     income = MapNSeries(
         "Income",
         (revenue, costs),
-        add_values,
+        add_some,
         merge_keys=period_union,
     )
 

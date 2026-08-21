@@ -7,14 +7,16 @@ import operator
 from abc import ABC
 from collections.abc import Callable, Iterable
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from orcaset.maybe import Maybe, map2_some, map_some
-from orcaset.period import date_union
+from orcaset.period import Period, date_union
 from orcaset.rule import Rule, Step, get, get_at
 from orcaset.series import (
     BaseSeries,
+    CellFactory,
     CellsFn,
+    CellStream,
     QueryFn,
     _as_step,
     _Cells,
@@ -23,6 +25,9 @@ from orcaset.series import (
     _GridKeys,
     _MapNKeys,
 )
+
+if TYPE_CHECKING:
+    from orcaset.period_series import PeriodSeriesBase
 
 
 def _identity[T](value: T) -> T:
@@ -297,3 +302,44 @@ class DateExtendSeries[W](DateSeriesBase[W]):
         if first is None or q < first:
             return (yield from get_at(self._base, q))
         return (yield from get_at(cont, q))
+
+
+def scan[W, V, A](
+    name: str,
+    flows: PeriodSeriesBase[W],
+    opening: V | CellFactory[V],
+    combine: Callable[[A, W], V],
+    query: QueryFn[date, date, V, A],
+) -> DateSeries[A]:
+    """Accumulate a period-keyed series into a date-keyed series.
+
+    Yields ``opening`` at the first flow period's ``start``, then one cell at
+    each period ``end`` valued ``combine(prior, flow)``, where ``prior`` is
+    this series' own answer at the period ``start`` and ``flow`` is ``flows``'
+    answer over the period. Both are resolved answers and include any miss
+    sentinel returned by the source queries; ``combine`` decides how misses
+    propagate (e.g. ``map2_some(operator.add)``).
+
+    Each cell reads the prior value through ``query`` rather than a running
+    total, so cells stay lazy and independently memoized, and cyclic models
+    (a flow that reads this series at its own period ``start``) still resolve.
+    ``last`` gives as-of balance semantics. The inverse transform is
+    ``orcaset.period_series.paired``.
+    """
+
+    def cells() -> CellStream[date, V]:
+        first = True
+        for p in (yield from get(flows.keys())):
+            if first:
+                yield p.start, opening
+                first = False
+
+            def cell(p: Period = p) -> Step[V]:
+                prior = yield from get_at(series, p.start)
+                flow = yield from get_at(flows, p)
+                return combine(prior, flow)
+
+            yield p.end, cell
+
+    series = DateSeries(name, cells, query)
+    return series
