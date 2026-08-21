@@ -7,6 +7,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
+    Cell,
     CellFactory,
     CellStream,
     Context,
@@ -14,7 +15,6 @@ from orcaset import (
     Group,
     Period,
     PeriodSeries,
-    Rule,
     Step,
     Stmt,
     Total,
@@ -42,8 +42,8 @@ purchase_multiple = 5.0
 ltv = 0.6
 
 
-annual_revenue_growth = Rule("Revenue growth rate", lambda: 0.1)
-exit_multiple = Rule("Exit multiple", lambda: 5.0)
+annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
+exit_multiple = Cell("Exit multiple", lambda: 5.0)
 
 
 @PeriodSeries.define("Revenue", accrual(YF.cmonthly))

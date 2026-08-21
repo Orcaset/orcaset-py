@@ -7,10 +7,10 @@ from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass, field
 from typing import Any, NoReturn, cast
 
-from orcaset.rule import _UNIT, Iterate, KeyedRuleBase, RuleBase, Step
+from orcaset.rule import _UNIT, Iterate, KeyedRule, Rule, Step
 
 type RuleKey = tuple[int, Hashable]
-type Target = KeyedRuleBase[Any, Any] | RuleBase[Any]
+type Target = KeyedRule[Any, Any] | Rule[Any]
 
 
 _MISSING: Any = object()
@@ -171,18 +171,18 @@ class Context:
         self._pending_spec: dict[RuleKey, Iterate[Any]] = {}
         self._fp: dict[RuleKey, _FixedPoint] = {}
 
-    def get_at[K: Hashable, V](self, rule: KeyedRuleBase[K, V], key: K) -> V:
+    def get_at[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> V:
         return self._resolve(rule, key, lambda: rule.compute(key))
 
-    def get[V](self, rule: RuleBase[V]) -> V:
+    def get[V](self, rule: Rule[V]) -> V:
         return self._resolve(rule, _UNIT, lambda: rule.compute())
 
-    def dependencies[K: Hashable, V](self, rule: KeyedRuleBase[K, V], key: K) -> DepNode:
+    def dependencies[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> DepNode:
         """Resolve ``rule``/``key``, then return its dependency tree."""
         self.get_at(rule, key)
         return self._dep_node((rule.id, key), seen=set())
 
-    def rule_dependencies[V](self, rule: RuleBase[V]) -> DepNode:
+    def rule_dependencies[V](self, rule: Rule[V]) -> DepNode:
         """Resolve ``rule``, then return its dependency tree."""
         self.get(rule)
         return self._dep_node((rule.id, _UNIT), seen=set())
@@ -482,6 +482,6 @@ class Context:
 
 
 def _start(target: Target, key: Hashable) -> Step[Any] | Any:
-    if isinstance(target, RuleBase):
+    if isinstance(target, Rule):
         return target.compute()
     return target.compute(key)

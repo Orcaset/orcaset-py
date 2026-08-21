@@ -5,12 +5,12 @@ from math import isclose
 
 import orcaset
 from orcaset import (
+    Cell,
     Context,
+    KeyedCell,
     KeyedRule,
-    KeyedRuleBase,
     PeriodSeries,
     Rule,
-    RuleBase,
     Step,
     abs_distance,
     exact,
@@ -20,23 +20,23 @@ from orcaset import (
 
 
 def test_rule_fn_plain_value():
-    rule = Rule("src", lambda: 10.0)
+    rule = Cell("src", lambda: 10.0)
     assert rule.fn() == 10.0
     assert Context().get(rule) == 10.0
-    assert isinstance(rule, RuleBase)
     assert isinstance(rule, Rule)
+    assert isinstance(rule, Cell)
 
 
 def test_rule_fn_is_public_and_replaceable():
-    rule = Rule("src", lambda: 1.0)
+    rule = Cell("src", lambda: 1.0)
     rule.fn = lambda: 2.0
     assert Context().get(rule) == 2.0
 
 
 def test_rule_define_can_demand_another_rule():
-    src = Rule("src", lambda: 10.0)
+    src = Cell("src", lambda: 10.0)
 
-    @Rule.define("reader")
+    @Cell.define("reader")
     def reader() -> Step[float]:
         return (yield from get(src))
 
@@ -45,7 +45,7 @@ def test_rule_define_can_demand_another_rule():
 
 
 def test_rule_define_self_cycle():
-    @Rule.define("x")
+    @Cell.define("x")
     def x() -> Step[float]:
         prior = yield from get(x, seed=1.0, distance=abs_distance)
         return 0.5 * prior + 1.0
@@ -54,7 +54,7 @@ def test_rule_define_self_cycle():
 
 
 def test_rule_subclass_passes_fn_to_super():
-    class Named(Rule[float]):
+    class Named(Cell[float]):
         def __init__(self, name: str, value: float) -> None:
             self.value = value
             super().__init__(name, lambda: self.value)
@@ -63,15 +63,15 @@ def test_rule_subclass_passes_fn_to_super():
 
 
 def test_keyed_rule_fn():
-    rule = KeyedRule[int, int]("double", lambda key: key * 2)
+    rule = KeyedCell[int, int]("double", lambda key: key * 2)
     assert rule.fn(3) == 6
     assert Context().get_at(rule, 3) == 6
-    assert isinstance(rule, KeyedRuleBase)
     assert isinstance(rule, KeyedRule)
+    assert isinstance(rule, KeyedCell)
 
 
 def test_keyed_rule_define():
-    @KeyedRule.define("inc")
+    @KeyedCell.define("inc")
     def inc(key: int) -> int:
         return key + 1
 
@@ -80,7 +80,7 @@ def test_keyed_rule_define():
 
 
 def test_keyed_rule_define_can_demand_self():
-    @KeyedRule.define("k")
+    @KeyedCell.define("k")
     def k(key: int) -> Step[int]:
         if key <= 0:
             return 0
@@ -90,18 +90,18 @@ def test_keyed_rule_define_can_demand_self():
     assert Context().get_at(k, 3) == 6
 
 
-def test_series_is_keyed_rule_base_not_keyed_rule():
+def test_series_is_keyed_rule_not_keyed_cell():
     series = PeriodSeries("empty", lambda: [], exact)
-    assert isinstance(series, KeyedRuleBase)
-    assert not isinstance(series, KeyedRule)
+    assert isinstance(series, KeyedRule)
+    assert not isinstance(series, KeyedCell)
 
 
 def test_rule_classes_are_exported():
     expected = {
+        "Cell": Cell,
         "Rule": Rule,
-        "RuleBase": RuleBase,
+        "KeyedCell": KeyedCell,
         "KeyedRule": KeyedRule,
-        "KeyedRuleBase": KeyedRuleBase,
     }
     for name, cls in expected.items():
         assert name in orcaset.__all__

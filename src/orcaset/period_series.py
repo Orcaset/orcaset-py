@@ -10,7 +10,7 @@ from typing import Any
 
 from orcaset.maybe import Maybe, map2_some, map_some
 from orcaset.period import Period, period_union
-from orcaset.rule import RuleBase, Step, get, get_at
+from orcaset.rule import Rule, Step, get, get_at
 from orcaset.series import (
     BaseSeries,
     CellsFn,
@@ -155,8 +155,8 @@ class PeriodSeries[W](PeriodSeriesBase[W]):
         query: QueryFn[Period, Period, V, W],
     ) -> None:
         super().__init__(name)
-        self._cells: RuleBase[Iterable[tuple[Period, RuleBase[Any]]]] = _Cells(name, cells)
-        self._keys: RuleBase[Iterable[Period]] = _GridKeys(name, self._cells)
+        self._cells: Rule[Iterable[tuple[Period, Rule[Any]]]] = _Cells(name, cells)
+        self._keys: Rule[Iterable[Period]] = _GridKeys(name, self._cells)
         self._query: QueryFn[Period, Period, Any, W] = query
 
     @classmethod
@@ -172,7 +172,7 @@ class PeriodSeries[W](PeriodSeriesBase[W]):
 
         return decorator
 
-    def keys(self) -> RuleBase[Iterable[Period]]:
+    def keys(self) -> Rule[Iterable[Period]]:
         return self._keys
 
     def compute(self, q: Period, /) -> Step[W]:
@@ -197,7 +197,7 @@ class PeriodMapSeries[W, V](PeriodSeriesBase[V]):
         self._source = source
         self._fn = fn
 
-    def keys(self) -> RuleBase[Iterable[Period]]:
+    def keys(self) -> Rule[Iterable[Period]]:
         return self._source.keys()
 
     def compute(self, q: Period, /) -> Step[V]:
@@ -226,13 +226,13 @@ class PeriodMap2Series[W1, W2, V](PeriodSeriesBase[V]):
         self._left = left
         self._right = right
         self._fn = fn
-        self._keys: RuleBase[Iterable[Period]] = _MapNKeys(
+        self._keys: Rule[Iterable[Period]] = _MapNKeys(
             name,
             (left, right),
             period_union if merge_keys is None else merge_keys,
         )
 
-    def keys(self) -> RuleBase[Iterable[Period]]:
+    def keys(self) -> Rule[Iterable[Period]]:
         return self._keys
 
     def compute(self, q: Period, /) -> Step[V]:
@@ -279,7 +279,7 @@ class PeriodExtendSeries[W](PeriodSeriesBase[W]):
 
         return decorator
 
-    def keys(self) -> RuleBase[Iterable[Period]]:
+    def keys(self) -> Rule[Iterable[Period]]:
         return self._keys
 
     def compute(self, q: Period, /) -> Step[W]:

@@ -27,12 +27,12 @@ from orcaset.period_series import (
 )
 from orcaset.query import DayCount, accrual, accrual_or, covered, exact, exact_or, last
 from orcaset.rule import (
+    Cell,
     Demand,
     Iterate,
+    KeyedCell,
     KeyedRule,
-    KeyedRuleBase,
     Rule,
-    RuleBase,
     Step,
     abs_distance,
     get,
@@ -70,6 +70,7 @@ from orcaset.yf import YF
 __all__ = [
     "YF",
     "BaseSeries",
+    "Cell",
     "CellFactory",
     "CellStream",
     "CellsFn",
@@ -90,8 +91,8 @@ __all__ = [
     "GroupRow",
     "Iterate",
     "Key",
+    "KeyedCell",
     "KeyedRule",
-    "KeyedRuleBase",
     "LineRow",
     "Map2Series",
     "MapItemsSeries",
@@ -109,7 +110,6 @@ __all__ = [
     "QueryFn",
     "Replayable",
     "Rule",
-    "RuleBase",
     "Series",
     "StatementResult",
     "Step",

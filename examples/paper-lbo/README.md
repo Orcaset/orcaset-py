@@ -20,16 +20,16 @@ This table compares the analysis script in this example using orcaset against Ex
 
 ## Sensitivity analysis
 
-The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and `Rule` values. For each pair, replace `fn` and compute IRR in a fresh context.
+The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and `Cell` values. For each pair, replace `fn` and compute IRR in a fresh context.
 
 The example defines named unkeyed rules. `get` resolves them through the effect handler:
 
 ```py
-exit_multiple = Rule("Exit multiple", lambda: 5.0)
-annual_revenue_growth = Rule("Revenue growth rate", lambda: 0.1)
+exit_multiple = Cell("Exit multiple", lambda: 5.0)
+annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 ```
 
-> `Rule` wraps a public zero-arg `fn`. `RuleBase` is the abstract `compute` protocol if you need extra state or methods. Series types such as `PeriodSeries` and `DateSeries` are `KeyedRuleBase` implementations.
+> `Cell` wraps a public zero-arg `fn`. `Rule` is the abstract `compute` protocol if you need extra state or methods. Series types such as `PeriodSeries` and `DateSeries` are `KeyedRule` implementations.
 
 The sensitivity analysis loops over the ranges, replaces each rule's `fn`, and computes IRR in a fresh context. Use a new `Context` for every iteration; otherwise stale cached values will be reused. Capture loop variables with a default arg (`lambda m=multiple: m`), same as cell factories.
 

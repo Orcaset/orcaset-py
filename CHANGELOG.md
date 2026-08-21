@@ -11,21 +11,12 @@ change between minor releases.
 
 ### Added
 
-- `RuleBase` and `KeyedRuleBase` are the abstract `compute` protocol that
-  `get` / `get_at` resolve. `Rule(name, fn)` and `KeyedRule(name, fn)` wrap a
-  public `fn`; `@Rule.define` / `@KeyedRule.define` bind the function as the
-  rule so the body can close over that name. Subclass the `*Base` types to
-  override `compute` with extra state. Series types remain `KeyedRuleBase`
-  implementations. Cell values are stored as `Rule` instances.
-
-### Changed
-
-- **Breaking:** `Rule` and `KeyedRule` are no longer abstract. Code that
-  subclassed them and overrode `compute` should subclass `RuleBase` /
-  `KeyedRuleBase` instead. `isinstance(series, KeyedRule)` is now false;
-  use `KeyedRuleBase`. `get` / `get_at` / `Context` accept the base types.
-  The paper LBO example uses `Rule(name, fn)` for growth and exit multiple
-  (replace `fn` between scenarios).
+- `Cell(name, fn)` and `KeyedCell(name, fn)` wrap a public `fn` for one-off
+  unkeyed and keyed bodies. `@Cell.define` / `@KeyedCell.define` bind the
+  function as the cell so the body can close over that name. Subclass `Rule` /
+  `KeyedRule` to override `compute` with extra state. Series cells are stored
+  as `Cell` instances. The paper LBO example uses `Cell` for growth and exit
+  multiple (replace `fn` between scenarios).
 
 ## [0.8.1] - 2026-08-18
 

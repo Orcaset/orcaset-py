@@ -13,10 +13,10 @@ from orcaset import (
     CycleError,
     DateSeries,
     Iterate,
-    KeyedRuleBase,
+    KeyedRule,
     Period,
     PeriodSeries,
-    RuleBase,
+    Rule,
     Step,
     abs_distance,
     exact_or,
@@ -28,7 +28,7 @@ from orcaset.maybe import Maybe, Na, isna
 from orcaset.rule import _MISSING, _iterate
 
 
-class Const(RuleBase[float]):
+class Const(Rule[float]):
     def __init__(self, name: str, value: float) -> None:
         super().__init__(name)
         self._value = value
@@ -37,7 +37,7 @@ class Const(RuleBase[float]):
         return self._value
 
 
-class SelfFixedPoint(RuleBase[float]):
+class SelfFixedPoint(Rule[float]):
     """x = 0.5 * x + 1, whose unique fixed point is 2."""
 
     def compute(self) -> Step[float]:
@@ -45,13 +45,13 @@ class SelfFixedPoint(RuleBase[float]):
         return 0.5 * prior + 1.0
 
 
-class SelfCycle(RuleBase[float]):
+class SelfCycle(Rule[float]):
     def compute(self) -> Step[float]:
         prior = yield from get(self)
         return prior + 1.0
 
 
-class Divergent(RuleBase[float]):
+class Divergent(Rule[float]):
     def compute(self) -> Step[float]:
         prior = yield from get(self, seed=1.0, distance=abs_distance, max_iter=8)
         return prior + 1.0
@@ -66,17 +66,17 @@ def usd_distance(a: USD, b: USD) -> float:
     return abs(a.amount - b.amount)
 
 
-class UsdFixedPoint(RuleBase[USD]):
+class UsdFixedPoint(Rule[USD]):
     def compute(self) -> Step[USD]:
         prior = yield from get(self, seed=USD(0.0), distance=usd_distance)
         return USD(0.5 * prior.amount + 1.0)
 
 
-class Interest(KeyedRuleBase[int, float]):
+class Interest(KeyedRule[int, float]):
     def __init__(self, rate: float) -> None:
         super().__init__("interest")
         self._rate = rate
-        self.debt: KeyedRuleBase[int, float] | None = None
+        self.debt: KeyedRule[int, float] | None = None
 
     def compute(self, period: int, /) -> Step[float]:
         debt = self.debt
@@ -87,7 +87,7 @@ class Interest(KeyedRuleBase[int, float]):
         return self._rate * 0.5 * (begin + end)
 
 
-class EndingDebt(KeyedRuleBase[int, float]):
+class EndingDebt(KeyedRule[int, float]):
     def __init__(self) -> None:
         super().__init__("ending_debt")
         self.interest: Interest | None = None
@@ -100,7 +100,7 @@ class EndingDebt(KeyedRuleBase[int, float]):
         return 100.0 + amount
 
 
-class SeededEndingDebt(KeyedRuleBase[int, float]):
+class SeededEndingDebt(KeyedRule[int, float]):
     def __init__(self) -> None:
         super().__init__("ending_debt")
         self.interest: Interest | None = None
@@ -123,7 +123,7 @@ def test_acyclic_demand_is_unchanged():
 def test_seed_is_ignored_when_there_is_no_cycle():
     src = Const("src", 10.0)
 
-    class Reader(RuleBase[float]):
+    class Reader(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(src, seed=0.0, distance=abs_distance))
 
@@ -166,7 +166,7 @@ def test_non_converging_cycle_raises():
 
 
 def test_oscillation_is_visible_on_convergence_error():
-    class Flip(RuleBase[float]):
+    class Flip(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=4)
             return 1.0 - prior
@@ -217,11 +217,11 @@ def test_seed_on_both_cycle_edges_converges_from_either_entry(enter: str):
 def test_pending_spec_seeds_back_edge_to_the_started_cell():
     """Seed on the demand that starts a cyclic cell covers a later back-edge."""
 
-    class Root(RuleBase[float]):
+    class Root(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(loop, seed=0.0, distance=abs_distance))
 
-    class Loop(RuleBase[float]):
+    class Loop(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self)
             return 0.5 * prior + 1.0
@@ -244,7 +244,7 @@ def test_maybe_distance_treats_na_mismatch_as_infinite():
 
 
 def test_maybe_cycle_with_maybe_abs_distance():
-    class Loop(RuleBase[Maybe[float]]):
+    class Loop(Rule[Maybe[float]]):
         def compute(self) -> Step[Maybe[float]]:
             prior = yield from get(self, seed=0.0, distance=maybe_abs_distance)
             if isna(prior):
@@ -262,7 +262,7 @@ def test_seed_without_distance_raises():
 
 
 def test_per_demand_tol_overrides_context():
-    class Loop(RuleBase[float]):
+    class Loop(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=0.0, distance=abs_distance, tol=1e-12)
             return 0.5 * prior + 1.0
@@ -272,7 +272,7 @@ def test_per_demand_tol_overrides_context():
 
 
 def test_context_max_iter_default_is_used():
-    class Grow(RuleBase[float]):
+    class Grow(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=1.0, distance=abs_distance)
             return prior + 1.0
@@ -284,7 +284,7 @@ def test_context_max_iter_default_is_used():
 
 
 def test_long_iterate_history_omits_the_middle_of_the_message():
-    class Grow(RuleBase[float]):
+    class Grow(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=25)
             return prior + 1.0
@@ -322,16 +322,16 @@ def test_iterate_dataclass_matches_get_kwargs():
 
 @pytest.mark.parametrize("enter", ["a", "b", "c"])
 def test_one_seed_solves_three_node_cycle_from_any_entry(enter: str):
-    class A(RuleBase[float]):
+    class A(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(b))
 
-    class B(RuleBase[float]):
+    class B(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(c, seed=0.0, distance=abs_distance)
             return 0.5 * prior + 1.0
 
-    class C(RuleBase[float]):
+    class C(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(a))
 
@@ -347,12 +347,12 @@ def test_one_seed_solves_three_node_cycle_from_any_entry(enter: str):
 
 
 def test_joint_residuals_keep_iterating_when_cut_tol_is_loose():
-    class A(RuleBase[float]):
+    class A(Rule[float]):
         def compute(self) -> Step[float]:
             other = yield from get(b, seed=0.0, distance=abs_distance, tol=1e-12)
             return 0.5 * other + 1.0
 
-    class B(RuleBase[float]):
+    class B(Rule[float]):
         def compute(self) -> Step[float]:
             other = yield from get(a, seed=0.0, distance=abs_distance, tol=1.0)
             return 0.5 * other + 1.0
@@ -368,12 +368,12 @@ def test_joint_residuals_keep_iterating_when_cut_tol_is_loose():
 
 
 def test_freeze_recomputes_dependents_from_committed_cut():
-    class A(RuleBase[float]):
+    class A(Rule[float]):
         def compute(self) -> Step[float]:
             other = yield from get(b)
             return 0.5 * other + 1.0
 
-    class B(RuleBase[float]):
+    class B(Rule[float]):
         def compute(self) -> Step[float]:
             other = yield from get(a, seed=0.0, distance=abs_distance, tol=0.1)
             return 0.5 * other + 1.0
@@ -387,14 +387,14 @@ def test_freeze_recomputes_dependents_from_committed_cut():
 
 
 def test_nested_independent_cycles_each_need_a_seed():
-    class Inner(RuleBase[float]):
+    class Inner(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=1.0, distance=abs_distance)
             return 0.5 * prior + 1.0
 
     inner = Inner("inner")
 
-    class Outer(RuleBase[float]):
+    class Outer(Rule[float]):
         def compute(self) -> Step[float]:
             inner_val = yield from get(inner)
             prior = yield from get(self, seed=0.0, distance=abs_distance)
@@ -408,13 +408,13 @@ def test_nested_independent_cycles_each_need_a_seed():
 def test_seeded_cell_behind_dropped_branch_does_not_block():
     """A sweep/trigger seed that stops being demanded must not stall the solve."""
 
-    class Side(RuleBase[float]):
+    class Side(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(loop))
 
     side = Side("side")
 
-    class Loop(RuleBase[float]):
+    class Loop(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=0.0, distance=abs_distance)
             if prior < 1.9:
@@ -428,13 +428,13 @@ def test_seeded_cell_behind_dropped_branch_does_not_block():
 
 
 def test_convergence_error_names_unobserved_seeded_cell():
-    class Side(RuleBase[float]):
+    class Side(Rule[float]):
         def compute(self) -> Step[float]:
             return (yield from get(loop))
 
     side = Side("side")
 
-    class Loop(RuleBase[float]):
+    class Loop(Rule[float]):
         def compute(self) -> Step[float]:
             prior = yield from get(self, seed=0.0, distance=abs_distance, max_iter=3)
             if prior == 0.0:

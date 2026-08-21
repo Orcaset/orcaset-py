@@ -11,7 +11,7 @@ from typing import Any, cast, overload
 from orcaset.ids import next_id
 from orcaset.maybe import Maybe, isna
 
-# Sentinel cache key for unkeyed ``Rule`` demands. Not a valid user key space.
+# Sentinel cache key for unkeyed ``Cell`` demands. Not a valid user key space.
 _UNIT: Hashable = object()
 
 # Distinguishes "seed/distance omitted" from a legitimate ``seed=None``.
@@ -48,7 +48,7 @@ def maybe_abs_distance(a: Maybe[float], b: Maybe[float]) -> float:
 
 
 class _Identity:
-    """Shared id/name for ``RuleBase`` and ``KeyedRuleBase``."""
+    """Shared id/name for ``Rule`` and ``KeyedRule``."""
 
     def __init__(self, name: str) -> None:
         self._name = name
@@ -80,7 +80,7 @@ class Demand[V]:
 
     def __init__(
         self,
-        target: KeyedRuleBase[Any, V] | RuleBase[V],
+        target: KeyedRule[Any, V] | Rule[V],
         key: Hashable,
         iterate: Iterate[V] | None = None,
     ) -> None:
@@ -94,12 +94,12 @@ type Step[V] = Generator[Demand[Any], Any, V]
 
 
 @overload
-def get_at[K: Hashable, V](rule: KeyedRuleBase[K, V], key: K) -> Step[V]: ...
+def get_at[K: Hashable, V](rule: KeyedRule[K, V], key: K) -> Step[V]: ...
 
 
 @overload
 def get_at[K: Hashable, V](
-    rule: KeyedRuleBase[K, V],
+    rule: KeyedRule[K, V],
     key: K,
     *,
     seed: V,
@@ -110,7 +110,7 @@ def get_at[K: Hashable, V](
 
 
 def get_at[K: Hashable, V](
-    rule: KeyedRuleBase[K, V],
+    rule: KeyedRule[K, V],
     key: K,
     *,
     seed: V | Any = _MISSING,
@@ -135,12 +135,12 @@ def get_at[K: Hashable, V](
 
 
 @overload
-def get[V](rule: RuleBase[V]) -> Step[V]: ...
+def get[V](rule: Rule[V]) -> Step[V]: ...
 
 
 @overload
 def get[V](
-    rule: RuleBase[V],
+    rule: Rule[V],
     *,
     seed: V,
     distance: Callable[[V, V], float],
@@ -150,14 +150,14 @@ def get[V](
 
 
 def get[V](
-    rule: RuleBase[V],
+    rule: Rule[V],
     *,
     seed: V | Any = _MISSING,
     distance: Callable[[V, V], float] | Any = _MISSING,
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Step[V]:
-    """Request the value of an unkeyed ``RuleBase`` from within ``compute``.
+    """Request the value of an unkeyed ``Rule`` from within ``compute``.
 
     Use with ``yield from``:
 
@@ -184,11 +184,11 @@ def _iterate[V](
     return Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
 
 
-class RuleBase[V](_Identity, ABC):
+class Rule[V](_Identity, ABC):
     """A single memoized computation (no key).
 
-    Subclass to override ``compute``. For a one-off body, use ``Rule`` or
-    ``@Rule.define`` instead.
+    Subclass to override ``compute``. For a one-off body, use ``Cell`` or
+    ``@Cell.define`` instead.
     """
 
     @abstractmethod
@@ -209,29 +209,29 @@ class RuleBase[V](_Identity, ABC):
         ...
 
 
-class KeyedRuleBase[K: Hashable, V](_Identity, ABC):
+class KeyedRule[K: Hashable, V](_Identity, ABC):
     """A keyed family of memoized computations.
 
     Subclass to override ``compute`` (as ``PeriodSeries`` does). For a one-off
-    body, use ``KeyedRule`` or ``@KeyedRule.define`` instead.
+    body, use ``KeyedCell`` or ``@KeyedCell.define`` instead.
     """
 
     @abstractmethod
     def compute(self, key: K, /) -> Step[V] | V:
         """Compute the value of this rule at ``key``.
 
-        Same generator conventions as ``RuleBase.compute``, but keyed. The
+        Same generator conventions as ``Rule.compute``, but keyed. The
         parameter is positional-only so overrides may rename it for their key
         space (e.g. ``q`` for query-keyed rules).
         """
         ...
 
 
-class Rule[V](RuleBase[V]):
+class Cell[V](Rule[V]):
     """Unkeyed rule whose ``compute`` delegates to a zero-arg ``fn``.
 
     ``fn`` is public and may be replaced; a new ``Context`` is required for a
-    later ``get`` to see the change. Subclass ``RuleBase`` when ``compute``
+    later ``get`` to see the change. Subclass ``Rule`` when ``compute``
     needs extra state or methods.
     """
 
@@ -243,24 +243,24 @@ class Rule[V](RuleBase[V]):
         return self.fn()
 
     @classmethod
-    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Rule[V2]]:
-        """Decorator: build a ``Rule`` from a zero-arg compute function.
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Cell[V2]]:
+        """Decorator: build a ``Cell`` from a zero-arg compute function.
 
-        The decorated function becomes the rule, so its body can close over
+        The decorated function becomes the cell, so its body can close over
         that name — including ``get`` of itself for a demand cycle.
         """
 
-        def decorator(fn: Callable[[], Step[V2] | V2]) -> Rule[V2]:
+        def decorator(fn: Callable[[], Step[V2] | V2]) -> Cell[V2]:
             return cls(name, fn)
 
         return decorator
 
 
-class KeyedRule[K: Hashable, V](KeyedRuleBase[K, V]):
+class KeyedCell[K: Hashable, V](KeyedRule[K, V]):
     """Keyed rule whose ``compute`` delegates to a one-arg ``fn``.
 
     ``fn`` is public and may be replaced; a new ``Context`` is required for a
-    later ``get_at`` to see the change. Subclass ``KeyedRuleBase`` when
+    later ``get_at`` to see the change. Subclass ``KeyedRule`` when
     ``compute`` needs extra state or methods.
     """
 
@@ -275,14 +275,14 @@ class KeyedRule[K: Hashable, V](KeyedRuleBase[K, V]):
     def define[K2: Hashable, V2](
         cls,
         name: str,
-    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedRule[K2, V2]]:
-        """Decorator: build a ``KeyedRule`` from a keyed compute function.
+    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedCell[K2, V2]]:
+        """Decorator: build a ``KeyedCell`` from a keyed compute function.
 
-        The decorated function becomes the rule, so its body can close over
+        The decorated function becomes the cell, so its body can close over
         that name.
         """
 
-        def decorator(fn: Callable[[K2], Step[V2] | V2]) -> KeyedRule[K2, V2]:
+        def decorator(fn: Callable[[K2], Step[V2] | V2]) -> KeyedCell[K2, V2]:
             return cls(name, fn)
 
         return decorator
