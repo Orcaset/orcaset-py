@@ -7,6 +7,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
+    Cell,
     CellFactory,
     CellStream,
     Context,
@@ -14,7 +15,6 @@ from orcaset import (
     Group,
     Period,
     PeriodSeries,
-    Rule,
     Step,
     Stmt,
     Total,
@@ -42,17 +42,8 @@ purchase_multiple = 5.0
 ltv = 0.6
 
 
-class Assumption(Rule[float]):
-    def __init__(self, name: str, value: float) -> None:
-        super().__init__(name)
-        self.value = value
-
-    def compute(self) -> float:
-        return self.value
-
-
-annual_revenue_growth = Assumption("Revenue growth rate", 0.1)
-exit_multiple = Assumption("Exit multiple", 5.0)
+annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
+exit_multiple = Cell("Exit multiple", lambda: 5.0)
 
 
 @PeriodSeries.define("Revenue", accrual(YF.cmonthly))
@@ -320,10 +311,10 @@ print()
 print("IRR sensitivity")
 print(f"{'':6} " + " ".join(f"{g:>8.0%}" for g in (0.06, 0.08, 0.10, 0.12, 0.14)))
 for multiple in (3.0, 4.0, 5.0, 6.0, 7.0):
-    exit_multiple.value = multiple
+    exit_multiple.fn = lambda m=multiple: m
     row = [f"{multiple:.1f}x".rjust(6)]
     for growth in (0.06, 0.08, 0.10, 0.12, 0.14):
-        annual_revenue_growth.value = growth
+        annual_revenue_growth.fn = lambda g=growth: g
         scenario = Context()
         cfs: list[float] = []
         for d in cf_dates:

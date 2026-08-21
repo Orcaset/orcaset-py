@@ -11,7 +11,7 @@ from typing import Any, cast, overload
 from orcaset.ids import next_id
 from orcaset.maybe import Maybe, isna
 
-# Sentinel cache key for unkeyed ``Rule`` demands. Not a valid user key space.
+# Sentinel cache key for unkeyed ``Cell`` demands. Not a valid user key space.
 _UNIT: Hashable = object()
 
 # Distinguishes "seed/distance omitted" from a legitimate ``seed=None``.
@@ -185,7 +185,11 @@ def _iterate[V](
 
 
 class Rule[V](_Identity, ABC):
-    """A single memoized computation (no key)."""
+    """A single memoized computation (no key).
+
+    Subclass to override ``compute``. For a one-off body, use ``Cell`` or
+    ``@Cell.define`` instead.
+    """
 
     @abstractmethod
     def compute(self) -> Step[V] | V:
@@ -206,14 +210,79 @@ class Rule[V](_Identity, ABC):
 
 
 class KeyedRule[K: Hashable, V](_Identity, ABC):
-    """A keyed family of memoized computations."""
+    """A keyed family of memoized computations.
+
+    Subclass to override ``compute`` (as ``PeriodSeries`` does). For a one-off
+    body, use ``KeyedCell`` or ``@KeyedCell.define`` instead.
+    """
 
     @abstractmethod
     def compute(self, key: K, /) -> Step[V] | V:
         """Compute the value of this rule at ``key``.
 
-        Same generator conventions as ``Rule.compute``, but keyed. The parameter
-        is positional-only so overrides may rename it for their key space
-        (e.g. ``q`` for query-keyed rules).
+        Same generator conventions as ``Rule.compute``, but keyed. The
+        parameter is positional-only so overrides may rename it for their key
+        space (e.g. ``q`` for query-keyed rules).
         """
         ...
+
+
+class Cell[V](Rule[V]):
+    """Unkeyed rule whose ``compute`` delegates to a zero-arg ``fn``.
+
+    ``fn`` is public and may be replaced; a new ``Context`` is required for a
+    later ``get`` to see the change. Subclass ``Rule`` when ``compute``
+    needs extra state or methods.
+    """
+
+    def __init__(self, name: str, fn: Callable[[], Step[V] | V]) -> None:
+        super().__init__(name)
+        self.fn = fn
+
+    def compute(self) -> Step[V] | V:
+        return self.fn()
+
+    @classmethod
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Cell[V2]]:
+        """Decorator: build a ``Cell`` from a zero-arg compute function.
+
+        The decorated function becomes the cell, so its body can close over
+        that name — including ``get`` of itself for a demand cycle.
+        """
+
+        def decorator(fn: Callable[[], Step[V2] | V2]) -> Cell[V2]:
+            return cls(name, fn)
+
+        return decorator
+
+
+class KeyedCell[K: Hashable, V](KeyedRule[K, V]):
+    """Keyed rule whose ``compute`` delegates to a one-arg ``fn``.
+
+    ``fn`` is public and may be replaced; a new ``Context`` is required for a
+    later ``get_at`` to see the change. Subclass ``KeyedRule`` when
+    ``compute`` needs extra state or methods.
+    """
+
+    def __init__(self, name: str, fn: Callable[[K], Step[V] | V]) -> None:
+        super().__init__(name)
+        self.fn = fn
+
+    def compute(self, key: K, /) -> Step[V] | V:
+        return self.fn(key)
+
+    @classmethod
+    def define[K2: Hashable, V2](
+        cls,
+        name: str,
+    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedCell[K2, V2]]:
+        """Decorator: build a ``KeyedCell`` from a keyed compute function.
+
+        The decorated function becomes the cell, so its body can close over
+        that name.
+        """
+
+        def decorator(fn: Callable[[K2], Step[V2] | V2]) -> KeyedCell[K2, V2]:
+            return cls(name, fn)
+
+        return decorator

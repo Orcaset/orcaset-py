@@ -20,36 +20,24 @@ This table compares the analysis script in this example using orcaset against Ex
 
 ## Sensitivity analysis
 
-The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and custom `Rule` assumptions. For each pair, update the assumptions and compute IRR in a fresh context.
+The case study asks for an IRR sensitivity table on exit multiple and revenue growth rate. In Excel, sensitivity tables are built with what-if data tables. With orcaset, you build the table with a regular for-loop over the inputs and `Cell` values. For each pair, replace `fn` and compute IRR in a fresh context.
 
-The example defines a `Rule` subclass that `get` resolves through the effect handler:
-
-```py
-class Assumption(Rule[float]):
-    def __init__(self, name: str, value: float) -> None:
-        super().__init__(name)
-        self.value = value
-
-    def compute(self) -> float:
-        return self.value
-```
-
-> `Rule` and its sibling class `KeyedRule` are abstract classes that `get` and `get_at` resolve through the abstract method `compute`. Series types such as `PeriodSeries` and `DateSeries` are concrete `KeyedRule` implementations.
-
-The exit multiple and revenue growth rate are defined as assumptions and accessed with `get`:
+The example defines named unkeyed rules. `get` resolves them through the effect handler:
 
 ```py
-exit_multiple = Assumption("Exit multiple", 5.0)
-annual_revenue_growth = Assumption("Revenue growth rate", 0.1)
+exit_multiple = Cell("Exit multiple", lambda: 5.0)
+annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 ```
 
-The sensitivity analysis loops over the assumption ranges, updates each assumption, and computes IRR in a fresh context. Use a new `Context` for every iteration; otherwise stale cached values will be reused.
+> `Cell` wraps a public zero-arg `fn`. `Rule` is the abstract `compute` protocol if you need extra state or methods. Series types such as `PeriodSeries` and `DateSeries` are `KeyedRule` implementations.
+
+The sensitivity analysis loops over the ranges, replaces each rule's `fn`, and computes IRR in a fresh context. Use a new `Context` for every iteration; otherwise stale cached values will be reused. Capture loop variables with a default arg (`lambda m=multiple: m`), same as cell factories.
 
 ```py
 for multiple in (3.0, ..., 7.0):
     for growth_rate in (0.06, ..., 0.14):
-        exit_multiple.value = multiple
-        annual_revenue_growth.value = growth_rate
+        exit_multiple.fn = lambda m=multiple: m
+        annual_revenue_growth.fn = lambda g=growth_rate: g
         ctx = Context()
         # Continue solving for IRR
         # ...

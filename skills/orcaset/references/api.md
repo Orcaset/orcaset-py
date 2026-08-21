@@ -355,7 +355,7 @@ type Step[V] = Generator[Demand[Any], Any, V]
 
 
 class Rule[V](ABC):
-    """A single memoized computation (no key)."""
+    """A single memoized computation (no key). Subclass to override ``compute``."""
     @property
     def id(self) -> int:
     @property
@@ -363,12 +363,28 @@ class Rule[V](ABC):
     def compute(self) -> Step[V] | V:
 
 class KeyedRule[K: Hashable, V](ABC):
-    """A keyed family of memoized computations."""
+    """A keyed family of memoized computations. Subclass to override ``compute``."""
     @property
     def id(self) -> int:
     @property
     def name(self) -> str:
     def compute(self, key: K, /) -> Step[V] | V:
+
+class Cell[V](Rule[V]):
+    """Unkeyed rule whose ``compute`` delegates to a public zero-arg ``fn``."""
+    fn: Callable[[], Step[V] | V]
+    def __init__(self, name: str, fn: Callable[[], Step[V] | V]) -> None: ...
+    @classmethod
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Cell[V2]]: ...
+
+class KeyedCell[K: Hashable, V](KeyedRule[K, V]):
+    """Keyed rule whose ``compute`` delegates to a public one-arg ``fn``."""
+    fn: Callable[[K], Step[V] | V]
+    def __init__(self, name: str, fn: Callable[[K], Step[V] | V]) -> None: ...
+    @classmethod
+    def define[K2: Hashable, V2](
+        cls, name: str,
+    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedCell[K2, V2]]: ...
 
 class Demand[V]:
     """A request for another computation's value, yielded from ``compute``.

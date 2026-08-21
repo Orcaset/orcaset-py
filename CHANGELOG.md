@@ -9,6 +9,15 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `Cell(name, fn)` and `KeyedCell(name, fn)` wrap a public `fn` for one-off
+  unkeyed and keyed bodies. `@Cell.define` / `@KeyedCell.define` bind the
+  function as the cell so the body can close over that name. Subclass `Rule` /
+  `KeyedRule` to override `compute` with extra state. Series cells are stored
+  as `Cell` instances. The paper LBO example uses `Cell` for growth and exit
+  multiple (replace `fn` between scenarios).
+
 ## [0.8.1] - 2026-08-18
 
 ### Changed

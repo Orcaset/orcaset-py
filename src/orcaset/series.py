@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
 from itertools import chain
 from typing import Any, Protocol, Self, cast
 
-from orcaset.rule import Demand, KeyedRule, Rule, Step, get, get_at
+from orcaset.rule import Cell, Demand, KeyedRule, Rule, Step, get, get_at
 
 # ---------- keys ----------
 
@@ -235,7 +235,7 @@ class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
     ``cells`` is a zero-arg factory yielding or returning ``(key, value | factory)``
     pairs, where each value is plain or a factory ``() -> Step[V] | V``. It may
     also be a ``Step`` that demands other rules before its first pair; see
-    ``CellsFn`` for the accepted shapes. Each cell is wrapped as a ``Rule`` so
+    ``CellsFn`` for the accepted shapes. Each cell is wrapped as a ``Cell`` so
     forcing is context-memoized and dependency-tracked. Live generators as cell
     *values* are rejected — pass a factory instead.
 
@@ -322,17 +322,6 @@ class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
 
 
 # ---------- internal glue ----------
-
-
-class _CellRule[V](Rule[V]):
-    """One memoized cell value, forced via ``get(cell)``."""
-
-    def __init__(self, name: str, factory: CellFactory[V]) -> None:
-        super().__init__(name)
-        self._factory = factory
-
-    def compute(self) -> Step[V]:
-        return (yield from _as_step(self._factory()))
 
 
 class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
@@ -524,7 +513,7 @@ def _cell_pairs[K: Key, V](
         if prev is not None and not prev < k:
             raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
         prev = k
-        yield k, _CellRule(f"{series_name}@{k}", _as_factory(v))
+        yield k, Cell(f"{series_name}@{k}", _as_factory(v))
 
 
 def _as_factory[V](value: V | CellFactory[V]) -> CellFactory[V]:
