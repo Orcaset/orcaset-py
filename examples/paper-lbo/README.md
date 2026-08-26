@@ -133,3 +133,4 @@ IRR sensitivity
 | [`references/wharton-lbo-practice-model.xlsx`](references/wharton-lbo-practice-model.xlsx) | Wharton Career Services LBO practice workbook (blank model, answer key, and notes) |
 | [`references/example-opus-excel-build-script.py`](references/example-opus-excel-build-script.py) | Example Claude Code Excel build script used in the token comparison |
 | [`references/example-sol-excel-build-script.mjs`](references/example-sol-excel-build-script.mjs) | Example ChatGPT Excel build script used in the token comparison |
+| [`references/automated-excel-agent-example.xlsx`](references/automated-excel-agent-example.xlsx) | Example of a broken workbook built by a CLI coding agent |
