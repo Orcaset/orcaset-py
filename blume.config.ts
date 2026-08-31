@@ -10,9 +10,4 @@ export default defineConfig({
   content: {
     root: "docs",
   },
-  theme: {
-    accent: "teal",
-    radius: "md",
-    mode: "system",
-  },
 });
