@@ -7,6 +7,10 @@ dist/
 wheels/
 *.egg-info
 
+# Docs site (Blume)
+node_modules/
+.blume/
+
 # Virtual environments
 .venv
 

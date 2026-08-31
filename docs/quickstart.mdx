@@ -1,0 +1,91 @@
+---
+title: Quickstart
+description: Build a three-line revenue, cost, and profit model in a few minutes.
+---
+
+This page walks through one complete model: revenue that grows each month, costs as a fixed margin, and profit as the sum. The example is small on purpose — enough to see the shape of an orcaset model without leaning on APIs that are still moving.
+
+<Steps>
+  <Step title="Install orcaset">
+    If you have not already, follow [Installation](/installation), then start a new `.py` file.
+  </Step>
+  <Step title="Define the line items">
+    Revenue is a named series. The first month is `100`; each later month reads the prior month and applies 10% growth. Costs and profit are derived with ordinary arithmetic.
+
+    ```python main.py
+    from collections.abc import Iterable
+    from datetime import date
+    from itertools import islice
+
+    from dateutil.relativedelta import relativedelta
+
+    from orcaset import (
+        YF,
+        CellFactory,
+        Context,
+        Period,
+        PeriodSeries,
+        Stmt,
+        Total,
+        accrual,
+        fixed_width_table,
+        get_at,
+        isna,
+    )
+
+    @PeriodSeries.define("Revenue", accrual(YF.cmonthly))
+    def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
+        for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
+
+            def factory(p: Period = k):
+                prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
+                return prior * 1.10 if not isna(prior) else 100.0
+
+            yield k, factory
+
+
+    costs = (revenue * -0.50).named("Costs")
+    profit = (revenue + costs).named("Profit")
+    ```
+  </Step>
+  <Step title="Evaluate a few periods">
+    A `Context` holds the state for one run. Ask a `Stmt` for values, then print them.
+
+    ```python
+    ctx = Context()
+    periods = list(islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4))
+    statement = Stmt(Total(profit, [revenue, costs])).values_for_periods(ctx, periods)
+    print(fixed_width_table(statement))
+    ```
+
+    You should see revenue compounding from `100`, costs at a 50% margin, and profit as the residual:
+
+    ```txt
+    Start                  2026-01-01  2026-02-01  2026-03-01  2026-04-01
+    End        2026-01-01  2026-02-01  2026-03-01  2026-04-01  2026-05-01
+      Revenue                  100.00      110.00      121.00      133.10
+      Costs                    -50.00      -55.00      -60.50      -66.55
+    ---------------------------------------------------------------------
+    Profit                      50.00       55.00       60.50       66.55
+    ```
+  </Step>
+  <Step title="Inspect a dependency (optional)">
+    The same context can show how a cell was computed:
+
+    ```python
+    print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
+    ```
+  </Step>
+</Steps>
+
+## What you just did
+
+- Declared a **recursive series** with `@PeriodSeries.define` and `yield from get_at(...)`.
+- Derived two more lines with `*` / `+` and `.named(...)`.
+- Resolved four months in one `Context` and printed a statement.
+
+Capture the loop period with a default argument (`def factory(p: Period = k)`). Closing over the loop variable alone will reuse the last period.
+
+:::tip
+The [examples](https://github.com/Orcaset/orcaset-py/tree/main/examples) folder has larger, self-contained models — capex cohorts, series composition, a paper LBO, and more — if you want a second pattern to copy.
+:::

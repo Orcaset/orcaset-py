@@ -86,6 +86,10 @@ print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
 <!-- fmt: on -->
 See the demo scripts in the [examples](./examples) folder for additional review.
 
+## Docs
+
+A small [Blume](https://useblume.dev) site lives in [`docs/`](./docs). Preview it with `npm install` and `npm run docs:dev`.
+
 ## License
 
 Orcaset is licensed under the Server Side Public License. You can freely use it to build internal models for underwriting, valuation, risk, or other analysis. See [LICENSE](./LICENSE) for details.

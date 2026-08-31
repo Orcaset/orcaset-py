@@ -1,0 +1,12 @@
+{
+  "name": "orcaset-docs",
+  "private": true,
+  "scripts": {
+    "docs:dev": "blume dev",
+    "docs:build": "blume build",
+    "docs:preview": "blume preview"
+  },
+  "devDependencies": {
+    "blume": "^1.0.0"
+  }
+}

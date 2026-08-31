@@ -1,0 +1,42 @@
+---
+title: Installation
+description: Add orcaset to a Python 3.14+ project with uv or pip.
+---
+
+<Steps>
+  <Step title="Use Python 3.14 or newer">
+    orcaset requires **Python 3.14+**. Confirm with:
+
+    ```bash
+    python --version
+    ```
+  </Step>
+  <Step title="Install the package">
+    Prefer `uv` when you already use it for the project:
+
+    ```bash
+    uv add orcaset
+    ```
+
+    Or install with pip:
+
+    ```bash
+    pip install orcaset
+    ```
+  </Step>
+  <Step title="Check the import">
+    ```bash
+    python -c "import orcaset; print('ok')"
+    ```
+  </Step>
+</Steps>
+
+:::note
+`python-dateutil` is installed automatically as a dependency. You do not need to add it yourself for the [quickstart](/quickstart).
+:::
+
+## Next
+
+<Card title="Quickstart" href="/quickstart" icon="rocket">
+  Build a small revenue, cost, and profit model and print a statement.
+</Card>
