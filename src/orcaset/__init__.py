@@ -37,7 +37,10 @@ from orcaset.series import (
     Series,
     Thunk,
     UnfoldFn,
+    append_cells,
+    extend_cells,
     keys_until,
+    unfold_cells,
 )
 
 __all__ = [
@@ -64,9 +67,11 @@ __all__ = [
     "UnfoldFn",
     "abs_distance",
     "add_some",
+    "append_cells",
     "combine_some",
     "date_union",
     "exact",
+    "extend_cells",
     "get",
     "get_at",
     "isna",
@@ -78,5 +83,6 @@ __all__ = [
     "multiply_some",
     "period_union",
     "some",
+    "unfold_cells",
     "value_or",
 ]

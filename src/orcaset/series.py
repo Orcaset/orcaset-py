@@ -88,7 +88,31 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
         step: UnfoldFn[S, K, V],
     ) -> Series[Q, K, V, W]:
         """Build a series by repeatedly applying ``step`` to an evolving state."""
-        return cls(name, _UnfoldRule(name, None, seed, step), query)
+        return cls(name, unfold_cells(name, seed=seed, step=step), query)
+
+    @classmethod
+    def extend(
+        cls,
+        name: str,
+        query: QueryFn[Q, K, V, W],
+        *,
+        base: Cells[K, V],
+        cont: Callable[[K | None], Cells[K, V]],
+    ) -> Series[Q, K, V, W]:
+        """Build a series that continues ``base`` lazily at its frontier."""
+        return cls(name, extend_cells(name, base, cont), query)
+
+    @classmethod
+    def append(
+        cls,
+        name: str,
+        query: QueryFn[Q, K, V, W],
+        *,
+        first: Cells[K, V],
+        then: Cells[K, V],
+    ) -> Series[Q, K, V, W]:
+        """Build a series by appending ``then`` after ``first``."""
+        return cls(name, append_cells(name, first, then), query)
 
     @classmethod
     def of(
@@ -159,6 +183,84 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
             Cell(f"{self._series_name}@{key}", _cell_fn(value)),
             _UnfoldRule(self._series_name, key, next_state, self._step),
         )
+
+
+def unfold_cells[S, K: Key, V](
+    name: str,
+    *,
+    seed: S,
+    step: UnfoldFn[S, K, V],
+) -> Cells[K, V]:
+    """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation."""
+    return _UnfoldRule(name, None, seed, step)
+
+
+class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
+    """Splice a continuation onto a source chain when its frontier is reached.
+
+    Clipping assumes the usual transitivity of the key order: along an
+    ascending chain, nodes entirely after the last base key keep surviving.
+    """
+
+    def __init__(
+        self,
+        series_name: str,
+        prev_key: K | None,
+        source: Cells[K, V],
+        cont: Callable[[K | None], Cells[K, V]],
+    ) -> None:
+        name = (
+            f"{series_name}.cells"
+            if prev_key is None
+            else f"{series_name}.tail@{prev_key}"
+        )
+        super().__init__(name)
+        self._series_name = series_name
+        self._prev_key = prev_key
+        self._source = source
+        self._cont = cont
+
+    def compute(self) -> Step[Cons[K, V] | None]:
+        node = yield from get(self._source)
+        if node is not None:
+            return Cons(
+                node.key,
+                node.cell,
+                _SpliceRule(self._series_name, node.key, node.tail, self._cont),
+            )
+
+        cont_cells = self._cont(self._prev_key)
+        node = yield from get(cont_cells)
+        while (
+            node is not None
+            and self._prev_key is not None
+            and not self._prev_key < node.key
+        ):
+            node = yield from get(node.tail)
+        return node
+
+
+def extend_cells[K: Key, V](
+    name: str,
+    base: Cells[K, V],
+    cont: Callable[[K | None], Cells[K, V]],
+) -> Cells[K, V]:
+    """Continue ``base`` lazily with a chain built from its last key.
+
+    ``cont`` receives the last base key, or ``None`` for an empty base, and is
+    invoked only when a walk reaches the base frontier. Leading continuation
+    nodes not entirely after the last base key are clipped.
+    """
+    return _SpliceRule(name, None, base, cont)
+
+
+def append_cells[K: Key, V](
+    name: str,
+    first: Cells[K, V],
+    then: Cells[K, V],
+) -> Cells[K, V]:
+    """Append ``then`` after ``first``; overlap with ``first`` is clipped."""
+    return extend_cells(name, first, lambda _last: then)
 
 
 def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Step[V] | V]:
