@@ -3,14 +3,11 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator, Hashable, Iterable, Iterator
-from itertools import chain
-from typing import Any, Protocol, Self, cast
+from collections.abc import Callable, Generator, Hashable, Iterable
+from dataclasses import dataclass
+from typing import Protocol, Self
 
-from orcaset.rule import Cell, Demand, KeyedRule, Rule, Step, get, get_at
-
-# ---------- keys ----------
+from orcaset.rule import Cell, KeyedRule, Rule, Step, get
 
 
 class Key(Hashable, Protocol):
@@ -25,510 +22,157 @@ class Key(Hashable, Protocol):
     def __lt__(self, other: Self, /) -> bool: ...
 
 
-type CellFactory[V] = Callable[[], Step[V] | V]
-"""Builds a fresh ``Step`` (or plain value) each time a cell is computed."""
+class Thunk[V]:
+    """Nominal wrapper for a deferred cell computation.
 
-type CellStream[K: Key, V] = Generator[
-    Demand[Any] | tuple[K, V | CellFactory[V]],
-    Any,
-    Iterable[tuple[K, V | CellFactory[V]]] | None,
+    In an unfold result, anything that is not a ``Thunk`` is a plain value,
+    including callables and all other objects. Wrap deferred computation in
+    ``Thunk`` explicitly. This makes the value slot unambiguous: there is no
+    ``callable()`` sniffing.
+    """
+
+    __slots__ = ("fn",)
+
+    def __init__(self, fn: Callable[[], Step[V] | V]) -> None:
+        self.fn = fn
+
+
+@dataclass(frozen=True, slots=True)
+class Cons[K: Key, V]:
+    """One materialized node of a series' cell chain.
+
+    ``tail`` resolves to the next node or ``None`` (exhaustion). Tails are
+    ordinary rules: memoized per context and free to demand other rules,
+    enabling value-dependent domains.
+    """
+
+    key: K
+    cell: Rule[V]
+    tail: Rule[Cons[K, V] | None]
+
+
+type Cells[K: Key, V] = Rule[Cons[K, V] | None]
+type UnfoldFn[S, K: Key, V] = Callable[
+    [S],
+    Step[tuple[K, V | Thunk[V], S] | None] | tuple[K, V | Thunk[V], S] | None,
 ]
-"""A cell-producing generator: demand rules, then yield or return pairs.
+"""Produce a cell and next state from an unfold state, or end the chain."""
 
-Yields ``Demand``s (via ``get``/``get_at``) and/or ``(key, value | factory)``
-pairs. All demands must precede the first pair — once a pair is seen the
-remainder is driven as a plain pairs iterator. A pure ``Step`` shape may
-``return`` the pairs iterable instead of yielding pairs.
-"""
-
-type CellsFn[K: Key, V] = Callable[
-    [],
-    CellStream[K, V] | Iterable[tuple[K, V | CellFactory[V]]],
-]
-"""Builds the cell stream for a ``Series``.
-
-Three shapes are accepted:
-
-- Ordinary callables return an iterable of ``(key, value | factory)`` pairs.
-- Generator functions yield those pairs directly.
-- Generator functions may also demand other rules with ``get``/``get_at``
-  before their first pair (or ``return`` the pairs iterable) — annotate these
-  as ``CellStream``.
-
-``_Cells`` drives the factory and branches on each yielded item, so no static
-distinction is needed. All demands must finish before the first pair — once a
-pair is seen the remainder is driven as a plain pairs iterator.
-"""
-
-type QueryFn[Q, K: Key, V, W] = Callable[
-    [Q, Iterable[tuple[K, Rule[V]]]],
-    Step[W] | W,
-]
-"""Fold a query over a lazy cell stream into an answer.
-
-Each cell is a ``Rule[V]`` — force with ``yield from get(cell)``. May scan
-without forcing every cell (early-terminate, skip). Fixed per series at
-construction so a series cannot be read under another convention.
-"""
+type QueryFn[Q, K: Key, V, W] = Callable[[Q, Cells[K, V]], Step[W] | W]
+"""Fold a query over a cell chain, with optional early termination."""
 
 
-# ---------- replayable ----------
+class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
+    """A queryable series backed by an effectful cons-list built by unfold."""
 
-
-class _ReplayableIterator[T](Iterator[T]):
-    def __init__(self, owner: Replayable[T]) -> None:
-        self._owner = owner
-        self._index = 0
-
-    def __next__(self) -> T:
-        if self._index < len(self._owner._buffer):
-            item = self._owner._buffer[self._index]
-        else:
-            item = next(self._owner._source)
-            self._owner._buffer.append(item)
-        self._index += 1
-        return item
-
-
-class Replayable[T](Iterable[T]):
-    """Buffered iterable that can be re-iterated without re-consuming the source.
-
-    Items are pulled lazily from the source and appended to a shared buffer, so
-    the source may be infinite. Each call to ``iter`` returns a new iterator
-    that replays from the start of the buffer.
-    """
-
-    def __init__(self, iterable: Iterable[T]) -> None:
-        self._source = iter(iterable)
-        self._buffer: list[T] = []
-
-    def __iter__(self) -> Iterator[T]:
-        return _ReplayableIterator(self)
-
-
-# ---------- series ----------
-
-
-class BaseSeries[Q: Hashable, K: Key, W](KeyedRule[Q, W], ABC):
-    """A demandable rule with an explicit time domain.
-
-    Public surface: ``compute`` (via ``KeyedRule``) and ``keys()``. Values are only
-    reachable through ``compute``, so every answer is dependency-tracked.
-    """
-
-    @abstractmethod
-    def keys(self) -> Rule[Iterable[K]]:
-        """Demandable ascending domain (strictly ascending, possibly infinite)."""
-        ...
-
-    def map[V](self, name: str, fn: Callable[[W], V]) -> BaseSeries[Q, K, V]:
-        """Derived series answering ``fn(self answered at q)`` for every query.
-
-        ``fn`` sees the raw answer (typically ``Maybe``) and owns the miss policy.
-        Domain aliases ``self.keys()``.
-        """
-        return MapSeries(name, self, fn)
-
-    def map2[W2, V](
-        self,
-        name: str,
-        other: BaseSeries[Q, K, W2],
-        fn: Callable[[W, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
-    ) -> BaseSeries[Q, K, V]:
-        """Combine ``self`` and ``other`` at each query via ``fn``.
-
-        Sources may have different answer types. ``merge_keys`` builds the
-        derived domain only.
-        """
-        return Map2Series(name, self, other, fn, merge_keys=merge_keys)
-
-
-class MapSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
-    """A series whose every answer is ``fn(source answered at q)``.
-
-    Query resolution is fully delegated to the source; ``keys()`` returns the
-    source domain rule so both share one buffer per context and traces show the
-    dependency.
-    """
-
-    def __init__(self, name: str, source: BaseSeries[Q, K, W], fn: Callable[[W], V]) -> None:
+    def __init__(self, name: str, cells: Cells[K, V], query: QueryFn[Q, K, V, W]) -> None:
         super().__init__(name)
-        self._source = source
-        self._fn = fn
-
-    def keys(self) -> Rule[Iterable[K]]:
-        return self._source.keys()
-
-    def compute(self, q: Q, /) -> Step[V]:
-        w = yield from get_at(self._source, q)
-        return self._fn(w)
-
-
-class MapNSeries[Q: Hashable, K: Key, W, V](BaseSeries[Q, K, V]):
-    """A series whose every answer combines source answers at the same query.
-
-    Query resolution is delegated independently to every source. An empty
-    ``sources`` tuple is allowed: ``compute`` answers ``fn(())`` and
-    ``merge_keys`` receives ``()``. ``merge_keys`` only constructs the derived
-    series' public domain; it is not involved when answering a query.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        sources: tuple[BaseSeries[Q, K, W], ...],
-        fn: Callable[[tuple[W, ...]], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
-    ) -> None:
-        super().__init__(name)
-        self._sources = sources
-        self._fn = fn
-        self._keys: Rule[Iterable[K]] = _MapNKeys(name, sources, merge_keys)
-
-    def keys(self) -> Rule[Iterable[K]]:
-        return self._keys
-
-    def compute(self, q: Q, /) -> Step[V]:
-        values: list[W] = []
-        for source in self._sources:
-            values.append((yield from get_at(source, q)))
-        return self._fn(tuple(values))
-
-
-class Map2Series[Q: Hashable, K: Key, W1, W2, V](BaseSeries[Q, K, V]):
-    """Combine two series at the same query; left and right answer types may differ.
-
-    ``merge_keys`` only constructs the public domain; it is not used when
-    answering a query.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        left: BaseSeries[Q, K, W1],
-        right: BaseSeries[Q, K, W2],
-        fn: Callable[[W1, W2], V],
-        *,
-        merge_keys: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
-    ) -> None:
-        super().__init__(name)
-        self._left = left
-        self._right = right
-        self._fn = fn
-        self._keys: Rule[Iterable[K]] = _MapNKeys(name, (left, right), merge_keys)
-
-    def keys(self) -> Rule[Iterable[K]]:
-        return self._keys
-
-    def compute(self, q: Q, /) -> Step[V]:
-        a = yield from get_at(self._left, q)
-        b = yield from get_at(self._right, q)
-        return self._fn(a, b)
-
-
-class Series[Q: Hashable, K: Key, V, W](BaseSeries[Q, K, W]):
-    """Series backed by a lazy stream of ``(K, Rule[V])`` cells.
-
-    ``cells`` is a zero-arg factory yielding or returning ``(key, value | factory)``
-    pairs, where each value is plain or a factory ``() -> Step[V] | V``. It may
-    also be a ``Step`` that demands other rules before its first pair; see
-    ``CellsFn`` for the accepted shapes. Each cell is wrapped as a ``Cell`` so
-    forcing is context-memoized and dependency-tracked. Live generators as cell
-    *values* are rejected — pass a factory instead.
-
-    Prefer ``PeriodSeries`` / ``DateSeries`` when ``Q`` and ``K`` are ``Period`` or
-    ``date`` — those add Na-propagating arithmetic and a fixed domain union.
-    Period/date variants use public specialized map classes that preserve the
-    ``PeriodSeriesBase`` / ``DateSeriesBase`` arithmetic surface.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        cells: CellsFn[K, V],
-        query: QueryFn[Q, K, V, W],
-    ) -> None:
-        super().__init__(name)
-        self._cells: Rule[Iterable[tuple[K, Rule[V]]]] = _Cells(name, cells)
-        self._keys: Rule[Iterable[K]] = _GridKeys(name, self._cells)
+        self._cells = cells
         self._query = query
 
+    @property
+    def cells(self) -> Cells[K, V]:
+        """The rule resolving the first node of this series."""
+        return self._cells
+
+    def compute(self, q: Q, /) -> Step[W]:
+        return (yield from _as_step(self._query(q, self._cells)))
+
     @classmethod
-    def define[
-        Q2: Hashable,
-        K2: Key,
-        V2,
-        W2,
-    ](
+    def unfold[S](
         cls,
         name: str,
-        query: QueryFn[Q2, K2, V2, W2],
-    ) -> Callable[[CellsFn[K2, V2]], Series[Q2, K2, V2, W2]]:
-        """Decorator: build a ``Series`` from a cells factory.
+        query: QueryFn[Q, K, V, W],
+        *,
+        seed: S,
+        step: UnfoldFn[S, K, V],
+    ) -> Series[Q, K, V, W]:
+        """Build a series by repeatedly applying ``step`` to an evolving state."""
+        return cls(name, _UnfoldRule(name, None, seed, step), query)
 
-        Arguments are ``name`` then ``query``. The decorated function becomes
-        the series value (not the cells callable).
-        """
+    @classmethod
+    def of(
+        cls,
+        name: str,
+        query: QueryFn[Q, K, V, W],
+        pairs: Iterable[tuple[K, V | Thunk[V]]],
+    ) -> Series[Q, K, V, W]:
+        """Build a series from eagerly materialized literal pairs."""
+        materialized = tuple(pairs)
 
-        def decorator(cells: CellsFn[K2, V2]) -> Series[Q2, K2, V2, W2]:
-            build = cast(
-                Callable[
-                    [str, CellsFn[K2, V2], QueryFn[Q2, K2, V2, W2]],
-                    Series[Q2, K2, V2, W2],
-                ],
-                cls,
-            )
-            return build(name, cells, query)
+        def step(index: int) -> tuple[K, V | Thunk[V], int] | None:
+            if index == len(materialized):
+                return None
+            key, value = materialized[index]
+            return key, value, index + 1
+
+        return cls.unfold(name, query, seed=0, step=step)
+
+    @classmethod
+    def define[S](
+        cls,
+        name: str,
+        query: QueryFn[Q, K, V, W],
+        *,
+        seed: S,
+    ) -> Callable[[UnfoldFn[S, K, V]], Series[Q, K, V, W]]:
+        """Decorator form of ``unfold`` for self-referential series bodies."""
+
+        def decorator(step: UnfoldFn[S, K, V]) -> Series[Q, K, V, W]:
+            return cls.unfold(name, query, seed=seed, step=step)
 
         return decorator
 
-    def keys(self) -> Rule[Iterable[K]]:
-        return self._keys
 
-    def compute(self, q: Q, /) -> Step[W]:
-        cells = yield from get(self._cells)
-        return (yield from _as_step(self._query(q, cells)))
-
-
-class MapItemsSeries[Q: Hashable, K: Key, V, W, A](BaseSeries[Q, K, A]):
-    """Map each source key via ``fn(k, source)``, then query the derived stream.
-
-    ``source`` must be ``BaseSeries[K, K, W]`` so domain keys are valid point queries.
-    ``fn`` receives the key and source series so it can ``get_at`` for deps.
-    ``keys()`` aliases ``source.keys()``.
-    """
+class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
+    """Rule that materializes one unfold node and its deferred tail."""
 
     def __init__(
         self,
-        name: str,
-        source: BaseSeries[K, K, W],
-        fn: Callable[[K, BaseSeries[K, K, W]], Step[V] | V],
-        query: QueryFn[Q, K, V, A],
+        series_name: str,
+        prev_key: K | None,
+        state: S,
+        step: UnfoldFn[S, K, V],
     ) -> None:
+        name = (
+            f"{series_name}.cells"
+            if prev_key is None
+            else f"{series_name}.tail@{prev_key}"
+        )
         super().__init__(name)
-        self._source = source
-        self._cells: Rule[Iterable[tuple[K, Rule[V]]]] = _ItemCells(name, source, fn)
-        self._query = query
+        self._series_name = series_name
+        self._prev_key = prev_key
+        self._state = state
+        self._step = step
 
-    def keys(self) -> Rule[Iterable[K]]:
-        return self._source.keys()
-
-    def compute(self, q: Q, /) -> Step[A]:
-        cells = yield from get(self._cells)
-        return (yield from _as_step(self._query(q, cells)))
-
-
-# ---------- internal glue ----------
-
-
-class _Cells[K: Key, V](Rule[Iterable[tuple[K, Rule[V]]]]):
-    """Per-context cell stream: Replayable buffer of ``(K, Rule[V])``.
-
-    The factory may return an iterable of pairs, be a generator that yields
-    pairs, or be a ``Step`` that demands other rules before yielding/returning
-    the pairs. The shapes are indistinguishable statically, so a generator
-    result is driven one step at a time and branched on its first yield: a
-    ``Demand`` means a ``Step``; a pair means a plain pairs iterator.
-    """
-
-    def __init__(self, name: str, cells: CellsFn[K, V]) -> None:
-        super().__init__(f"{name}.cells")
-        self._series_name = name
-        self._cells = cells
-
-    def compute(self) -> Step[Iterable[tuple[K, Rule[V]]]]:
-        result = self._cells()
-        if not isinstance(result, Generator):
-            raw = result
-            return Replayable(_cell_pairs(self._series_name, raw))
-
-        it = cast(CellStream[K, V], result)
-        to_send: Any = None
-        while True:
-            try:
-                item = it.send(to_send)
-            except StopIteration as done:
-                if done.value is None:
-                    return Replayable(_cell_pairs(self._series_name, ()))
-                return Replayable(
-                    _cell_pairs(
-                        self._series_name, cast(Iterable[tuple[K, V | CellFactory[V]]], done.value)
-                    )
-                )
-            if isinstance(item, Demand):
-                to_send = yield item
-                continue
-            pairs = chain(
-                [item],
-                cast(Iterator[tuple[K, V | CellFactory[V]]], it),
+    def compute(self) -> Step[Cons[K, V] | None]:
+        result = yield from _as_step(self._step(self._state))
+        if result is None:
+            return None
+        key, value, next_state = result
+        if self._prev_key is not None and not self._prev_key < key:
+            raise ValueError(
+                f"keys must be strictly ascending: got {self._prev_key!r} then {key!r}"
             )
-            return Replayable(_cell_pairs(self._series_name, pairs))
+        return Cons(
+            key,
+            Cell(f"{self._series_name}@{key}", _cell_fn(value)),
+            _UnfoldRule(self._series_name, key, next_state, self._step),
+        )
 
 
-class _ItemCells[K: Key, W, V](Rule[Iterable[tuple[K, Rule[V]]]]):
-    """Cell stream: for each source key, a rule that runs ``fn(k, source)``."""
-
-    def __init__(
-        self,
-        name: str,
-        source: BaseSeries[K, K, W],
-        fn: Callable[[K, BaseSeries[K, K, W]], Step[V] | V],
-    ) -> None:
-        super().__init__(f"{name}.cells")
-        self._series_name = name
-        self._source = source
-        self._fn = fn
-
-    def compute(self) -> Step[Iterable[tuple[K, Rule[V]]]]:
-        keys = yield from get(self._source.keys())
-
-        def factories() -> Iterator[tuple[K, CellFactory[V]]]:
-            for k in keys:
-
-                def factory(src: K = k) -> Step[V]:
-                    return (yield from _as_step(self._fn(src, self._source)))
-
-                yield k, factory
-
-        return Replayable(_cell_pairs(self._series_name, factories()))
-
-
-class _GridKeys[K: Key, V](Rule[Iterable[K]]):
-    """Domain projected from cells; ``get(_cells)`` records the dependency."""
-
-    def __init__(
-        self,
-        name: str,
-        cells: Rule[Iterable[tuple[K, Rule[V]]]],
-    ) -> None:
-        super().__init__(f"{name}.keys")
-        self._cells = cells
-
-    def compute(self) -> Step[Iterable[K]]:
-        pairs = yield from get(self._cells)
-        return _KeyProj(pairs)
-
-
-class _KeyProj[K: Key, V](Iterable[K]):
-    """Re-iterable key view over a shared pairs buffer."""
-
-    def __init__(self, pairs: Iterable[tuple[K, Rule[V]]]) -> None:
-        self._pairs = pairs
-
-    def __iter__(self) -> Iterator[K]:
-        for k, _ in self._pairs:
-            yield k
-
-
-class _MapNKeys[Q: Hashable, K: Key](Rule[Iterable[K]]):
-    """Demandable, replayable domain derived from several source domains."""
-
-    def __init__(
-        self,
-        name: str,
-        sources: tuple[BaseSeries[Q, K, Any], ...],
-        merge: Callable[[tuple[Iterable[K], ...]], Iterable[K]],
-    ) -> None:
-        super().__init__(f"{name}.keys")
-        self._sources = sources
-        self._merge = merge
-
-    def compute(self) -> Step[Iterable[K]]:
-        domains: list[Iterable[K]] = []
-        for source in self._sources:
-            domains.append((yield from get(source.keys())))
-        return Replayable(_ascending(self._merge(tuple(domains))))
-
-
-def _ascending[K: Key](source: Iterable[K]) -> Iterator[K]:
-    """Yield from ``source``, raising if consecutive keys are not strictly ascending."""
-    prev: K | None = None
-    for k in source:
-        if prev is not None and not prev < k:
-            raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
-        prev = k
-        yield k
-
-
-class _ContinueFrom[K: Key, S](Rule[S]):
-    """Exhaust ``base.keys()``, then build ``S`` from the last key.
-
-    The base domain must be finite. Memoized per context so the scan runs once.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        base: BaseSeries[Any, K, Any],
-        fn: Callable[[K], S],
-    ) -> None:
-        super().__init__(f"{name}.continuation")
-        self._base = base
-        self._fn = fn
-
-    def compute(self) -> Step[S]:
-        last: K | None = None
-        for k in (yield from get(self._base.keys())):
-            last = k
-        if last is None:
-            raise ValueError(f"{self.name}: base series is empty")
-        return self._fn(last)
-
-
-class _ContinueKeys[K: Key](Rule[Iterable[K]]):
-    """Concatenated domain: ``base.keys()`` then continuation keys."""
-
-    def __init__(
-        self,
-        name: str,
-        base: BaseSeries[Any, K, Any],
-        continuation: Rule[Any],
-    ) -> None:
-        super().__init__(f"{name}.keys")
-        self._base = base
-        self._continuation = continuation
-
-    def compute(self) -> Step[Iterable[K]]:
-        base_keys = yield from get(self._base.keys())
-        cont = yield from get(self._continuation)
-        return Replayable(_ascending(chain(base_keys, (yield from get(cont.keys())))))
-
-
-def _cell_pairs[K: Key, V](
-    series_name: str,
-    source: Iterable[tuple[K, V | CellFactory[V]]],
-) -> Iterator[tuple[K, Rule[V]]]:
-    prev: K | None = None
-    for item in source:
-        if isinstance(item, Demand):
-            raise TypeError(
-                f"series {series_name!r}: get/get_at demanded after the first cell "
-                "pair was yielded; demand all dependencies before yielding pairs, "
-                "or move the demand into a per-cell factory"
-            )
-        k, v = item
-        if prev is not None and not prev < k:
-            raise ValueError(f"keys must be strictly ascending: got {prev!r} then {k!r}")
-        prev = k
-        yield k, Cell(f"{series_name}@{k}", _as_factory(v))
-
-
-def _as_factory[V](value: V | CellFactory[V]) -> CellFactory[V]:
+def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Step[V] | V]:
+    if isinstance(value, Thunk):
+        return value.fn
     if isinstance(value, Generator):
         raise TypeError(
-            "cell values must be plain values or factories () -> Step[V] | V, "
-            "not live generators; use lambda: my_step() instead"
+            "live generator as a cell value; wrap the computation in Thunk(lambda: ...)"
         )
-    if callable(value):
-        return value  # type: ignore[return-value]
-    return lambda v=value: v
+    return lambda value=value: value
 
 
 def _as_step[V](value: Step[V] | V) -> Step[V]:
-    """Normalize plain-vs-generator return values."""
+    """Normalize plain and generator return values to a ``Step``."""
     if isinstance(value, Generator):
         return value
 
@@ -538,3 +182,15 @@ def _as_step[V](value: Step[V] | V) -> Step[V]:
         return value
 
     return completed()
+
+
+def keys_until[K: Key, V](cells: Cells[K, V], stop: K) -> Step[list[K]]:
+    """Collect keys through ``stop`` without forcing cells or a past frontier."""
+    keys: list[K] = []
+    node = yield from get(cells)
+    while node is not None:
+        if stop < node.key:
+            break
+        keys.append(node.key)
+        node = yield from get(node.tail)
+    return keys

@@ -1,8 +1,0 @@
-# Run from this directory (`uv run pyrefly check`) so local modules and
-# example-only scraping dependencies resolve independently of the library.
-project-excludes = [".venv", "**/__pycache__"]
-search-path = ["."]
-strict-callable-subtyping = true
-
-[errors]
-implicit-any = true
