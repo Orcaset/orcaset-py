@@ -68,25 +68,33 @@ operating_expenses = PeriodSeries(
 
 ## Balance-sheet rollforward (date-keyed)
 
-Stocks are `DateSeries` with `exact`. Initial balance at `MODEL_START`; each later date equals prior balance ± period flows. Discover periods from a related flow series via `get(flow.keys())`:
+Prefer `scan` to accumulate a period-keyed flow into a date-keyed stock.
+`opening` lands at the first flow period's start; each later date is
+`combine(prior, flow)`. Use `last` for as-of carry-forward. `combine`
+receives resolved answers (including `Na`); `map2_some(operator.add)`
+propagates misses:
 
 ```python
-def cash_cells() -> CellStream[date, float]:
-    periods = yield from get(total_cash_flow.keys())
-    yield MODEL_START, INITIAL_CASH
-    for k in periods:
-        def factory(p: Period = k) -> Step[float]:
-            bal = yield from get_at(cash, p.start)
-            flow = yield from get_at(total_cash_flow, p)
-            if isna(bal) or isna(flow):
-                raise ValueError(f"missing inputs for cash at {p.end}")
-            return bal + flow
-        yield k.end, factory
-
-cash = DateSeries("Cash", cash_cells, exact)
+cash = scan(
+    "Cash",
+    total_cash_flow,
+    INITIAL_CASH,
+    map2_some(operator.add),
+    last,
+)
 ```
 
-PPE / retained earnings follow the same shape (multiple flows in the factory).
+`paired` is the inverse: consecutive balance dates become `Period(prev, curr)`
+cells valued `fn(begin, end)` (e.g. `map2_some(operator.sub)` for deltas).
+
+A flow may read the scanned series at its own period start (lazy, cycle-
+friendly). Write a `DateSeries` factory only when the cell stream is not a
+single-flow scan — multiple independent flows, custom keys, or a required
+input that must raise rather than stay `Na`. Combine several flows first
+(`(a + b + c).named("...")`) then `scan` when that still matches the
+economics.
+
+PPE / retained earnings follow the same shape.
 
 ## Cross-statement links
 

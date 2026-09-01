@@ -123,7 +123,7 @@ When building or extending a model:
 1. Fix timeline constants (`MODEL_START`, `relativedelta` step, day-count / `YF`).
 2. Define assumptions as module-level numbers (growth, margins, initials).
 3. Add flow line items as `PeriodSeries` (`accrual(...)` for overlapping queries).
-4. Add stock items as `DateSeries` (`exact`) that roll from prior date + period flows.
+4. Add stock items with `scan(name, flows, opening, combine, last)`, or a `DateSeries` (`exact`) factory that rolls from prior date + period flows.
 5. Wire `Stmt` with `Group` / `Total` mirroring statement hierarchy.
 6. Evaluate in one `Context`; print with a formatter; use `ctx.dependencies(series, key)` when debugging.
 7. Evaluate a small representative horizon before expanding the model.
@@ -146,6 +146,8 @@ mechanisms are strictly prohibited.
 | Sum / difference | `(a + b).named("...")` or `(a - b).named("...")` |
 | Sign flip | `(-series).named("...")` |
 | Point-in-time balances | `DateSeries(name, cells_fn, exact)` (or `last` for as-of carry-forward) |
+| Period → date rollforward | `scan(name, flows, opening, combine, last)` |
+| Date → period deltas | `paired(name, balances, fn, query)` (e.g. `map2_some(operator.sub)`) |
 | Horizontal composition | `@PeriodExtendSeries.define(name, hist, combine)` (flows) or `@DateExtendSeries.define(name, hist)` (stocks) |
 | Unkeyed input / derived scalar | `Cell(name, fn)` or `@Cell.define(name)`; subclass `Rule` for extra state |
 
