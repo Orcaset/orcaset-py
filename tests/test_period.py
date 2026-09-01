@@ -1,87 +1,70 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from collections.abc import Iterator
 from datetime import date
-from itertools import islice
 
-from dateutil.relativedelta import relativedelta
+import pytest
 
 from orcaset import Period, date_union, period_union
 
+JAN, FEB, MAR, APR = (date(2026, m, 1) for m in (1, 2, 3, 4))
 
-def test_period_union_splits_at_every_source_boundary():
-    monthly = Period.seq(
-        date(2026, 1, 1),
-        relativedelta(months=1),
-        date(2026, 4, 1),
+
+def test_period_union_passes_ordered_heads_through():
+    assert period_union(Period(JAN, FEB), Period(MAR, APR)) == (
+        Period(JAN, FEB),
+        None,
+        Period(MAR, APR),
     )
-    quarterly = [Period(date(2026, 1, 1), date(2026, 4, 1))]
-
-    assert list(period_union((monthly, quarterly))) == [
-        Period(date(2026, 1, 1), date(2026, 2, 1)),
-        Period(date(2026, 2, 1), date(2026, 3, 1)),
-        Period(date(2026, 3, 1), date(2026, 4, 1)),
-    ]
-
-
-def test_period_union_omits_uncovered_gaps():
-    domains = (
-        [Period(date(2026, 1, 1), date(2026, 2, 1))],
-        [Period(date(2026, 3, 1), date(2026, 4, 1))],
+    assert period_union(Period(MAR, APR), Period(JAN, FEB)) == (
+        Period(JAN, FEB),
+        Period(MAR, APR),
+        None,
     )
 
-    assert list(period_union(domains)) == [
-        Period(date(2026, 1, 1), date(2026, 2, 1)),
-        Period(date(2026, 3, 1), date(2026, 4, 1)),
-    ]
+
+def test_period_union_consumes_equal_heads_once():
+    assert period_union(Period(JAN, FEB), Period(JAN, FEB)) == (Period(JAN, FEB), None, None)
 
 
-def test_period_union_is_lazy_over_infinite_domains():
-    monthly = Period.seq(date(2026, 1, 1), relativedelta(months=1))
-    quarterly = Period.seq(date(2026, 1, 1), relativedelta(months=3))
-
-    assert list(islice(period_union((monthly, quarterly)), 3)) == [
-        Period(date(2026, 1, 1), date(2026, 2, 1)),
-        Period(date(2026, 2, 1), date(2026, 3, 1)),
-        Period(date(2026, 3, 1), date(2026, 4, 1)),
-    ]
+def test_period_union_splits_offset_starts():
+    assert period_union(Period(JAN, MAR), Period(FEB, APR)) == (
+        Period(JAN, FEB),
+        Period(FEB, MAR),
+        Period(FEB, APR),
+    )
 
 
-def test_date_union_merges_and_dedupes_ascending_domains():
-    left = [date(2026, 1, 1), date(2026, 2, 1), date(2026, 4, 1)]
-    right = [date(2026, 2, 1), date(2026, 3, 1)]
-
-    assert list(date_union((left, right))) == [
-        date(2026, 1, 1),
-        date(2026, 2, 1),
-        date(2026, 3, 1),
-        date(2026, 4, 1),
-    ]
+def test_period_union_splits_containment():
+    assert period_union(Period(FEB, MAR), Period(JAN, APR)) == (
+        Period(JAN, FEB),
+        Period(FEB, MAR),
+        Period(FEB, APR),
+    )
 
 
-def test_date_union_handles_empty_and_single_domains():
-    assert list(date_union(())) == []
-    assert list(date_union(([], []))) == []
-    assert list(date_union(([date(2026, 1, 1), date(2026, 2, 1)],))) == [
-        date(2026, 1, 1),
-        date(2026, 2, 1),
-    ]
+def test_period_union_splits_shared_start():
+    assert period_union(Period(JAN, MAR), Period(JAN, APR)) == (
+        Period(JAN, MAR),
+        None,
+        Period(MAR, APR),
+    )
+    assert period_union(Period(JAN, APR), Period(JAN, MAR)) == (
+        Period(JAN, MAR),
+        Period(MAR, APR),
+        None,
+    )
 
 
-def test_date_union_is_lazy_over_infinite_domains():
-    def monthly_ends(start: date) -> Iterator[date]:
-        current = start
-        while True:
-            yield current
-            current += relativedelta(months=1)
-
-    left = monthly_ends(date(2026, 1, 31))
-    right = monthly_ends(date(2026, 1, 15))
-
-    assert list(islice(date_union((left, right)), 4)) == [
-        date(2026, 1, 15),
-        date(2026, 1, 31),
-        date(2026, 2, 15),
-        date(2026, 2, 28),
-    ]
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        (JAN, FEB, (JAN, None, FEB)),
+        (FEB, JAN, (JAN, FEB, None)),
+        (JAN, JAN, (JAN, None, None)),
+    ],
+)
+def test_date_union_orders_and_dedupes(
+    left: date, right: date, expected: tuple[date, date | None, date | None]
+):
+    assert date_union(left, right) == expected

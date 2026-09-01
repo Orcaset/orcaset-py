@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Generator
 from datetime import date
-from heapq import merge
 from typing import NamedTuple
 
 from dateutil.relativedelta import relativedelta
@@ -113,43 +112,35 @@ class Period(_Period):
         return list(Period.seq(start, freq, end))
 
 
-def period_union(domains: tuple[Iterable[Period], ...]) -> Iterator[Period]:
-    """Lazily split the union of period domains at every source boundary.
+def period_union(left: Period, right: Period, /) -> tuple[Period, Period | None, Period | None]:
+    """``KeyMerge`` for periods: re-tile the union at every source boundary.
 
-    Each input must contain disjoint periods in strictly ascending order. Gaps
-    not covered by any source are omitted.
+    Returns the first piece of ``left ∪ right`` and what remains of each
+    operand after it (``None`` when consumed). Ordered heads pass through
+    unchanged, so gaps are never filled; overlapping heads are split.
     """
-    iterators = tuple(iter(domain) for domain in domains)
-    periods = [next(iterator, None) for iterator in iterators]
-    starts = [period.start for period in periods if period is not None]
-    if not starts:
-        return
-    boundary = min(starts)
-
-    while any(period is not None for period in periods):
-        candidates = [
-            period.end if period.start <= boundary else period.start
-            for period in periods
-            if period is not None
-        ]
-        next_boundary = min(candidates)
-        if any(period is not None and period.start <= boundary < period.end for period in periods):
-            yield Period(boundary, next_boundary)
-        boundary = next_boundary
-
-        for index, period in enumerate(periods):
-            if period is not None and period.end == boundary:
-                periods[index] = next(iterators[index], None)
+    if left < right:
+        return left, None, right
+    if right < left:
+        return right, left, None
+    if left == right:
+        return left, None, None
+    if left.start < right.start:
+        return Period(left.start, right.start), Period(right.start, left.end), right
+    if right.start < left.start:
+        return Period(right.start, left.start), left, Period(left.start, right.end)
+    end = min(left.end, right.end)
+    return (
+        Period(left.start, end),
+        None if left.end == end else Period(end, left.end),
+        None if right.end == end else Period(end, right.end),
+    )
 
 
-def date_union(domains: tuple[Iterable[date], ...]) -> Iterator[date]:
-    """Lazily merge ascending date domains into a unique sorted spine.
-
-    Each input must be strictly ascending. Duplicate dates within or across
-    sources are emitted once.
-    """
-    prev: date | None = None
-    for dt in merge(*domains):
-        if dt != prev:
-            yield dt
-            prev = dt
+def date_union(left: date, right: date, /) -> tuple[date, date | None, date | None]:
+    """``KeyMerge`` for dates: ascending merge, duplicates emitted once."""
+    if left < right:
+        return left, None, right
+    if right < left:
+        return right, left, None
+    return left, None, None
