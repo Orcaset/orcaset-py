@@ -19,6 +19,7 @@ from orcaset import (
     isna,
     keys_until,
     last,
+    map2_some,
     merge_cells,
     ops,
     period_union,
@@ -288,6 +289,24 @@ def test_map_values_is_lazy_and_never_forces_source_cells():
 
     keys = Context().get(Cell("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
     assert keys == [date(2026, 1, 31), date(2026, 2, 28)]
+
+
+def test_map2_maps_generic_values_over_merged_domain():
+    d1, d2 = date(2026, 1, 31), date(2026, 2, 28)
+    labels = Series.of("Labels", exact, [(d1, "revenue")])
+    values = Series.of("Values", exact, [(d1, 10), (d2, 20)])
+    formatted = ops.map2(
+        "Formatted",
+        labels,
+        values,
+        fn=map2_some(lambda label, value: f"{label}: {value}"),
+        merge_keys=date_union,
+    )
+    ctx = Context()
+
+    assert ctx.get_at(formatted, d1) == "revenue: 10"
+    assert isna(ctx.get_at(formatted, d2))
+    assert ctx.get(Cell("keys", lambda: keys_until(formatted.cells, d2))) == [d1, d2]
 
 
 def test_neg():

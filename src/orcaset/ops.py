@@ -82,6 +82,31 @@ def map_values[K: Key, W, T](
     return Series(name, unfold_cells(name, seed=source.cells, step=step), query)
 
 
+def map2[K: Key, A, B, C](
+    name: str,
+    left: Series[K, A, Maybe[A]],
+    right: Series[K, B, Maybe[B]],
+    *,
+    fn: Callable[[Maybe[A], Maybe[B]], Maybe[C]],
+    merge_keys: KeyMerge[K],
+) -> Series[K, Maybe[C], Maybe[C]]:
+    """Map ``fn`` over two series across their lazily merged domain."""
+
+    def value_at(key: K) -> Step[Maybe[C]]:
+        left_value = yield from get_at(left, key)
+        right_value = yield from get_at(right, key)
+        return fn(left_value, right_value)
+
+    def query(q: K, _cells: Cells[K, Maybe[C]]) -> Step[Maybe[C]]:
+        return (yield from value_at(q))
+
+    def cell(key: K) -> Thunk[Maybe[C]]:
+        return Thunk(lambda: value_at(key))
+
+    cells = merge_cells(name, [left.cells, right.cells], merge_keys, cell)
+    return Series(name, cells, query)
+
+
 def filled(
     fn: Callable[[Sequence[float]], float],
     fill: Maybe[float] = Na,

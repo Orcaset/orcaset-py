@@ -3,7 +3,6 @@
 
 """Typed currency units prevent invalid cross-currency arithmetic."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -14,12 +13,9 @@ from orcaset import (
     Maybe,
     Period,
     Series,
-    Step,
-    Thunk,
     exact,
-    get_at,
     map2_some,
-    merge_cells,
+    ops,
     period_union,
 )
 
@@ -56,32 +52,21 @@ def constant_series[V](name: str, value: V) -> Series[Period, V, Maybe[V]]:
     )
 
 
-def map2_series[A, B, C](
-    name: str,
-    left: Series[Period, A, Maybe[A]],
-    right: Series[Period, B, Maybe[B]],
-    fn: Callable[[Maybe[A], Maybe[B]], Maybe[C]],
-) -> Series[Period, Maybe[C], Maybe[C]]:
-    def value_at(period: Period) -> Step[Maybe[C]]:
-        a = yield from get_at(left, period)
-        b = yield from get_at(right, period)
-        return fn(a, b)
-
-    cells = merge_cells(
-        name,
-        [left.cells, right.cells],
-        period_union,
-        lambda period: Thunk(lambda: value_at(period)),
-    )
-    return Series(name, cells, lambda period, _cells: value_at(period))
-
-
 usd_revenue = constant_series("USD revenue", USD(100.0))
 eur_revenue = constant_series("EUR revenue", EUR(80.0))
 
+
+def add_currencies(left: USD, right: EUR) -> USD:
+    return left + right
+
+
 # A type checker rejects the incompatible second operand passed to USD.__add__.
-invalid_total = map2_series(
-    "invalid total", usd_revenue, eur_revenue, map2_some(lambda a, b: a + b)
+invalid_total = ops.map2(
+    "invalid total",
+    usd_revenue,
+    eur_revenue,
+    fn=map2_some(add_currencies),
+    merge_keys=period_union,
 )
 
 if __name__ == "__main__":

@@ -52,6 +52,8 @@ pending a rebuild on the new core.
   keeping the source's spine; every query delegates to the source at the same
   key so cells and off-spine queries honor the source's own query semantics.
   `ops.neg(name, source)` is the `Na`-propagating negation built on it.
+- `ops.map2(name, left, right, fn=, merge_keys=)` maps a typed binary
+  function over two generic series without restricting values to floats.
 - `ops.add_scalar`, `ops.sub_scalar`, `ops.mul_scalar`, and `ops.div_scalar`
   provide `Na`-propagating scalar arithmetic over a source's own domain.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
