@@ -22,6 +22,9 @@ pending a rebuild on the new core.
 - `unfold_cells(name, seed=, step=)` builds a chain from a state-stepping
   function (`UnfoldFn`), replacing loop-variable capture with parameter
   passing. Keys must be strictly ascending; violations raise `ValueError`.
+- `map_cells(name, source, fn)` transforms cells one-for-one without forcing
+  their values; `scan_cells(name, source, seed=, fn=)` additionally carries
+  structural accumulator state.
 - `Thunk(fn)` nominally marks a deferred cell value in an unfold result. Any
   other value, including callables, is stored as-is; a live generator raises
   `TypeError`.

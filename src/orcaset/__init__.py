@@ -50,7 +50,9 @@ from orcaset.series import (
     extend_cells,
     extend_period_series,
     keys_until,
+    map_cells,
     merge_cells,
+    scan_cells,
     unfold_cells,
 )
 from orcaset.stmt import (
@@ -109,6 +111,7 @@ __all__ = [
     "get_at",
     "isna",
     "keys_until",
+    "map_cells",
     "last",
     "map2_some",
     "map_some",
@@ -117,6 +120,7 @@ __all__ = [
     "multiply_some",
     "ops",
     "period_union",
+    "scan_cells",
     "some",
     "unfold_cells",
     "value_or",

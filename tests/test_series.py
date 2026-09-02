@@ -12,6 +12,7 @@ from orcaset import (
     Maybe,
     Na,
     Period,
+    Rule,
     Series,
     Thunk,
     exact,
@@ -20,6 +21,8 @@ from orcaset import (
     isna,
     keys_until,
     last,
+    map_cells,
+    scan_cells,
 )
 
 MONTH = relativedelta(months=1)
@@ -187,3 +190,47 @@ def test_thunk_and_plain_values():
 
     with pytest.raises(TypeError, match="Thunk"):
         Context().get_at(bad, date(2024, 1, 31))
+
+
+def test_map_cells_preserves_keys_and_defers_source_values():
+    forced: list[float] = []
+
+    def source_value() -> float:
+        forced.append(2.0)
+        return 2.0
+
+    source = Series.of("Source", exact, [(MODEL_START, Thunk(source_value))])
+
+    def double(_key: date, cell: Rule[float]) -> Thunk[float]:
+        def value():
+            return (yield from get(cell)) * 2
+
+        return Thunk(value)
+
+    mapped = Series("Mapped", map_cells("Mapped", source.cells, double), exact)
+    ctx = Context()
+
+    assert ctx.get(Cell("keys", lambda: keys_until(mapped.cells, MODEL_START))) == [MODEL_START]
+    assert forced == []
+    assert ctx.get_at(mapped, MODEL_START) == 4.0
+
+
+def test_scan_cells_carries_structural_state():
+    d1, d2 = date(2024, 1, 31), date(2024, 2, 29)
+    source = Series.of("Source", exact, [(d1, 10), (d2, 20)])
+
+    def indexed(index: int, _key: date, cell: Rule[int]) -> tuple[Thunk[int], int]:
+        def value():
+            return (yield from get(cell)) + index
+
+        return Thunk(value), index + 1
+
+    scanned = Series(
+        "Scanned",
+        scan_cells("Scanned", source.cells, seed=0, fn=indexed),
+        exact,
+    )
+    ctx = Context()
+
+    assert ctx.get_at(scanned, d1) == 10
+    assert ctx.get_at(scanned, d2) == 21

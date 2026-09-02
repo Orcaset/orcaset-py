@@ -200,6 +200,44 @@ def unfold_cells[S, K: Key, V](
     return _UnfoldRule(name, None, seed, step)
 
 
+def map_cells[K: Key, A, B](
+    name: str,
+    source: Cells[K, A],
+    fn: Callable[[K, Rule[A]], B | Thunk[B]],
+) -> Cells[K, B]:
+    """Map cells one-for-one without forcing their values."""
+
+    def step(cells: Cells[K, A]) -> Step[tuple[K, B | Thunk[B], Cells[K, A]] | None]:
+        node = yield from get(cells)
+        if node is None:
+            return None
+        return node.key, fn(node.key, node.cell), node.tail
+
+    return unfold_cells(name, seed=source, step=step)
+
+
+def scan_cells[K: Key, A, S, B](
+    name: str,
+    source: Cells[K, A],
+    *,
+    seed: S,
+    fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+) -> Cells[K, B]:
+    """Map cells one-for-one while carrying structural accumulator state."""
+
+    def step(
+        state: tuple[Cells[K, A], S],
+    ) -> Step[tuple[K, B | Thunk[B], tuple[Cells[K, A], S]] | None]:
+        cells, acc = state
+        node = yield from get(cells)
+        if node is None:
+            return None
+        value, next_acc = fn(acc, node.key, node.cell)
+        return node.key, value, (node.tail, next_acc)
+
+    return unfold_cells(name, seed=(source, seed), step=step)
+
+
 class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
     """Splice a continuation onto a source chain when its frontier is reached.
 

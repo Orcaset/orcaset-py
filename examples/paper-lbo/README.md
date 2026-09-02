@@ -6,8 +6,7 @@ and a two-variable IRR sensitivity.
 
 The model uses `Series.unfold` for recursive operating lines, `Series.of` for finite
 date-keyed cash flows, and domain-bound `ops.period` / `ops.date` constructors for
-arithmetic. A generic local
-`cumulate` helper walks a flow series' linked cells to create a running debt balance.
+arithmetic. A local `cumulate` helper uses `scan_cells` to create a running debt balance.
 
 The interest lookup supplies `seed=0.0` and `maybe_abs_distance` at the circular ending
 debt demand. `Context` uses that cut to solve the fixed point. Sensitivities replace the

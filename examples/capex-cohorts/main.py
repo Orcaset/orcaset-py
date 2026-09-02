@@ -20,6 +20,7 @@ from orcaset import (
     get,
     get_at,
     isna,
+    map_cells,
 )
 
 YEAR = relativedelta(years=1)
@@ -54,20 +55,14 @@ def build_cohort(source_key: Period) -> Cohort:
     )
 
 
-def cohort_step(
-    cells: Cells[Period, float],
-) -> Step[tuple[Period, Cohort, Cells[Period, float]] | None]:
-    node = yield from get(cells)
-    if node is None:
-        return None
-    return node.key, build_cohort(node.key), node.tail
-
-
-cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series.unfold(
+cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
     "cohort_schedules",
+    map_cells(
+        "cohort_schedules",
+        capex.cells,
+        lambda source_key, _cell: build_cohort(source_key),
+    ),
     exact,
-    seed=capex.cells,
-    step=cohort_step,
 )
 
 
@@ -85,20 +80,14 @@ def sum_cohorts_at_period(period: Period) -> Step[float]:
     return total
 
 
-def total_step(
-    cells: Cells[Period, Cohort],
-) -> Step[tuple[Period, Thunk[float], Cells[Period, Cohort]] | None]:
-    node = yield from get(cells)
-    if node is None:
-        return None
-    return node.key, Thunk(lambda: sum_cohorts_at_period(node.key)), node.tail
-
-
-total_depreciation: Series[Period, float, Maybe[float]] = Series.unfold(
+total_depreciation: Series[Period, float, Maybe[float]] = Series(
     "total_depreciation",
+    map_cells(
+        "total_depreciation",
+        cohort_schedules.cells,
+        lambda period, _cell: Thunk(lambda: sum_cohorts_at_period(period)),
+    ),
     by_days,
-    seed=cohort_schedules.cells,
-    step=total_step,
 )
 
 ctx = Context()

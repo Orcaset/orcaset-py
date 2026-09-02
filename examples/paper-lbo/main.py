@@ -12,6 +12,7 @@ from orcaset import (
     Group,
     Maybe,
     Period,
+    Rule,
     Series,
     Step,
     Stmt,
@@ -28,6 +29,7 @@ from orcaset import (
     maybe_abs_distance,
     multiply_some,
     ops,
+    scan_cells,
     value_or,
 )
 
@@ -170,22 +172,15 @@ sweep_payments = Series.of(
     [(period.end, Thunk(lambda period=period: payment(period))) for period in sweep_periods],
 )
 
-type BalanceState[V] = tuple[Cells[date, V], date | None]
-
-
 def cumulate[V](
     name: str,
     flows: Series[date, V, Maybe[float]],
 ) -> Series[date, Maybe[float], Maybe[float]]:
-    def step(
-        state: BalanceState[V],
-    ) -> Step[tuple[date, Thunk[Maybe[float]], BalanceState[V]] | None]:
-        cells, previous = state
-        node = yield from get(cells)
-        if node is None:
-            return None
-        day = node.key
-
+    def scan(
+        previous: date | None,
+        day: date,
+        _flow: Rule[V],
+    ) -> tuple[Thunk[Maybe[float]], date]:
         def value() -> Step[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
             flow = yield from get_at(flows, day)
@@ -193,9 +188,9 @@ def cumulate[V](
                 return flow
             return prior + value_or(flow, 0.0)
 
-        return day, Thunk(value), (node.tail, day)
+        return Thunk(value), day
 
-    balance = Series.unfold(name, last, seed=(flows.cells, None), step=step)
+    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=scan), last)
     return balance
 
 
