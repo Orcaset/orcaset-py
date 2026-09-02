@@ -157,7 +157,7 @@ def test_merge_is_lazy_and_never_forces_source_cells():
     def poison() -> float:
         raise AssertionError("source cell was forced")
 
-    def infinite(name: str, start: date) -> Series[date, date, float, Maybe[float]]:
+    def infinite(name: str, start: date) -> Series[date, float, Maybe[float]]:
         return Series.unfold(
             name,
             exact,

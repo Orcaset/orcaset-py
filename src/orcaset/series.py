@@ -27,8 +27,7 @@ class Thunk[V]:
 
     In an unfold result, anything that is not a ``Thunk`` is a plain value,
     including callables and all other objects. Wrap deferred computation in
-    ``Thunk`` explicitly. This makes the value slot unambiguous: there is no
-    ``callable()`` sniffing.
+    ``Thunk`` explicitly. This makes the value slot unambiguous.
     """
 
     __slots__ = ("fn",)
@@ -58,7 +57,7 @@ type UnfoldFn[S, K: Key, V] = Callable[
 ]
 """Produce a cell and next state from an unfold state, or end the chain."""
 
-type QueryFn[Q, K: Key, V, W] = Callable[[Q, Cells[K, V]], Step[W] | W]
+type QueryFn[K: Key, V, W] = Callable[[K, Cells[K, V]], Step[W] | W]
 """Fold a query over a cell chain, with optional early termination."""
 
 type KeyMerge[K: Key] = Callable[[K, K], tuple[K, K | None, K | None]]
@@ -67,10 +66,14 @@ of each operand after it (``None`` when consumed). ``period_union`` and
 ``date_union`` are the canonical instances."""
 
 
-class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
-    """A queryable series backed by an effectful cons-list built by unfold."""
+class Series[K: Key, V, W](KeyedRule[K, W]):
+    """A queryable series backed by an effectful cons-list built by unfold.
 
-    def __init__(self, name: str, cells: Cells[K, V], query: QueryFn[Q, K, V, W]) -> None:
+    ``K`` is both the cell key type and the query type. ``V`` is the cell
+    value type and ``W`` the query answer type.
+    """
+
+    def __init__(self, name: str, cells: Cells[K, V], query: QueryFn[K, V, W]) -> None:
         super().__init__(name)
         self._cells = cells
         self._query = query
@@ -80,18 +83,18 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
         """The rule resolving the first node of this series."""
         return self._cells
 
-    def compute(self, q: Q, /) -> Step[W]:
+    def compute(self, q: K, /) -> Step[W]:
         return (yield from _as_step(self._query(q, self._cells)))
 
     @classmethod
     def unfold[S](
         cls,
         name: str,
-        query: QueryFn[Q, K, V, W],
+        query: QueryFn[K, V, W],
         *,
         seed: S,
         step: UnfoldFn[S, K, V],
-    ) -> Series[Q, K, V, W]:
+    ) -> Series[K, V, W]:
         """Build a series by repeatedly applying ``step`` to an evolving state."""
         return cls(name, unfold_cells(name, seed=seed, step=step), query)
 
@@ -99,11 +102,11 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
     def extend(
         cls,
         name: str,
-        query: QueryFn[Q, K, V, W],
+        query: QueryFn[K, V, W],
         *,
         base: Cells[K, V],
         cont: Callable[[K | None], Cells[K, V]],
-    ) -> Series[Q, K, V, W]:
+    ) -> Series[K, V, W]:
         """Build a series that continues ``base`` lazily at its frontier."""
         return cls(name, extend_cells(name, base, cont), query)
 
@@ -111,11 +114,11 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
     def append(
         cls,
         name: str,
-        query: QueryFn[Q, K, V, W],
+        query: QueryFn[K, V, W],
         *,
         first: Cells[K, V],
         then: Cells[K, V],
-    ) -> Series[Q, K, V, W]:
+    ) -> Series[K, V, W]:
         """Build a series by appending ``then`` after ``first``."""
         return cls(name, append_cells(name, first, then), query)
 
@@ -123,9 +126,9 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
     def of(
         cls,
         name: str,
-        query: QueryFn[Q, K, V, W],
+        query: QueryFn[K, V, W],
         pairs: Iterable[tuple[K, V | Thunk[V]]],
-    ) -> Series[Q, K, V, W]:
+    ) -> Series[K, V, W]:
         """Build a series from eagerly materialized literal pairs."""
         materialized = tuple(pairs)
 
@@ -141,13 +144,13 @@ class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
     def define[S](
         cls,
         name: str,
-        query: QueryFn[Q, K, V, W],
+        query: QueryFn[K, V, W],
         *,
         seed: S,
-    ) -> Callable[[UnfoldFn[S, K, V]], Series[Q, K, V, W]]:
+    ) -> Callable[[UnfoldFn[S, K, V]], Series[K, V, W]]:
         """Decorator form of ``unfold`` for self-referential series bodies."""
 
-        def decorator(step: UnfoldFn[S, K, V]) -> Series[Q, K, V, W]:
+        def decorator(step: UnfoldFn[S, K, V]) -> Series[K, V, W]:
             return cls.unfold(name, query, seed=seed, step=step)
 
         return decorator
@@ -163,11 +166,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         state: S,
         step: UnfoldFn[S, K, V],
     ) -> None:
-        name = (
-            f"{series_name}.cells"
-            if prev_key is None
-            else f"{series_name}.tail@{prev_key}"
-        )
+        name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
         super().__init__(name)
         self._series_name = series_name
         self._prev_key = prev_key
@@ -214,11 +213,7 @@ class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
         source: Cells[K, V],
         cont: Callable[[K | None], Cells[K, V]],
     ) -> None:
-        name = (
-            f"{series_name}.cells"
-            if prev_key is None
-            else f"{series_name}.tail@{prev_key}"
-        )
+        name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
         super().__init__(name)
         self._series_name = series_name
         self._prev_key = prev_key
@@ -236,11 +231,7 @@ class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
 
         cont_cells = self._cont(self._prev_key)
         node = yield from get(cont_cells)
-        while (
-            node is not None
-            and self._prev_key is not None
-            and not self._prev_key < node.key
-        ):
+        while node is not None and self._prev_key is not None and not self._prev_key < node.key:
             node = yield from get(node.tail)
         return node
 

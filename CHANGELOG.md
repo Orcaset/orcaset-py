@@ -9,6 +9,76 @@ change between minor releases.
 
 ## [Unreleased]
 
+The series core has been rebuilt on a lazy cons-chain representation. The
+period/date convenience layers, statements, and formatters have been removed
+pending a rebuild on the new core.
+
+### Added
+
+- `Cons(key, cell, tail)` and `Cells[K, V]` (a `Rule` resolving the first
+  `Cons` or `None`). Each `tail` is an ordinary memoized rule that may demand
+  other rules, so value-dependent domains are legal anywhere in a walk and
+  exhaustion is an explicit `None`.
+- `unfold_cells(name, seed=, step=)` builds a chain from a state-stepping
+  function (`UnfoldFn`), replacing loop-variable capture with parameter
+  passing. Keys must be strictly ascending; violations raise `ValueError`.
+- `Thunk(fn)` nominally marks a deferred cell value in an unfold result. Any
+  other value, including callables, is stored as-is; a live generator raises
+  `TypeError`.
+- `Series.unfold`, `Series.extend`, `Series.append`, `Series.of` (literal
+  pairs), and the `@Series.define(name, query, seed=)` decorator for
+  self-referential bodies.
+- `extend_cells(name, base, cont)` continues a chain lazily at its frontier.
+  `cont` receives the last base key (`None` when empty), is invoked only when
+  a walk exhausts the base, and its leading nodes not entirely after the last
+  base key are clipped without forcing their cells. `append_cells(name, first,
+  then)` is the fixed-continuation form.
+- `merge_cells(name, chains, merge, cell)` and `KeyMerge[K]`: merge ascending
+  chains into one chain whose keys re-tile their union, with one pending head
+  of lookahead per operand and source cells never forced. `merge` must satisfy
+  the refold law (`merge(piece, head) == (piece, None, rest)`); violations
+  raise `ValueError`.
+- `ops` module with `combine(name, sources, fn=, merge_keys=)` and the
+  arithmetic ops `add`/`mul` (n-ary) and `sub`/`div` (binary). Every query,
+  on or off the merged spine, delegates to each source at the same key and
+  passes the `Maybe[float]` answers to `fn`; the result's chain is the merged
+  union so it is a valid `extend` continuation. `filled(fn, fill)` lifts a
+  float fold to `Maybe` answers; `fill=` on each op substitutes that value for
+  `Na` before the arithmetic (default propagates `Na`). `div` by zero raises.
+- `keys_until(cells, stop)` collects keys through `stop` without forcing
+  cells or a past frontier.
+
+### Changed
+
+- `Series[K, V, W]` replaces `Series[Q, K, V, W]`: the query type is the key
+  type. Every shipped query, combinator, and example already bound `Q = K`,
+  and `combine`/`extend` require it (they query sources at domain keys), so
+  the separate parameter only restated the invariant. `QueryFn[K, V, W]`
+  likewise drops `Q`.
+- `QueryFn` now receives `Cells[K, V]` (the chain rule) rather than an
+  iterable of `(key, rule)` pairs, and walks it with `get(...)`.
+- `exact` and `last` are effectful folds over the chain; behavior is
+  unchanged (`Na` on a miss; `last` never forces a cell strictly before a
+  later candidate).
+- `period_union` and `date_union` are now binary `KeyMerge` functions
+  `(left, right) -> (piece, rest_left, rest_right)` for use with
+  `merge_cells`/`ops`, rather than eager iterators over whole domains.
+
+### Removed
+
+- `BaseSeries`, `MapSeries`, `Map2Series`, `MapNSeries`, `MapItemsSeries`,
+  `CellStream`, `CellFactory`, `CellsFn`, and `Replayable`. Derived series are
+  built with `ops.combine` or by wrapping an exposed chain
+  (`Series(name, other.cells, query)`).
+- `PeriodSeries`, `PeriodSeriesBase`, `PeriodMapSeries`, `PeriodMap2Series`,
+  `PeriodExtendSeries`, `DateSeries`, `DateSeriesBase`, `DateMapSeries`,
+  `DateMap2Series`, `DateExtendSeries`, and the `scan`/`paired` transforms.
+- `exact_or`, `accrual`, `accrual_or`, `covered`, and `DayCount`. `exact` and
+  `last` remain; period-aware queries are written as plain `QueryFn`s.
+- `Stmt`, `Group`, `Total`, `StatementResult`, the `*Row`/`*Value` types, and
+  the `formatters` module (`fixed_width_table`, `markdown_table`, `csv_table`,
+  `ValueFormatter`, `DateFormatter`).
+
 ## [0.9.0] - 2026-08-31
 
 ### Added

@@ -32,7 +32,7 @@ FY18 = next(_FISCAL_YEARS)
 FY19 = next(_FISCAL_YEARS)
 
 
-def _market_rent_series() -> Series[Period, Period, float, Maybe[float]]:
+def _market_rent_series() -> Series[Period, float, Maybe[float]]:
     rent_growth = Series.of(
         "Rent growth",
         exact,

@@ -148,7 +148,7 @@ def test_extend_self_referential_compounding():
             step=step,
         )
 
-    market_rent: Series[Period, Period, Maybe[float], Maybe[float]] = Series.extend(
+    market_rent: Series[Period, Maybe[float], Maybe[float]] = Series.extend(
         "Market rent",
         exact,
         base=base.cells,
