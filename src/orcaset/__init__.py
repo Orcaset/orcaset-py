@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+from orcaset import ops
 from orcaset.context import Context, ConvergenceError, CycleError, DepNode
 from orcaset.maybe import (
     Maybe,
@@ -33,6 +34,7 @@ from orcaset.series import (
     Cells,
     Cons,
     Key,
+    KeyMerge,
     QueryFn,
     Series,
     Thunk,
@@ -40,6 +42,7 @@ from orcaset.series import (
     append_cells,
     extend_cells,
     keys_until,
+    merge_cells,
     unfold_cells,
 )
 from orcaset.yf import YF
@@ -56,6 +59,7 @@ __all__ = [
     "DepNode",
     "Iterate",
     "Key",
+    "KeyMerge",
     "KeyedCell",
     "KeyedRule",
     "Maybe",
@@ -82,7 +86,9 @@ __all__ = [
     "map2_some",
     "map_some",
     "maybe_abs_distance",
+    "merge_cells",
     "multiply_some",
+    "ops",
     "period_union",
     "some",
     "unfold_cells",

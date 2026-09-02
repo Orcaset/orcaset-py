@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Hashable, Iterable
+from collections.abc import Callable, Generator, Hashable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Protocol, Self
+from typing import Any, Protocol, Self
 
 from orcaset.rule import Cell, KeyedRule, Rule, Step, get
 
@@ -60,6 +60,11 @@ type UnfoldFn[S, K: Key, V] = Callable[
 
 type QueryFn[Q, K: Key, V, W] = Callable[[Q, Cells[K, V]], Step[W] | W]
 """Fold a query over a cell chain, with optional early termination."""
+
+type KeyMerge[K: Key] = Callable[[K, K], tuple[K, K | None, K | None]]
+"""Merge two pending heads: the first tile of their union, then what remains
+of each operand after it (``None`` when consumed). ``period_union`` and
+``date_union`` are the canonical instances."""
 
 
 class Series[Q: Hashable, K: Key, V, W](KeyedRule[Q, W]):
@@ -261,6 +266,70 @@ def append_cells[K: Key, V](
 ) -> Cells[K, V]:
     """Append ``then`` after ``first``; overlap with ``first`` is clipped."""
     return extend_cells(name, first, lambda _last: then)
+
+
+type _Frontier[K: Key] = tuple[K | None, Cells[K, Any] | None]
+"""One merge operand: pending head not yet emitted past, and the rest of its
+chain. ``(None, tail)`` needs a refill; ``(None, None)`` is exhausted."""
+
+
+def merge_cells[K: Key, V](
+    name: str,
+    chains: Sequence[Cells[K, Any]],
+    merge: KeyMerge[K],
+    cell: Callable[[K], V | Thunk[V]],
+) -> Cells[K, V]:
+    """Merge ascending chains into one chain whose keys re-tile their union.
+
+    The merged domain is produced lazily with one pending head of lookahead
+    per operand; source cells are never forced, only tail rules. Each emitted
+    key is the first tile of the union of the pending heads under ``merge``
+    (folded pairwise), and ``cell`` supplies the value at that key — typically
+    a ``Thunk`` that queries the source series by key, since split tiles need
+    not exist as nodes in any source.
+
+    ``merge`` must satisfy the refold law: with ``piece`` the folded first
+    tile, ``merge(piece, head)`` returns ``(piece, None, rest_of_head)`` for
+    every pending head. ``period_union`` and ``date_union`` comply; violations
+    raise ``ValueError``.
+    """
+
+    def step(
+        frontiers: tuple[_Frontier[K], ...],
+    ) -> Step[tuple[K, V | Thunk[V], tuple[_Frontier[K], ...]] | None]:
+        refilled: list[_Frontier[K]] = []
+        for pending, tail in frontiers:
+            if pending is None and tail is not None:
+                node = yield from get(tail)
+                pending, tail = (node.key, node.tail) if node is not None else (None, None)
+            refilled.append((pending, tail))
+
+        heads = [key for key, _ in refilled if key is not None]
+        if not heads:
+            return None
+
+        piece = heads[0]
+        for head in heads[1:]:
+            piece, _, _ = merge(piece, head)
+
+        advanced: list[_Frontier[K]] = []
+        for pending, tail in refilled:
+            if pending is None:
+                advanced.append((pending, tail))
+                continue
+            emitted, rest_piece, rest = merge(piece, pending)
+            if emitted != piece or rest_piece is not None:
+                raise ValueError(
+                    f"key merge violates the refold law: merge({piece!r}, {pending!r}) "
+                    f"returned {(emitted, rest_piece, rest)!r}; "
+                    f"expected ({piece!r}, None, <remainder>)"
+                )
+            advanced.append((rest, tail))
+
+        return piece, cell(piece), tuple(advanced)
+
+    seed: tuple[_Frontier[K], ...] = tuple((None, chain) for chain in chains)
+    return unfold_cells(name, seed=seed, step=step)
 
 
 def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Step[V] | V]:
