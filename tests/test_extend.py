@@ -11,7 +11,11 @@ from orcaset import (
     Period,
     Series,
     Thunk,
+    accrual,
+    add_some,
+    covered,
     exact,
+    extend_period_series,
     get_at,
     isna,
     keys_until,
@@ -160,3 +164,33 @@ def test_extend_self_referential_compounding():
     assert ctx.get_at(market_rent, FY17) == 1.777777778
     assert ctx.get_at(market_rent, FY18) == pytest.approx(fy18_value)
     assert ctx.get_at(market_rent, FY19) == pytest.approx(fy18_value * 1.035)
+
+
+def test_extend_period_series_preserves_query_policies_across_seam():
+    history = Series.of("History", covered, [(FY17, 365.0)])
+    calls: list[Period | None] = []
+
+    def cont(last: Period | None) -> Series[Period, float, Maybe[float]]:
+        calls.append(last)
+        return Series.of(
+            "Forecast",
+            accrual(lambda start, end: float((end - start).days)),
+            [(FY18, 365.0)],
+        )
+
+    combined = extend_period_series(
+        "Combined",
+        history,
+        cont,
+        lambda left, right: add_some((left, right)),
+    )
+    ctx = Context()
+
+    partial_history = Period(FY17.start, date(2017, 6, 30))
+    partial_forecast = Period(FY18.start, date(2018, 6, 30))
+    crossing = Period(FY17.start, partial_forecast.end)
+
+    assert isna(ctx.get_at(combined, partial_history))
+    assert ctx.get_at(combined, partial_forecast) == pytest.approx(181.0)
+    assert ctx.get_at(combined, crossing) == pytest.approx(546.0)
+    assert calls == [FY17]
