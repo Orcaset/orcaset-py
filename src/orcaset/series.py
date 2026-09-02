@@ -201,7 +201,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         step: UnfoldFn[S, K, V],
     ) -> None:
         name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
-        super().__init__(name)
+        super().__init__(name, structural=True)
         self._series_name = series_name
         self._prev_key = prev_key
         self._state = state
@@ -218,7 +218,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
             )
         return Cons(
             key,
-            Cell(f"{self._series_name}@{key}", _cell_fn(value)),
+            Cell(f"{self._series_name}@{key}", _cell_fn(value), structural=True),
             _UnfoldRule(self._series_name, key, next_state, self._step),
         )
 
@@ -286,7 +286,7 @@ class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
         cont: Callable[[K | None], Cells[K, V]],
     ) -> None:
         name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
-        super().__init__(name)
+        super().__init__(name, structural=True)
         self._series_name = series_name
         self._prev_key = prev_key
         self._source = source

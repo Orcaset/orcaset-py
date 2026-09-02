@@ -177,15 +177,25 @@ class Context:
     def get[V](self, rule: Rule[V]) -> V:
         return self._resolve(rule, _UNIT, lambda: rule.compute())
 
-    def dependencies[K: Hashable, V](self, rule: KeyedRule[K, V], key: K) -> DepNode:
-        """Resolve ``rule``/``key``, then return its dependency tree."""
-        self.get_at(rule, key)
-        return self._dep_node((rule.id, key), seen=set())
+    def dependencies[K: Hashable, V](
+        self,
+        rule: KeyedRule[K, V],
+        key: K,
+        *,
+        structural: bool = False,
+    ) -> DepNode:
+        """Resolve a keyed rule, then return its dependency tree.
 
-    def rule_dependencies[V](self, rule: Rule[V]) -> DepNode:
-        """Resolve ``rule``, then return its dependency tree."""
+        Internal chain traversal rules are folded by default. Pass
+        ``structural=True`` for the full scheduler-level tree.
+        """
+        self.get_at(rule, key)
+        return self._dep_node((rule.id, key), seen=set(), structural=structural)
+
+    def rule_dependencies[V](self, rule: Rule[V], *, structural: bool = False) -> DepNode:
+        """Resolve an unkeyed rule, then return its dependency tree."""
         self.get(rule)
-        return self._dep_node((rule.id, _UNIT), seen=set())
+        return self._dep_node((rule.id, _UNIT), seen=set(), structural=structural)
 
     def _resolve[V](
         self,
@@ -454,7 +464,13 @@ class Context:
         path = tuple(self._stack[cycle_start:])
         raise CycleError(path, names=self._target_names())
 
-    def _dep_node(self, cell: RuleKey, *, seen: set[RuleKey]) -> DepNode:
+    def _dep_node(
+        self,
+        cell: RuleKey,
+        *,
+        seen: set[RuleKey],
+        structural: bool,
+    ) -> DepNode:
         target_id, key = cell
         name = self._targets[target_id].name
         value = self._compute_cache[cell]
@@ -471,7 +487,35 @@ class Context:
             name=name,
             key=key,
             value=value,
-            deps=tuple(self._dep_node(child, seen=seen) for child in children),
+            deps=tuple(
+                node
+                for child in children
+                for node in self._dep_children(child, seen=seen, structural=structural)
+            ),
+        )
+
+    def _dep_children(
+        self,
+        cell: RuleKey,
+        *,
+        seen: set[RuleKey],
+        structural: bool,
+    ) -> tuple[DepNode, ...]:
+        target = self._targets[cell[0]]
+        if structural or not target.structural:
+            return (self._dep_node(cell, seen=seen, structural=structural),)
+        if cell in seen:
+            return ()
+        seen = seen | {cell}
+
+        def sort_key(child: RuleKey) -> tuple[str, str, int]:
+            return (self._targets[child[0]].name, repr(child[1]), child[0])
+
+        children = sorted(self._deps.get(cell, ()), key=sort_key)
+        return tuple(
+            node
+            for child in children
+            for node in self._dep_children(child, seen=seen, structural=structural)
         )
 
     def _target_names(self) -> dict[int, str]:

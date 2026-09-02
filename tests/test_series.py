@@ -103,9 +103,13 @@ def test_partial_walk_memoization_and_laziness():
     assert ctx.get_at(market_rent, FY18) == pytest.approx(1.777777778 * 1.035)
 
     dependencies = tuple(_flatten(ctx.dependencies(market_rent, FY18)))
+    assert not any(node.name.endswith(".cells") or ".tail@" in node.name for node in dependencies)
     assert not any(node.key == FY19 and "Rent growth" in node.name for node in dependencies)
     assert not any(node.name == f"Market rent.tail@{FY18}" for node in dependencies)
     assert not any(node.name == "Market rent" and node.key == FY19 for node in dependencies)
+
+    structural = tuple(_flatten(ctx.dependencies(market_rent, FY18, structural=True)))
+    assert any(node.name.endswith(".cells") or ".tail@" in node.name for node in structural)
 
     assert ctx.get_at(market_rent, FY19) == pytest.approx(1.777777778 * 1.035 * 1.035)
 

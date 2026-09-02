@@ -50,9 +50,10 @@ def maybe_abs_distance(a: Maybe[float], b: Maybe[float]) -> float:
 class _Identity:
     """Shared id/name for ``Rule`` and ``KeyedRule``."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, structural: bool = False) -> None:
         self._name = name
         self._id = next_id()
+        self._structural = structural
 
     @property
     def id(self) -> int:
@@ -61,6 +62,11 @@ class _Identity:
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def structural(self) -> bool:
+        """Whether this target is internal traversal machinery."""
+        return self._structural
 
 
 class Demand[V]:
@@ -235,8 +241,14 @@ class Cell[V](Rule[V]):
     needs extra state or methods.
     """
 
-    def __init__(self, name: str, fn: Callable[[], Step[V] | V]) -> None:
-        super().__init__(name)
+    def __init__(
+        self,
+        name: str,
+        fn: Callable[[], Step[V] | V],
+        *,
+        structural: bool = False,
+    ) -> None:
+        super().__init__(name, structural=structural)
         self.fn = fn
 
     def compute(self) -> Step[V] | V:
