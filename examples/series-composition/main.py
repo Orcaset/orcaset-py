@@ -23,7 +23,6 @@ from orcaset import (
     isna,
     map_some,
     ops,
-    period_union,
 )
 
 MONTHLY = relativedelta(months=1)
@@ -43,7 +42,7 @@ def revenue_step(period: Period) -> tuple[Period, float | Thunk[float], Period]:
 
 revenue: Series[Period, Maybe[float], Maybe[float]] = revenue_step
 cogs = ops.map_values("cogs", revenue, fn=map_some(lambda value: value * -0.5))
-gross_profit = ops.add("gross_profit", revenue, cogs, merge_keys=period_union)
+gross_profit = ops.period.add("gross_profit", revenue, cogs)
 
 
 def constant_series(name: str, value: float) -> Series[Period, Maybe[float], Maybe[float]]:
@@ -57,7 +56,7 @@ def constant_series(name: str, value: float) -> Series[Period, Maybe[float], May
 
 rd = constant_series("r&d", -10.0)
 sga = constant_series("sga", -10.0)
-income = ops.add("income", gross_profit, rd, sga, merge_keys=period_union)
+income = ops.period.add("income", gross_profit, rd, sga)
 
 ctx = Context()
 q = Period(date(2027, 3, 1), date(2027, 5, 15))

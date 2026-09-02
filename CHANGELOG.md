@@ -56,6 +56,8 @@ pending a rebuild on the new core.
   function over two generic series without restricting values to floats.
 - `ops.add_scalar`, `ops.sub_scalar`, `ops.mul_scalar`, and `ops.div_scalar`
   provide `Na`-propagating scalar arithmetic over a source's own domain.
+- `ops.period` and `ops.date` provide domain-bound `add`, `mul`, `sub`, `div`,
+  and `map2` constructors without a repeated `merge_keys=` argument.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
 

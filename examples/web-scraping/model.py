@@ -24,7 +24,6 @@ from orcaset import (
     get_at,
     isna,
     ops,
-    period_union,
 )
 
 QUARTER = relativedelta(months=3, day=31)
@@ -120,12 +119,11 @@ def held_series(name: str, column: str) -> Series[Period, float, Maybe[float]]:
 
 freight = held_series("Freight", "freight")
 other = held_series("Other", "other")
-total_operating_revenue = ops.add(
+total_operating_revenue = ops.period.add(
     "Total operating revenue",
     passenger,
     freight,
     other,
-    merge_keys=period_union,
 )
 
 operating_revenue_stmt = Stmt(

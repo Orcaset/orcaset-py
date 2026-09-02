@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from datetime import date as Date
 from typing import Any
 
 from orcaset.maybe import Maybe, Na, isna, map_some
+from orcaset.period import Period, date_union, period_union
 from orcaset.rule import Step, get, get_at
 from orcaset.series import Cells, Key, KeyMerge, Series, Thunk, merge_cells, unfold_cells
 
@@ -247,3 +249,69 @@ def div[K: Key](
         fn=filled(lambda values: values[0] / values[1], fill),
         merge_keys=merge_keys,
     )
+
+
+class _DomainOps[K: Key]:
+    """Arithmetic constructors bound to one domain merge policy."""
+
+    __slots__ = ("_merge_keys",)
+
+    def __init__(self, merge_keys: KeyMerge[K]) -> None:
+        self._merge_keys = merge_keys
+
+    def add(
+        self,
+        name: str,
+        /,
+        *sources: _Source[K],
+        fill: Maybe[float] = Na,
+    ) -> _Combined[K]:
+        return add(name, *sources, merge_keys=self._merge_keys, fill=fill)
+
+    def mul(
+        self,
+        name: str,
+        /,
+        *sources: _Source[K],
+        fill: Maybe[float] = Na,
+    ) -> _Combined[K]:
+        return mul(name, *sources, merge_keys=self._merge_keys, fill=fill)
+
+    def sub(
+        self,
+        name: str,
+        left: _Source[K],
+        right: _Source[K],
+        /,
+        *,
+        fill: Maybe[float] = Na,
+    ) -> _Combined[K]:
+        return sub(name, left, right, merge_keys=self._merge_keys, fill=fill)
+
+    def div(
+        self,
+        name: str,
+        left: _Source[K],
+        right: _Source[K],
+        /,
+        *,
+        fill: Maybe[float] = Na,
+    ) -> _Combined[K]:
+        return div(name, left, right, merge_keys=self._merge_keys, fill=fill)
+
+    def map2[A, B, C](
+        self,
+        name: str,
+        left: Series[K, A, Maybe[A]],
+        right: Series[K, B, Maybe[B]],
+        *,
+        fn: Callable[[Maybe[A], Maybe[B]], Maybe[C]],
+    ) -> Series[K, Maybe[C], Maybe[C]]:
+        return map2(name, left, right, fn=fn, merge_keys=self._merge_keys)
+
+
+period = _DomainOps[Period](period_union)
+"""Arithmetic constructors for period-keyed series."""
+
+date = _DomainOps[Date](date_union)
+"""Arithmetic constructors for date-keyed series."""
