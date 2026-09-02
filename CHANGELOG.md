@@ -45,6 +45,10 @@ pending a rebuild on the new core.
   union so it is a valid `extend` continuation. `filled(fn, fill)` lifts a
   float fold to `Maybe` answers; `fill=` on each op substitutes that value for
   `Na` before the arithmetic (default propagates `Na`). `div` by zero raises.
+- `ops.map_values(name, source, fn=)` maps `fn` over a series' answers,
+  keeping the source's spine; every query delegates to the source at the same
+  key so cells and off-spine queries honor the source's own query semantics.
+  `ops.neg(name, source)` is the `Na`-propagating negation built on it.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
 
@@ -60,6 +64,10 @@ pending a rebuild on the new core.
 - `exact` and `last` are effectful folds over the chain; behavior is
   unchanged (`Na` on a miss; `last` never forces a cell strictly before a
   later candidate).
+- `accrual(yf)` and `covered` are effectful folds over `Cells[Period,
+  Maybe[float]]` and now propagate `Na` from any contributing cell (an exact
+  hit still passes the cell through unchanged). Series with plain `float`
+  cells continue to type-check.
 - `period_union` and `date_union` are now binary `KeyMerge` functions
   `(left, right) -> (piece, rest_left, rest_right)` for use with
   `merge_cells`/`ops`, rather than eager iterators over whole domains.
@@ -73,8 +81,9 @@ pending a rebuild on the new core.
 - `PeriodSeries`, `PeriodSeriesBase`, `PeriodMapSeries`, `PeriodMap2Series`,
   `PeriodExtendSeries`, `DateSeries`, `DateSeriesBase`, `DateMapSeries`,
   `DateMap2Series`, `DateExtendSeries`, and the `scan`/`paired` transforms.
-- `exact_or`, `accrual`, `accrual_or`, `covered`, and `DayCount`. `exact` and
-  `last` remain; period-aware queries are written as plain `QueryFn`s.
+- `exact_or` and `accrual_or`. Misses answer `Na` and propagate; substituting
+  a default belongs at the point of use (`value_or`, `ops.filled`), not in the
+  query.
 - `Stmt`, `Group`, `Total`, `StatementResult`, the `*Row`/`*Value` types, and
   the `formatters` module (`fixed_width_table`, `markdown_table`, `csv_table`,
   `ValueFormatter`, `DateFormatter`).

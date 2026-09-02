@@ -16,7 +16,7 @@ from orcaset.maybe import (
     value_or,
 )
 from orcaset.period import Period, date_union, period_union
-from orcaset.query import exact, last
+from orcaset.query import DayCount, accrual, covered, exact, last
 from orcaset.rule import (
     Cell,
     Demand,
@@ -55,6 +55,7 @@ __all__ = [
     "Context",
     "ConvergenceError",
     "CycleError",
+    "DayCount",
     "Demand",
     "DepNode",
     "Iterate",
@@ -72,9 +73,11 @@ __all__ = [
     "Thunk",
     "UnfoldFn",
     "abs_distance",
+    "accrual",
     "add_some",
     "append_cells",
     "combine_some",
+    "covered",
     "date_union",
     "exact",
     "extend_cells",

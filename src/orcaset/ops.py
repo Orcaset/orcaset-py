@@ -9,9 +9,9 @@ import math
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from orcaset.maybe import Maybe, Na, isna
-from orcaset.rule import Step, get_at
-from orcaset.series import Cells, Key, KeyMerge, Series, Thunk, merge_cells
+from orcaset.maybe import Maybe, Na, isna, map_some
+from orcaset.rule import Step, get, get_at
+from orcaset.series import Cells, Key, KeyMerge, Series, Thunk, merge_cells, unfold_cells
 
 type _Source[K: Key] = Series[K, Any, Maybe[float]]
 type _Combined[K: Key] = Series[K, Maybe[float], Maybe[float]]
@@ -51,6 +51,35 @@ def combine[K: Key](
 
     chains = [source.cells for source in sources]
     return Series(name, merge_cells(name, chains, merge_keys, cell), query)
+
+
+def map_values[K: Key, W, T](
+    name: str,
+    source: Series[K, Any, W],
+    *,
+    fn: Callable[[W], T],
+) -> Series[K, T, T]:
+    """Map ``fn`` over the query answers of ``source``.
+
+    The result keeps the source's spine keys. Every query — on or off the
+    spine — queries ``source`` at the same key and maps its answer, so cells
+    and queries both honor the source's own query semantics.
+    """
+
+    def value_at(key: K) -> Step[T]:
+        value = yield from get_at(source, key)
+        return fn(value)
+
+    def query(q: K, _cells: Cells[K, T]) -> Step[T]:
+        return (yield from value_at(q))
+
+    def step(cells: Cells[K, Any]) -> Step[tuple[K, Thunk[T], Cells[K, Any]] | None]:
+        node = yield from get(cells)
+        if node is None:
+            return None
+        return node.key, Thunk(lambda key=node.key: value_at(key)), node.tail
+
+    return Series(name, unfold_cells(name, seed=source.cells, step=step), query)
 
 
 def filled(
@@ -102,6 +131,15 @@ def mul[K: Key](
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
     """
     return combine(name, sources, fn=filled(math.prod, fill), merge_keys=merge_keys)
+
+
+def neg[K: Key](
+    name: str,
+    source: _Source[K],
+    /,
+) -> _Combined[K]:
+    """``-source`` over the source's own domain. ``Na`` propagates."""
+    return map_values(name, source, fn=map_some(lambda value: -value))
 
 
 def sub[K: Key](

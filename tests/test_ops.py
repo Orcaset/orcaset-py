@@ -261,6 +261,63 @@ def test_buggy_key_merge_raises():
         Context().get(Cell("keys", lambda: keys_until(total.cells, d2)))
 
 
+def test_map_values_keeps_spine_and_maps_queries():
+    q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
+    rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
+    doubled = ops.map_values("Doubled", rent, fn=lambda v: Na if isna(v) else v * 2)
+    ctx = Context()
+
+    keys = ctx.get(Cell("keys", lambda: keys_until(doubled.cells, q1)))
+    assert keys == [q1]
+    assert ctx.get_at(doubled, q1) == 18_000.0
+    # Off-spine queries delegate to the source's own query semantics.
+    assert ctx.get_at(doubled, month(1)) == 2 * 9_000.0 * 31 / 90
+
+
+def test_map_values_is_lazy_and_never_forces_source_cells():
+    def poison() -> float:
+        raise AssertionError("source cell was forced")
+
+    src = Series.unfold(
+        "Src",
+        exact,
+        seed=date(2026, 1, 31),
+        step=lambda d: (d, Thunk(poison), d + MONTH),
+    )
+    mapped = ops.map_values("Mapped", src, fn=lambda v: v)
+
+    keys = Context().get(Cell("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
+    assert keys == [date(2026, 1, 31), date(2026, 2, 28)]
+
+
+def test_neg():
+    d1, d2 = date(2026, 1, 31), date(2026, 2, 28)
+    a = Series.of("A", exact, [(d1, 10.0)])
+    negated = ops.neg("Neg", a)
+    ctx = Context()
+
+    assert ctx.get_at(negated, d1) == -10.0
+    # Na propagates: d2 is an exact miss on the source.
+    assert isna(ctx.get_at(negated, d2))
+
+
+def test_neg_cells_answer_from_spine():
+    d = date(2026, 1, 31)
+    a = Series.of("A", exact, [(d, 10.0)])
+    negated = ops.neg("Neg", a)
+    ctx = Context()
+
+    keys = ctx.get(Cell("keys", lambda: keys_until(negated.cells, d)))
+    assert keys == [d]
+
+    def first_cell_value() -> Step[Maybe[float]]:
+        node = yield from get(negated.cells)
+        assert node is not None
+        return (yield from get(node.cell))
+
+    assert ctx.get(Cell("first", first_cell_value)) == -10.0
+
+
 def test_merge_cells_standalone_plain_values():
     d1, d2 = date(2026, 1, 31), date(2026, 2, 28)
     a = Series.of("A", exact, [(d1, 0.0)])
