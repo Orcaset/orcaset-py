@@ -1,0 +1,73 @@
+# Copyright (c) 2026 Orcaset Inc.
+# SPDX-License-Identifier: SSPL-1.0
+
+"""Run the example. Scrapes TSA checkpoint volume to estimate current-quarter passenger revenue."""
+
+from datetime import date
+
+from model import NOWCAST_QUARTER, QUARTER, operating_revenue_stmt, qtd_windows
+from scrape import TSA_URL, tsa_last_date, tsa_passengers
+
+from orcaset import Context, Period, StatementResult, fixed_width_table, isna
+
+OUTPUT_START = date(2025, 12, 31)
+OUTPUT_END = date(2026, 12, 31)
+
+
+def quarter_label(day: date) -> str:
+    """Label inclusive quarter-end dates. Blank the exclusive opening boundary."""
+    if day <= OUTPUT_START:
+        return ""
+    return f"Q{(day.month - 1) // 3 + 1} {day.year}"
+
+
+def reporting_quarters() -> list[Period]:
+    """Q1 2026 through Q4 2026."""
+    return Period.list(OUTPUT_START, QUARTER, OUTPUT_END)
+
+
+def nowcast_windows(ctx: Context) -> tuple[Period, Period]:
+    return qtd_windows(NOWCAST_QUARTER, ctx.get(tsa_last_date))
+
+
+def _format_value(value: float | None) -> str:
+    return "" if value is None else f"{value:,.0f}"
+
+
+def _quarterly_table(result: StatementResult) -> str:
+    """Quarter-end columns for Q1 2026 through Q4 2026."""
+    table = fixed_width_table(result, date_formatter=quarter_label, value_formatter=_format_value)
+    _start, end_header, *body = table.splitlines()
+    if not end_header.startswith("End"):
+        raise RuntimeError("expected End header from fixed_width_table")
+    header = f"   {end_header[3:]}".rstrip()
+    return "\n".join((header, *body))
+
+
+def main() -> None:
+    ctx = Context()
+    qtd, prior_qtd = nowcast_windows(ctx)
+    current_tsa = ctx.get_at(tsa_passengers, qtd)
+    prior_tsa = ctx.get_at(tsa_passengers, prior_qtd)
+    if isna(current_tsa) or isna(prior_tsa) or prior_tsa == 0.0:
+        raise RuntimeError("TSA QTD volumes are missing; cannot estimate passenger revenue")
+    factor = current_tsa / prior_tsa
+
+    print("Southwest Airlines (LUV) operating revenue")
+    print("Revenue in $ millions; TSA checkpoint passengers in travelers")
+    print()
+    print(
+        f"Estimate {quarter_label(NOWCAST_QUARTER.end)} passenger revenue "
+        f"from TSA checkpoint QTD vs the prior quarter ({factor:.4f})."
+    )
+    print(f"Source: {TSA_URL}")
+    print(f"TSA QTD {qtd.start.isoformat()} → {qtd.end.isoformat()}: {current_tsa:,.0f}")
+    print(f"TSA QTD {prior_qtd.start.isoformat()} → {prior_qtd.end.isoformat()}: {prior_tsa:,.0f}")
+    print()
+
+    result = operating_revenue_stmt.values_for_periods(ctx, reporting_quarters())
+    print(_quarterly_table(result))
+
+
+if __name__ == "__main__":
+    main()
