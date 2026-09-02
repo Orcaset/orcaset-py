@@ -31,6 +31,8 @@ pending a rebuild on the new core.
 - `Series.unfold`, `Series.extend`, `Series.append`, `Series.of` (literal
   pairs), and the `@Series.define(name, query, seed=)` decorator for
   self-referential bodies.
+- `Series.from_rule(name, query, pairs)` lazily builds a finite series from an
+  effectful rule that resolves a sequence of key/value pairs.
 - `extend_cells(name, base, cont)` continues a chain lazily at its frontier.
   `cont` receives the last base key (`None` when empty), is invoked only when
   a walk exhausts the base, and its leading nodes not entirely after the last

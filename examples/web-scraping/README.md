@@ -4,9 +4,9 @@ This standalone project scrapes daily TSA checkpoint volumes and uses current ve
 prior-quarter-to-date traffic to nowcast Southwest Airlines passenger revenue. Freight
 and other revenue are held at their last reported values.
 
-The scrape is part of the model rather than a preprocessing step. `tsa_passengers` is a
-`Series.unfold` whose `None` seed triggers the download on the first structural demand.
-The downloaded rows then become the unfold state, so later tails reuse them. A separate
+The scrape is part of the model rather than a preprocessing step. `tsa_passengers` uses
+`Series.from_rule` with a `Cell` that downloads all rows on first structural demand.
+The context caches those rows, so later tails reuse them. A separate
 `Cell` uses `last_key` to find the final observation, and the passenger nowcast depends
 on that cell.
 

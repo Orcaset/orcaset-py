@@ -61,24 +61,17 @@ def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
     return sorted(by_date.items())
 
 
-type ScrapeState = None | tuple[list[tuple[date, float]], int]
+def checkpoint_pairs() -> list[tuple[Period, float]]:
+    return [
+        (Period(travel_date - timedelta(days=1), travel_date), count)
+        for travel_date, count in checkpoint_volumes()
+    ]
 
 
-def checkpoint_step(
-    state: ScrapeState,
-) -> tuple[Period, float, tuple[list[tuple[date, float]], int]] | None:
-    rows, index = (checkpoint_volumes(), 0) if state is None else state
-    if index == len(rows):
-        return None
-    travel_date, count = rows[index]
-    return Period(travel_date - timedelta(days=1), travel_date), count, (rows, index + 1)
-
-
-tsa_passengers = Series.unfold(
+tsa_passengers = Series.from_rule(
     "TSA checkpoint passengers",
     _BY_DAYS,
-    seed=None,
-    step=checkpoint_step,
+    Cell("TSA checkpoint rows", checkpoint_pairs),
 )
 
 
