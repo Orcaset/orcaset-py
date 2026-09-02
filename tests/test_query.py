@@ -15,8 +15,10 @@ from orcaset import (
     accrual,
     covered,
     exact,
+    exact_or,
     isna,
     last,
+    last_or,
 )
 
 START = date(2026, 1, 1)
@@ -49,6 +51,18 @@ def test_last_returns_na_before_first_observation():
     series = Series.of("balance", last, [(date(2026, 2, 1), 110.0)])
 
     assert Context().get_at(series, date(2026, 1, 1)) is Na
+
+
+def test_exact_or_and_last_or_replace_misses():
+    d0, d1, d2 = date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
+    exact_series = Series.of("Exact default", exact_or(0.0), [(d1, 10.0)])
+    last_series = Series.of("Last default", last_or(0.0), [(d1, 10.0)])
+    ctx = Context()
+
+    assert ctx.get_at(exact_series, d1) == 10.0
+    assert ctx.get_at(exact_series, d2) == 0.0
+    assert ctx.get_at(last_series, d0) == 0.0
+    assert ctx.get_at(last_series, d2) == 10.0
 
 
 def test_last_never_forces_superseded_cells():

@@ -9,26 +9,19 @@ from itertools import islice
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cells,
     Context,
-    Key,
     Period,
     Series,
     Step,
     Thunk,
     abs_distance,
-    exact,
+    exact_or,
     get_at,
-    value_or,
 )
 
 MODEL_START = date(2025, 12, 31)
 MONTH = relativedelta(months=1, day=31)
 RATE = 0.10
-
-
-def exact_or_zero[K: Key](q: K, cells: Cells[K, float]) -> Step[float]:
-    return value_or((yield from exact(q, cells)), 0.0)
 
 
 def debt_step(day: date) -> tuple[date, float | Thunk[float], date]:
@@ -44,10 +37,10 @@ def debt_step(day: date) -> tuple[date, float | Thunk[float], date]:
     return day, Thunk(value), day + MONTH
 
 
-debt = Series.unfold("Debt", exact_or_zero, seed=MODEL_START, step=debt_step)
+debt = Series.unfold("Debt", exact_or(0.0), seed=MODEL_START, step=debt_step)
 
 
-@Series.define("Interest", exact_or_zero, seed=next(Period.seq(MODEL_START, MONTH)))
+@Series.define("Interest", exact_or(0.0), seed=next(Period.seq(MODEL_START, MONTH)))
 def interest_step(period: Period) -> tuple[Period, Thunk[float], Period]:
     def value() -> Step[float]:
         begin = yield from get_at(debt, period.start)

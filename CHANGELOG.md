@@ -67,6 +67,8 @@ pending a rebuild on the new core.
   cells or a past frontier.
 - `first_key`, finite-only `last_key`, and bounded `collect_keys` inspect cell
   chain frontiers without forcing values.
+- `exact_or(default)` and `last_or(default)` build query policies with an
+  explicit value for misses.
 
 ### Changed
 

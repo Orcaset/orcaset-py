@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 
-from orcaset.maybe import Maybe, Na, isna
+from orcaset.maybe import Maybe, Na, isna, value_or
 from orcaset.period import Period
 from orcaset.rule import Rule, Step, get
 from orcaset.series import Cells, Key, QueryFn
@@ -49,6 +49,24 @@ def last[K: Key, V](q: K, cells: Cells[K, V]) -> Step[Maybe[V]]:
     if pending is None:
         return Na
     return (yield from get(pending))
+
+
+def exact_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
+    """Build an exact-match query that returns ``default`` on a miss."""
+
+    def query(q: K, cells: Cells[K, V]) -> Step[V]:
+        return value_or((yield from exact(q, cells)), default)
+
+    return query
+
+
+def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
+    """Build a latest-value query that returns ``default`` before the first cell."""
+
+    def query(q: K, cells: Cells[K, V]) -> Step[V]:
+        return value_or((yield from last(q, cells)), default)
+
+    return query
 
 
 def accrual(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:

@@ -7,7 +7,6 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
     Cell,
-    Cells,
     Context,
     Group,
     Maybe,
@@ -19,7 +18,7 @@ from orcaset import (
     Thunk,
     Total,
     accrual,
-    exact,
+    exact_or,
     fixed_width_table,
     get,
     get_at,
@@ -118,13 +117,6 @@ fcf = ops.period.add(
 )
 
 
-def exact_or_zero(
-    q: date,
-    cells: Cells[date, Maybe[float]],
-) -> Step[Maybe[float]]:
-    return value_or((yield from exact(q, cells)), 0.0)
-
-
 def draw_value() -> Step[Maybe[float]]:
     ntm_ebitda = yield from get_at(ebitda, Period(acquisition_date, acquisition_date + year_offset))
     return multiply_some((ntm_ebitda, purchase_multiple, ltv))
@@ -132,7 +124,7 @@ def draw_value() -> Step[Maybe[float]]:
 
 draws = Series.of(
     "Draws",
-    exact_or_zero,
+    exact_or(0.0),
     [(acquisition_date, Thunk(draw_value))],
 )
 
@@ -168,7 +160,7 @@ def payment(period: Period) -> Step[float]:
 sweep_periods = list(Period.seq(acquisition_date, year_offset, acquisition_date + hold_period))
 sweep_payments = Series.of(
     "Sweep payments",
-    exact_or_zero,
+    exact_or(0.0),
     [(period.end, Thunk(lambda period=period: payment(period))) for period in sweep_periods],
 )
 
@@ -210,7 +202,7 @@ def balloon_value() -> Step[float]:
 
 balloon_payment = Series.of(
     "Balloon payment",
-    exact_or_zero,
+    exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(balloon_value))],
 )
 debt_cash_flows = ops.date.add(
@@ -231,7 +223,7 @@ def purchase_price_value() -> Step[Maybe[float]]:
 
 purchase_price = Series.of(
     "Purchase price",
-    exact_or_zero,
+    exact_or(0.0),
     [(acquisition_date, Thunk(purchase_price_value))],
 )
 
@@ -250,7 +242,7 @@ def exit_value_fn() -> Step[Maybe[float]]:
 
 exit_value = Series.of(
     "Exit value",
-    exact_or_zero,
+    exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(exit_value_fn))],
 )
 
@@ -261,7 +253,7 @@ def fcf_payment(period: Period) -> Step[float]:
 
 year_end_fcf_payment = Series.of(
     "Year end fcf payment",
-    exact_or_zero,
+    exact_or(0.0),
     [(period.end, Thunk(lambda period=period: fcf_payment(period))) for period in sweep_periods],
 )
 levered_cash_flow = ops.date.add(
