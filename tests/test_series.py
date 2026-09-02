@@ -15,12 +15,15 @@ from orcaset import (
     Rule,
     Series,
     Thunk,
+    collect_keys,
     exact,
+    first_key,
     get,
     get_at,
     isna,
     keys_until,
     last,
+    last_key,
     map_cells,
     scan_cells,
 )
@@ -123,6 +126,36 @@ def test_keys_until():
 
     assert keys == [FY17, FY18, FY19]
     assert poison_keys == [FY17, FY18, FY19]
+
+
+def test_key_frontier_helpers():
+    finite = Series.of("Finite", exact, [(FY17, 1.0), (FY18, 2.0), (FY19, 3.0)])
+    infinite = Series.unfold(
+        "Infinite",
+        exact,
+        seed=FY17,
+        step=lambda period: (period, 1.0, period.shift(YEAR)),
+    )
+    ctx = Context()
+
+    assert ctx.get(Cell("first", lambda: first_key(finite.cells))) == FY17
+    assert ctx.get(Cell("last", lambda: last_key(finite.cells))) == FY19
+    assert ctx.get(Cell("limited", lambda: collect_keys(infinite.cells, limit=2))) == [FY17, FY18]
+    assert ctx.get(
+        Cell("bounded", lambda: collect_keys(finite.cells, through=FY18, limit=10))
+    ) == [FY17, FY18]
+
+
+def test_collect_keys_validates_limit_without_demanding_chain():
+    def poison_step(state: int) -> tuple[date, float, int]:
+        raise AssertionError("chain was demanded")
+
+    series = Series.unfold("Poison", exact, seed=0, step=poison_step)
+    ctx = Context()
+
+    assert ctx.get(Cell("zero", lambda: collect_keys(series.cells, limit=0))) == []
+    with pytest.raises(ValueError, match="non-negative"):
+        ctx.get(Cell("negative", lambda: collect_keys(series.cells, limit=-1)))
 
 
 def test_ascending_keys_enforced():

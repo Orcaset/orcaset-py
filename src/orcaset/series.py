@@ -430,6 +430,48 @@ def _as_step[V](value: Step[V] | V) -> Step[V]:
     return completed()
 
 
+def first_key[K: Key, V](cells: Cells[K, V]) -> Step[K | None]:
+    """Return the first key, or ``None`` when the chain is empty."""
+    node = yield from get(cells)
+    return None if node is None else node.key
+
+
+def last_key[K: Key, V](cells: Cells[K, V]) -> Step[K | None]:
+    """Return the last key of a finite chain, or ``None`` when empty."""
+    node = yield from get(cells)
+    result: K | None = None
+    while node is not None:
+        result = node.key
+        node = yield from get(node.tail)
+    return result
+
+
+def collect_keys[K: Key, V](
+    cells: Cells[K, V],
+    *,
+    through: K | None = None,
+    limit: int | None = None,
+) -> Step[list[K]]:
+    """Collect keys up to an inclusive bound and/or count limit.
+
+    At least one bound is required to terminate on an infinite chain.
+    """
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be non-negative")
+    keys: list[K] = []
+    if limit == 0:
+        return keys
+    node = yield from get(cells)
+    while node is not None:
+        if through is not None and through < node.key:
+            break
+        keys.append(node.key)
+        if limit is not None and len(keys) == limit:
+            break
+        node = yield from get(node.tail)
+    return keys
+
+
 def keys_until[K: Key, V](cells: Cells[K, V], stop: K) -> Step[list[K]]:
     """Collect keys through ``stop`` without forcing cells or a past frontier."""
     keys: list[K] = []

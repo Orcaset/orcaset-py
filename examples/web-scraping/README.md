@@ -7,7 +7,8 @@ and other revenue are held at their last reported values.
 The scrape is part of the model rather than a preprocessing step. `tsa_passengers` is a
 `Series.unfold` whose `None` seed triggers the download on the first structural demand.
 The downloaded rows then become the unfold state, so later tails reuse them. A separate
-`Cell` walks to the final observed date, and the passenger nowcast depends on that cell.
+`Cell` uses `last_key` to find the final observation, and the passenger nowcast depends
+on that cell.
 
 Values and chain nodes are cached within a `Context`. A fresh context evaluates the
 model again and therefore performs a fresh scrape.
