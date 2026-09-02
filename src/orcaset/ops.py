@@ -142,6 +142,46 @@ def neg[K: Key](
     return map_values(name, source, fn=map_some(lambda value: -value))
 
 
+def add_scalar[K: Key](
+    name: str,
+    source: _Source[K],
+    scalar: float,
+    /,
+) -> _Combined[K]:
+    """``source + scalar`` over the source's own domain. ``Na`` propagates."""
+    return map_values(name, source, fn=map_some(lambda value: value + scalar))
+
+
+def sub_scalar[K: Key](
+    name: str,
+    source: _Source[K],
+    scalar: float,
+    /,
+) -> _Combined[K]:
+    """``source - scalar`` over the source's own domain. ``Na`` propagates."""
+    return map_values(name, source, fn=map_some(lambda value: value - scalar))
+
+
+def mul_scalar[K: Key](
+    name: str,
+    source: _Source[K],
+    scalar: float,
+    /,
+) -> _Combined[K]:
+    """``source * scalar`` over the source's own domain. ``Na`` propagates."""
+    return map_values(name, source, fn=map_some(lambda value: value * scalar))
+
+
+def div_scalar[K: Key](
+    name: str,
+    source: _Source[K],
+    scalar: float,
+    /,
+) -> _Combined[K]:
+    """``source / scalar`` over the source's own domain. ``Na`` propagates."""
+    return map_values(name, source, fn=map_some(lambda value: value / scalar))
+
+
 def sub[K: Key](
     name: str,
     left: _Source[K],

@@ -51,14 +51,6 @@ annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 exit_multiple = Cell("Exit multiple", lambda: 5.0)
 
 
-def scale[V](
-    name: str,
-    source: Series[Period, V, Maybe[float]],
-    factor: float,
-) -> Series[Period, Maybe[float], Maybe[float]]:
-    return ops.map_values(name, source, fn=map_some(lambda value: value * factor))
-
-
 @Series.define("Revenue", ACCRUE, seed=next(Period.seq(acquisition_date, year_offset)))
 def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
     def value() -> Step[float]:
@@ -72,7 +64,7 @@ def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
 
 
 revenue: Series[Period, Maybe[float], Maybe[float]] = revenue_step
-ebitda = scale("EBITDA", revenue, ebitda_margin)
+ebitda = ops.mul_scalar("EBITDA", revenue, ebitda_margin)
 da: Series[Period, float, Maybe[float]] = Series.unfold(
     "D&A",
     ACCRUE,
@@ -108,8 +100,8 @@ interest = Series.unfold(
     step=interest_step,
 )
 ebt = ops.add("EBT", ebit, interest, merge_keys=period_union)
-taxes = scale("Taxes", ebt, -tax_rate)
-capex = scale("Capex", revenue, -capex_pct_revenue)
+taxes = ops.mul_scalar("Taxes", ebt, -tax_rate)
+capex = ops.mul_scalar("Capex", revenue, -capex_pct_revenue)
 change_in_nwc: Series[Period, float, Maybe[float]] = Series.unfold(
     "Change in NWC",
     ACCRUE,

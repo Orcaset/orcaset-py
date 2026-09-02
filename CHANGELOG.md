@@ -49,6 +49,8 @@ pending a rebuild on the new core.
   keeping the source's spine; every query delegates to the source at the same
   key so cells and off-spine queries honor the source's own query semantics.
   `ops.neg(name, source)` is the `Na`-propagating negation built on it.
+- `ops.add_scalar`, `ops.sub_scalar`, `ops.mul_scalar`, and `ops.div_scalar`
+  provide `Na`-propagating scalar arithmetic over a source's own domain.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
 
