@@ -10,7 +10,6 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
     Context,
-    Maybe,
     Period,
     PeriodFlow,
     Series,

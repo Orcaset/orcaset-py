@@ -8,7 +8,6 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cells,
     Context,
     Maybe,
     Period,
