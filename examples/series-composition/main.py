@@ -12,6 +12,7 @@ from orcaset import (
     Context,
     Maybe,
     Period,
+    PeriodFlow,
     Series,
     Step,
     Stmt,
@@ -40,12 +41,12 @@ def revenue_step(period: Period) -> tuple[Period, float | Thunk[float], Period]:
     return period, Thunk(value), period.from_end(MONTHLY)
 
 
-revenue: Series[Period, Maybe[float], Maybe[float]] = revenue_step
+revenue: PeriodFlow = revenue_step
 cogs = ops.map_values("cogs", revenue, fn=map_some(lambda value: value * -0.5))
 gross_profit = ops.period.add("gross_profit", revenue, cogs)
 
 
-def constant_series(name: str, value: float) -> Series[Period, Maybe[float], Maybe[float]]:
+def constant_series(name: str, value: float) -> PeriodFlow:
     return Series.unfold(
         name,
         QUERY,

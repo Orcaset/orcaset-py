@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Hashable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import date as Date
 from typing import Any, Protocol, Self
 
+from orcaset.maybe import Maybe
 from orcaset.period import Period
 from orcaset.rule import Cell, KeyedRule, Rule, Step, get, get_at
 
@@ -173,6 +175,19 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
             return cls.unfold(name, query, seed=seed, step=step)
 
         return decorator
+
+
+type PeriodSeries[V, W] = Series[Period, V, W]
+"""Series keyed and queried by ``Period``."""
+
+type DateSeries[V, W] = Series[Date, V, W]
+"""Series keyed and queried by ``date``."""
+
+type PeriodFlow = PeriodSeries[Maybe[float], Maybe[float]]
+"""Common period flow whose cells and answers may be ``Na``."""
+
+type DateFlow = DateSeries[Maybe[float], Maybe[float]]
+"""Common date flow whose cells and answers may be ``Na``."""
 
 
 class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):

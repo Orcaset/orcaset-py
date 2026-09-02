@@ -12,6 +12,7 @@ from orcaset import (
     Context,
     Maybe,
     Period,
+    PeriodSeries,
     Series,
     exact,
     map2_some,
@@ -42,7 +43,7 @@ class EUR:
         return EUR(self.amount + other.amount)
 
 
-def constant_series[V](name: str, value: V) -> Series[Period, V, Maybe[V]]:
+def constant_series[V](name: str, value: V) -> PeriodSeries[V, Maybe[V]]:
     return Series.unfold(
         name,
         exact,

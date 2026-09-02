@@ -13,6 +13,7 @@ from orcaset import (
     Context,
     Maybe,
     Period,
+    PeriodSeries,
     Series,
     Step,
     Stmt,
@@ -38,7 +39,7 @@ hist_revenue = Series.of("hist_revenue", covered, HISTORICAL)
 
 def forecast_series(
     last: Period | None,
-) -> Series[Period, Maybe[float], Maybe[float]]:
+) -> PeriodSeries[float, Maybe[float]]:
     if last is None:
         raise ValueError("revenue history must not be empty")
 

@@ -8,9 +8,12 @@ from orcaset import (
     YF,
     Cell,
     Context,
+    DateFlow,
+    DateSeries,
     Group,
     Maybe,
     Period,
+    PeriodFlow,
     Rule,
     Series,
     Step,
@@ -62,7 +65,7 @@ def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
     return period, Thunk(value), period.from_end(year_offset)
 
 
-revenue: Series[Period, Maybe[float], Maybe[float]] = revenue_step
+revenue: PeriodFlow = revenue_step
 ebitda = ops.mul_scalar("EBITDA", revenue, ebitda_margin)
 da: Series[Period, float, Maybe[float]] = Series.unfold(
     "D&A",
@@ -166,8 +169,8 @@ sweep_payments = Series.of(
 
 def cumulate[V](
     name: str,
-    flows: Series[date, V, Maybe[float]],
-) -> Series[date, Maybe[float], Maybe[float]]:
+    flows: DateSeries[V, Maybe[float]],
+) -> DateFlow:
     def scan(
         previous: date | None,
         day: date,
