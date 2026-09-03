@@ -4,63 +4,68 @@
 """Average-balance interest solved as a typed demand cycle."""
 
 from datetime import date
-from itertools import islice
 
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Context,
     Effect,
+    Maybe,
     Period,
     Series,
-    Thunk,
-    abs_distance,
     accrue_or,
+    add_some,
     get_at,
-    last_or,
+    isna,
+    last,
+    maybe_abs_distance,
 )
 
-MODEL_START = date(2025, 12, 31)
+# ---- Assumptions ----
+START_DATE = date(2025, 12, 31)
 MONTH = relativedelta(months=1, day=31)
+FIRST_MONTH = Period(START_DATE, START_DATE + MONTH)
 MONTHLY_RATE = 0.10
+OPENING_DEBT = 100.0
+
+seed_date: date | None = None
 
 
-@Series.define("Debt", last_or(0.0), seed=MODEL_START)
-def debt(day: date) -> tuple[date, float | Thunk[float], date]:
-    if day == MODEL_START:
-        return day, 100.0, day + MONTH
-    period = Period(day - MONTH, day)
+@Series.define("Debt", last, seed=seed_date)
+def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
+    if prior_date is None:
+        return START_DATE, OPENING_DEBT, START_DATE
 
-    def value() -> Effect[float]:
-        begin = yield from get_at(debt, period.start)
-        interest_amt = yield from get_at(interest, period)
-        return begin + interest_amt
+    current_date = prior_date + MONTH
+    begin = yield from get_at(debt, prior_date)
+    interest_amt = yield from get_at(interest, Period(prior_date, current_date))
 
-    return day, Thunk(value), day + MONTH
+    return current_date, add_some((begin, interest_amt)), current_date
 
 
-@Series.define(
-    "Interest", accrue_or(YF.act360, 0.0), seed=Period(MODEL_START, MODEL_START + MONTH)
-)
-def interest(period: Period) -> tuple[Period, Thunk[float], Period]:
-    def value() -> Effect[float]:
-        begin = yield from get_at(debt, period.start)
-        end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
-        return (begin + end) * 0.5 * MONTHLY_RATE
+@Series.define("Interest", accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
+def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
+    begin = yield from get_at(debt, period.start)
 
-    return period, Thunk(value), period.from_end(MONTH)
+    # The ending period debt balance depends on the interest over the period.
+    # Provide a seed and distance function so that the iterative solver has a starting point
+    # and a way to check for convergence.
+    end = yield from get_at(debt, period.end, seed=0.0, distance=maybe_abs_distance)
+
+    if isna(begin):
+        avg_balance = 0.0
+    else:
+        avg_balance = begin if isna(end) else (begin + end) * 0.5
+
+    return period, avg_balance * MONTHLY_RATE, period.from_end(MONTH)
 
 
+# ---- Output ----
 if __name__ == "__main__":
-    ctx = Context()
-    periods = list(islice(Period.seq(MODEL_START, MONTH), 4))
-    dates = [MODEL_START, *(period.end for period in periods)]
+    from itertools import islice
 
-    print("Date".ljust(16) + "".join(str(day).rjust(12) for day in dates))
-    print("Debt".ljust(16) + "".join(f"{ctx.get_at(debt, day):12.2f}" for day in dates))
-    print(
-        "Interest".ljust(16)
-        + "—".rjust(12)
-        + "".join(f"{ctx.get_at(interest, period):12.2f}" for period in periods)
-    )
+    from orcaset import Context, Stmt, fixed_width_table
+
+    ctx = Context()
+    periods = list(islice(Period.seq(START_DATE, MONTH), 4))
+    print(fixed_width_table(Stmt(debt, interest).values_for_periods(ctx, periods)))
