@@ -33,8 +33,6 @@ pending a rebuild on the new core.
   self-referential bodies.
 - `Series.from_rule(name, query, pairs)` lazily builds a finite series from an
   effectful rule that resolves a sequence of key/value pairs.
-- `PeriodSeries[V, W]`, `DateSeries[V, W]`, `PeriodFlow`, and `DateFlow`
-  provide concise aliases for common domain-specific annotations.
 - `extend_cells(name, base, cont)` continues a chain lazily at its frontier.
   `cont` receives the last base key (`None` when empty), is invoked only when
   a walk exhausts the base, and its leading nodes not entirely after the last

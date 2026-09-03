@@ -12,8 +12,7 @@ income = ops.period.add("income", gross_profit, rd, sga)
 ```
 
 The query function on each series remains responsible for arbitrary-period behavior;
-this model uses `accrual(YF.cmonthly)`. The common `PeriodFlow` alias keeps numeric
-series annotations compact.
+this model uses `accrual(YF.cmonthly)`.
 
 ## Run
 
