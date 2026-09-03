@@ -192,10 +192,12 @@ def sub[K: Key](
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
     """
-    return combine(
+    difference = filled(lambda values: values[0] - values[1], fill)
+    return map2(
         name,
-        (left, right),
-        fn=filled(lambda values: values[0] - values[1], fill),
+        left,
+        right,
+        fn=lambda left_value, right_value: difference((left_value, right_value)),
         merge_keys=merge_keys,
     )
 
@@ -213,10 +215,12 @@ def div[K: Key](
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
     """
-    return combine(
+    quotient = filled(lambda values: values[0] / values[1], fill)
+    return map2(
         name,
-        (left, right),
-        fn=filled(lambda values: values[0] / values[1], fill),
+        left,
+        right,
+        fn=lambda left_value, right_value: quotient((left_value, right_value)),
         merge_keys=merge_keys,
     )
 
