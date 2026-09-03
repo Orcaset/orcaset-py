@@ -58,8 +58,8 @@ pending a rebuild on the new core.
   `ops.neg(name, source)` is the `Na`-propagating negation built on it.
 - `ops.map2(name, left, right, fn=, merge_keys=)` maps a typed binary
   function over two generic series without restricting values to floats.
-- `ops.add_scalar`, `ops.sub_scalar`, `ops.mul_scalar`, and `ops.div_scalar`
-  provide `Na`-propagating scalar arithmetic over a source's own domain.
+- `ops.scale(name, source, factor)` provides `Na`-propagating scalar
+  multiplication over a source's own domain.
 - `ops.period` and `ops.date` provide domain-bound `add`, `mul`, `sub`, `div`,
   and `map2` constructors without a repeated `merge_keys=` argument.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing

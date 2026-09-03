@@ -347,24 +347,13 @@ def test_neg_cells_answer_from_spine():
     assert ctx.get(Cell("first", first_cell_value)) == -10.0
 
 
-def test_scalar_ops():
+def test_scale():
     d1, d2 = date(2026, 1, 31), date(2026, 2, 28)
     source = Series.of("Source", exact, [(d1, 10.0)])
     ctx = Context()
 
-    assert ctx.get_at(ops.add_scalar("Add", source, 2.0), d1) == 12.0
-    assert ctx.get_at(ops.sub_scalar("Sub", source, 2.0), d1) == 8.0
-    assert ctx.get_at(ops.mul_scalar("Mul", source, 2.0), d1) == 20.0
-    assert ctx.get_at(ops.div_scalar("Div", source, 2.0), d1) == 5.0
-    assert isna(ctx.get_at(ops.add_scalar("Missing", source, 2.0), d2))
-
-
-def test_div_scalar_by_zero_raises():
-    d = date(2026, 1, 31)
-    source = Series.of("Source", exact, [(d, 10.0)])
-
-    with pytest.raises(ZeroDivisionError):
-        Context().get_at(ops.div_scalar("Div", source, 0.0), d)
+    assert ctx.get_at(ops.scale("Scaled", source, 2.0), d1) == 20.0
+    assert isna(ctx.get_at(ops.scale("Missing", source, 2.0), d2))
 
 
 def test_merge_cells_standalone_plain_values():

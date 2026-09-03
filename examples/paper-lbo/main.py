@@ -66,7 +66,7 @@ def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
 
 
 revenue: PeriodFlow = revenue_step
-ebitda = ops.mul_scalar("EBITDA", revenue, ebitda_margin)
+ebitda = ops.scale("EBITDA", revenue, ebitda_margin)
 da: Series[Period, float, Maybe[float]] = Series.unfold(
     "D&A",
     ACCRUE,
@@ -102,8 +102,8 @@ interest = Series.unfold(
     step=interest_step,
 )
 ebt = ops.period.add("EBT", ebit, interest)
-taxes = ops.mul_scalar("Taxes", ebt, -tax_rate)
-capex = ops.mul_scalar("Capex", revenue, -capex_pct_revenue)
+taxes = ops.scale("Taxes", ebt, -tax_rate)
+capex = ops.scale("Capex", revenue, -capex_pct_revenue)
 change_in_nwc: Series[Period, float, Maybe[float]] = Series.unfold(
     "Change in NWC",
     ACCRUE,
