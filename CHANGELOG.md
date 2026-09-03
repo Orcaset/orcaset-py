@@ -40,9 +40,6 @@ pending a rebuild on the new core.
   a walk exhausts the base, and its leading nodes not entirely after the last
   base key are clipped without forcing their cells. `append_cells(name, first,
   then)` is the fixed-continuation form.
-- `extend_period_series(name, base, cont, combine)` preserves the base and
-  continuation query policies, splitting cross-frontier queries and combining
-  their answers.
 - `merge_cells(name, chains, merge, cell)` and `KeyMerge[K]`: merge ascending
   chains into one chain whose keys re-tile their union, with one pending head
   of lookahead per operand and source cells never forced. `merge` must satisfy

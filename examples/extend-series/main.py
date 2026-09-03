@@ -13,15 +13,11 @@ from orcaset import (
     Context,
     Maybe,
     Period,
-    PeriodSeries,
     Series,
     Step,
     Stmt,
     Thunk,
-    accrual,
-    add_some,
     covered,
-    extend_period_series,
     fixed_width_table,
     get_at,
     isna,
@@ -37,9 +33,7 @@ HISTORICAL: list[tuple[Period, float]] = [
 hist_revenue = Series.of("hist_revenue", covered, HISTORICAL)
 
 
-def forecast_series(
-    last: Period | None,
-) -> PeriodSeries[float, Maybe[float]]:
+def forecast_cells(last: Period | None):
     if last is None:
         raise ValueError("revenue history must not be empty")
 
@@ -64,18 +58,18 @@ def forecast_series(
 
     forecast = Series.unfold(
         "forecast_revenue",
-        accrual(YF.cmonthly),
+        covered,
         seed=next(Period.seq(last.end, MONTHLY)),
         step=step,
     )
-    return forecast
+    return forecast.cells
 
 
-revenue = extend_period_series(
+revenue = Series.extend(
     "revenue",
-    hist_revenue,
-    forecast_series,
-    lambda left, right: add_some((left, right)),
+    covered,
+    base=hist_revenue.cells,
+    cont=forecast_cells,
 )
 
 ctx = Context()
@@ -97,12 +91,6 @@ print(f"\nPartial historical period stays Na ({intra}): {show(ctx.get_at(revenue
 print("\nRight of seam (monthly projection, 1% growth off last-quarter run-rate)")
 for month in forecast_months:
     print(f"  {month}: {show(ctx.get_at(revenue, month))}")
-
-partial_forecast = Period(forecast_months[0].start, date(2025, 10, 16))
-print(
-    f"  Partial forecast accrues ({partial_forecast}): "
-    f"{show(ctx.get_at(revenue, partial_forecast))}"
-)
 
 projected_quarter = Period(forecast_months[0].start, forecast_months[-1].end)
 quarterly_statement = Stmt(revenue).values_for_periods(ctx, [*quarters, projected_quarter])

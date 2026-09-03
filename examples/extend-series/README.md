@@ -2,22 +2,21 @@
 
 This example lays a finite quarterly history and an infinite monthly forecast end to end.
 
-`hist_revenue` is built with `Series.of`. `extend_period_series` appends a continuation
-when a walk reaches the history frontier while retaining both query policies:
+`hist_revenue` is built with `Series.of`. `Series.extend` appends a continuation when a
+walk reaches the history frontier:
 
 ```py
-revenue = extend_period_series(
+revenue = Series.extend(
     "revenue",
-    hist_revenue,
-    forecast_series,
-    lambda left, right: add_some((left, right)),
+    covered,
+    base=hist_revenue.cells,
+    cont=forecast_cells,
 )
 ```
 
-The continuation receives the final historical key and returns a series. Historical
-queries use `covered`, forecast queries use `accrual`, and cross-seam queries are split
-and combined. A historical query that cuts through a cell remains `Na`, while a partial
-forecast query accrues its share.
+The continuation receives the final historical key and returns a linked cell chain.
+Using `covered` for the composed query means aligned historical, forecast, and
+cross-seam periods sum cleanly, while a query that cuts through a cell returns `Na`.
 
 ## Run
 

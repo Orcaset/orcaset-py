@@ -10,7 +10,7 @@ from typing import Any, Protocol, Self
 
 from orcaset.maybe import Maybe
 from orcaset.period import Period
-from orcaset.rule import Cell, KeyedRule, Rule, Step, get, get_at
+from orcaset.rule import Cell, KeyedRule, Rule, Step, get
 
 
 class Key(Hashable, Protocol):
@@ -329,51 +329,6 @@ def append_cells[K: Key, V](
 ) -> Cells[K, V]:
     """Append ``then`` after ``first``; overlap with ``first`` is clipped."""
     return extend_cells(name, first, lambda _last: then)
-
-
-def extend_period_series[V, W](
-    name: str,
-    base: Series[Period, V, W],
-    cont: Callable[[Period | None], Series[Period, V, W]],
-    combine: Callable[[W, W], W],
-) -> Series[Period, V, W]:
-    """Continue a finite period series while preserving both query policies.
-
-    Queries entirely on one side of the base frontier use that side's query
-    function. A query crossing the frontier is split there and its two answers
-    are passed to ``combine``. The continuation is created lazily and cached.
-    """
-    continuations: dict[Period | None, Series[Period, V, W]] = {}
-
-    def continuation(last: Period | None) -> Series[Period, V, W]:
-        result = continuations.get(last)
-        if result is None:
-            result = cont(last)
-            continuations[last] = result
-        return result
-
-    def query(q: Period, _cells: Cells[Period, V]) -> Step[W]:
-        node = yield from get(base.cells)
-        last: Period | None = None
-        while node is not None:
-            last = node.key
-            node = yield from get(node.tail)
-
-        if last is None:
-            return (yield from get_at(continuation(None), q))
-        if q.end <= last.end:
-            return (yield from get_at(base, q))
-
-        following = continuation(last)
-        if q.start >= last.end:
-            return (yield from get_at(following, q))
-
-        left = yield from get_at(base, Period(q.start, last.end))
-        right = yield from get_at(following, Period(last.end, q.end))
-        return combine(left, right)
-
-    cells = extend_cells(name, base.cells, lambda last: continuation(last).cells)
-    return Series(name, cells, query)
 
 
 type _Frontier[K: Key] = tuple[K | None, Cells[K, Any] | None]
