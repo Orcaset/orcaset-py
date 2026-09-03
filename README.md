@@ -19,29 +19,29 @@ pip install orcaset
 
 ## Orcaset at a glance
 
-The block below builds a simple model with revenue, costs, and profit in nine lines of code.
+The block below builds a simple model with revenue, costs, and profit in ten lines of code.
 
 ```py
 from datetime import date
-from dateutil.relativedelta import relativedelta
 from itertools import islice
-from orcaset import YF, Context, Period, PeriodSeries, Stmt, Total, accrue, fixed_width_table, get_at, isna
+from dateutil.relativedelta import relativedelta
+from orcaset import YF, Period, Series, accrue, get_at, multiply_some, ops, period_union
 
-@PeriodSeries.define("Revenue", accrue(YF.cmonthly))
-def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
-    for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
-        
-        # Cell factory for each period
-        def factory(p: Period = k):
-            prior = yield from get_at(revenue, p.shift(-relativedelta(months=1)))
-            # Return the prior month's revenue * 10% growth rate,
-            # or initial revenue amount of 100 if prior is Na
-            return prior * 1.10 if not isna(prior) else 100.0
+initial_period = Period(date(2026, 1, 1), date(2026, 2, 1))
 
-        yield k, factory
+@Series.define("Revenue", accrue(YF.cmonthly), seed=initial_period)
+def revenue(period: Period):
+    if period == initial_period:
+        value = 100.0
+    else:
+        prior_value = yield from get_at(revenue, period.shift(-relativedelta(months=1)))
+        value = multiply_some((prior_value, 1.10))
+    
+    return period, value, period.from_end(relativedelta(months=1))
 
-costs = (revenue * -0.50).named("Costs")
-profit = (revenue + costs).named("Profit")
+
+costs = ops.scale("Costs", revenue, -0.50)
+profit = ops.add("Profit", revenue, costs, merge_keys=period_union)
 ```
 
 This code block is complete and can be run standalone. It builds a dynamic model with the structure:
