@@ -218,7 +218,7 @@ class Rule[V](_Identity, ABC):
 class KeyedRule[K: Hashable, V](_Identity, ABC):
     """A keyed family of memoized computations.
 
-    Subclass to override ``compute`` (as ``PeriodSeries`` does). For a one-off
+    Subclass to override ``compute`` (as ``Series`` does). For a one-off
     body, use ``KeyedCell`` or ``@KeyedCell.define`` instead.
     """
 
