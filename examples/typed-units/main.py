@@ -16,6 +16,7 @@ from orcaset import (
     exact,
     map2_some,
     ops,
+    period_union,
 )
 
 MODEL_START = date(2025, 12, 31)
@@ -60,11 +61,12 @@ def add_currencies(left: USD, right: EUR) -> USD:
 
 
 # A type checker rejects the incompatible second operand passed to USD.__add__.
-invalid_total = ops.period.map2(
+invalid_total = ops.map2(
     "invalid total",
     usd_revenue,
     eur_revenue,
     fn=map2_some(add_currencies),
+    merge_keys=period_union,
 )
 
 if __name__ == "__main__":

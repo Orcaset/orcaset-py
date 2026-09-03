@@ -186,16 +186,6 @@ def test_sub_and_div():
     assert ctx.get_at(ratio, d) == 2.5
 
 
-def test_domain_ops_supply_date_and_period_merge_policies():
-    d = date(2026, 1, 31)
-    dates = Series.of("Dates", exact, [(d, 2.0)])
-    assert Context().get_at(ops.date.add("Date total", dates, dates), d) == 4.0
-
-    p = month(1)
-    periods = Series.of("Periods", exact, [(p, 3.0)])
-    assert Context().get_at(ops.period.mul("Period product", periods, periods), p) == 9.0
-
-
 def test_fill_substitutes_for_na_sources():
     d1, d2, d3, d4 = date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30)
     a = Series.of("A", exact, [(d1, 1.0), (d2, 2.0)])

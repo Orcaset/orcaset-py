@@ -5,7 +5,7 @@ financials, a circular average-debt interest calculation, sources and uses, retu
 and a two-variable IRR sensitivity.
 
 The model uses `Series.unfold` for recursive operating lines, `Series.of` for finite
-date-keyed cash flows, and domain-bound `ops.period` / `ops.date` constructors for
+date-keyed cash flows, and explicit `period_union` / `date_union` merge policies for
 arithmetic. A local `cumulate` helper uses `scan_cells` to create a running debt balance.
 
 The interest lookup supplies `seed=0.0` and `maybe_abs_distance` at the circular ending

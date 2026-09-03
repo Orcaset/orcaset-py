@@ -18,6 +18,7 @@ from orcaset import (
     Thunk,
     Total,
     accrual,
+    date_union,
     exact_or,
     fixed_width_table,
     get,
@@ -28,6 +29,7 @@ from orcaset import (
     maybe_abs_distance,
     multiply_some,
     ops,
+    period_union,
     scan_cells,
     value_or,
 )
@@ -70,7 +72,7 @@ da: Series[Period, float, Maybe[float]] = Series.unfold(
     seed=next(Period.seq(acquisition_date, year_offset)),
     step=lambda period: (period, annual_da, period.from_end(year_offset)),
 )
-ebit = ops.period.add("EBIT", ebitda, da)
+ebit = ops.add("EBIT", ebitda, da, merge_keys=period_union)
 
 
 def interest_step(
@@ -98,7 +100,7 @@ interest = Series.unfold(
     seed=next(Period.seq(acquisition_date, year_offset)),
     step=interest_step,
 )
-ebt = ops.period.add("EBT", ebit, interest)
+ebt = ops.add("EBT", ebit, interest, merge_keys=period_union)
 taxes = ops.scale("Taxes", ebt, -tax_rate)
 capex = ops.scale("Capex", revenue, -capex_pct_revenue)
 change_in_nwc: Series[Period, float, Maybe[float]] = Series.unfold(
@@ -107,13 +109,14 @@ change_in_nwc: Series[Period, float, Maybe[float]] = Series.unfold(
     seed=next(Period.seq(acquisition_date, year_offset)),
     step=lambda period: (period, -annual_nwc_increase, period.from_end(year_offset)),
 )
-fcf = ops.period.add(
+fcf = ops.add(
     "FCF",
     ebitda,
     taxes,
     interest,
     capex,
     change_in_nwc,
+    merge_keys=period_union,
 )
 
 
@@ -186,10 +189,11 @@ def cumulate[V](
     return balance
 
 
-pre_balloon_debt_flows = ops.date.add(
+pre_balloon_debt_flows = ops.add(
     "Pre-balloon debt flows",
     draws,
     sweep_payments,
+    merge_keys=date_union,
     fill=0.0,
 )
 debt_before_balloon = cumulate("Debt before balloon", pre_balloon_debt_flows)
@@ -205,10 +209,11 @@ balloon_payment = Series.of(
     exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(balloon_value))],
 )
-debt_cash_flows = ops.date.add(
+debt_cash_flows = ops.add(
     "Debt cash flows",
     pre_balloon_debt_flows,
     balloon_payment,
+    merge_keys=date_union,
     fill=0.0,
 )
 debt_balance = cumulate("Debt balance", debt_cash_flows)
@@ -256,12 +261,13 @@ year_end_fcf_payment = Series.of(
     exact_or(0.0),
     [(period.end, Thunk(lambda period=period: fcf_payment(period))) for period in sweep_periods],
 )
-levered_cash_flow = ops.date.add(
+levered_cash_flow = ops.add(
     "Levered cash flow",
     purchase_price,
     exit_value,
     year_end_fcf_payment,
     debt_cash_flows,
+    merge_keys=date_union,
     fill=0.0,
 )
 
