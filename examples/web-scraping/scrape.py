@@ -9,7 +9,7 @@ from datetime import date, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-from orcaset import Cell, Period, Series, Step, accrual, last_key
+from orcaset import Cell, Period, Series, Step, accrual, get
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
@@ -76,10 +76,14 @@ tsa_passengers = Series.from_rule(
 
 
 def find_last_date() -> Step[date]:
-    period = yield from last_key(tsa_passengers.cells)
-    if period is None:
+    node = yield from get(tsa_passengers.cells)
+    if node is None:
         raise RuntimeError("TSA checkpoint series is empty")
-    return period.end
+    while True:
+        next_node = yield from get(node.tail)
+        if next_node is None:
+            return node.key.end
+        node = next_node
 
 
 tsa_last_date = Cell("TSA checkpoint last date", find_last_date)

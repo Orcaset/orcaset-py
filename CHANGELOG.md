@@ -64,8 +64,6 @@ pending a rebuild on the new core.
   and `map2` constructors without a repeated `merge_keys=` argument.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
-- `first_key`, finite-only `last_key`, and bounded `collect_keys` inspect cell
-  chain frontiers without forcing values.
 - `exact_or(default)` and `last_or(default)` build query policies with an
   explicit value for misses.
 - `Context.dependencies(..., structural=False)` and `rule_dependencies` fold
