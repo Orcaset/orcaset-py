@@ -12,8 +12,8 @@ from orcaset import (
     Period,
     Series,
     Thunk,
-    accrual,
-    accrual_or,
+    accrue,
+    accrue_or,
     covered,
     exact,
     exact_or,
@@ -79,16 +79,16 @@ def test_last_never_forces_superseded_cells():
     assert Context().get_at(series, date(2026, 2, 15)) == 110.0
 
 
-def test_accrual_exact_hit_returns_cell_unchanged():
-    series = Series.of("revenue", accrual(YF.cmonthly), [(P1, 100.0), (P2, 200.0)])
+def test_accrue_exact_hit_returns_cell_unchanged():
+    series = Series.of("revenue", accrue(YF.cmonthly), [(P1, 100.0), (P2, 200.0)])
 
     ctx = Context()
     assert ctx.get_at(series, P1) == 100.0
     assert ctx.get_at(series, P2) == 200.0
 
 
-def test_accrual_weights_overlap_by_yf():
-    series = Series.of("revenue", accrual(lambda a, b: (b - a).days), [(Q1, 90.0)])
+def test_accrue_weights_overlap_by_yf():
+    series = Series.of("revenue", accrue(lambda a, b: (b - a).days), [(Q1, 90.0)])
 
     ctx = Context()
     # 31 / 90 of the quarter lands in January.
@@ -97,10 +97,10 @@ def test_accrual_weights_overlap_by_yf():
     assert ctx.get_at(series, Period(P3.start, date(2026, 5, 1))) == 90.0 * 31 / 90
 
 
-def test_accrual_sums_across_multiple_cells():
+def test_accrue_sums_across_multiple_cells():
     series = Series.of(
         "revenue",
-        accrual(lambda a, b: (b - a).days),
+        accrue(lambda a, b: (b - a).days),
         [(P1, 31.0), (P2, 28.0), (P3, 31.0)],
     )
 
@@ -111,15 +111,15 @@ def test_accrual_sums_across_multiple_cells():
     assert ctx.get_at(series, Period(mid_jan, P2.end)) == 31.0 * 16 / 31 + 28.0
 
 
-def test_accrual_returns_na_on_miss():
-    series = Series.of("revenue", accrual(YF.cmonthly), [(P1, 100.0)])
+def test_accrue_returns_na_on_miss():
+    series = Series.of("revenue", accrue(YF.cmonthly), [(P1, 100.0)])
 
     assert Context().get_at(series, P3) is Na
 
 
-def test_accrual_propagates_na_cells():
+def test_accrue_propagates_na_cells():
     series: Series[Period, Maybe[float], Maybe[float]] = Series.of(
-        "revenue", accrual(YF.cmonthly), [(P1, 100.0), (P2, Na)]
+        "revenue", accrue(YF.cmonthly), [(P1, 100.0), (P2, Na)]
     )
 
     ctx = Context()
@@ -128,9 +128,9 @@ def test_accrual_propagates_na_cells():
     assert ctx.get_at(series, P2) is Na
 
 
-def test_accrual_or_fills_na_answers():
+def test_accrue_or_fills_na_answers():
     series: Series[Period, Maybe[float], float] = Series.of(
-        "revenue", accrual_or(YF.cmonthly, 7.0), [(P1, 100.0), (P2, Na)]
+        "revenue", accrue_or(YF.cmonthly, 7.0), [(P1, 100.0), (P2, Na)]
     )
 
     ctx = Context()
@@ -140,13 +140,13 @@ def test_accrual_or_fills_na_answers():
     assert ctx.get_at(series, Period(P1.start, P2.end)) == 7.0
 
 
-def test_accrual_never_forces_cells_outside_query():
+def test_accrue_never_forces_cells_outside_query():
     def poison() -> float:
         raise AssertionError("cell outside the query was forced")
 
     series = Series.of(
         "revenue",
-        accrual(lambda a, b: (b - a).days),
+        accrue(lambda a, b: (b - a).days),
         [(P1, Thunk(poison)), (P2, 20.0), (P3, Thunk(poison))],
     )
 

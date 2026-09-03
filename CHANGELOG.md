@@ -15,6 +15,8 @@ pending a rebuild on the new core.
 
 ### Changed
 
+- Renamed the `accrual(yf)` and `accrual_or(yf, fill)` query builders to
+  `accrue(yf)` and `accrue_or(yf, fill)`.
 - Renamed the effectful generator type from `Step[V]` to `Effect[V]`, and the
   unfold callback type from `UnfoldFn` to `UnfoldStep`.
 
@@ -63,7 +65,7 @@ pending a rebuild on the new core.
   multiplication over a source's own domain.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
-- `exact_or(default)`, `last_or(default)`, and `accrual_or(yf, fill)`, build
+- `exact_or(default)`, `last_or(default)`, and `accrue_or(yf, fill)`, build
   query policies with an explicit value for misses.
 - `Context.dependencies(..., structural=False)` and `rule_dependencies` fold
   internal cell-chain traversal by default; `structural=True` retains the full
@@ -81,7 +83,7 @@ pending a rebuild on the new core.
 - `exact` and `last` are effectful folds over the chain; behavior is
   unchanged (`Na` on a miss; `last` never forces a cell strictly before a
   later candidate).
-- `accrual(yf)` and `covered` are effectful folds over `Cells[Period,
+- `accrue(yf)` and `covered` are effectful folds over `Cells[Period,
   Maybe[float]]` and now propagate `Na` from any contributing cell (an exact
   hit still passes the cell through unchanged). Series with plain `float`
   cells continue to type-check.

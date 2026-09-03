@@ -16,7 +16,7 @@ from orcaset import (
     Series,
     Thunk,
     abs_distance,
-    accrual_or,
+    accrue_or,
     get_at,
     last_or,
 )
@@ -41,7 +41,7 @@ def debt(day: date) -> tuple[date, float | Thunk[float], date]:
 
 
 @Series.define(
-    "Interest", accrual_or(YF.act360, 0.0), seed=Period(MODEL_START, MODEL_START + MONTH)
+    "Interest", accrue_or(YF.act360, 0.0), seed=Period(MODEL_START, MODEL_START + MONTH)
 )
 def interest(period: Period) -> tuple[Period, Thunk[float], Period]:
     def value() -> Effect[float]:

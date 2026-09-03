@@ -71,7 +71,7 @@ def load_frame(url: str, frame: str) -> CitedFloat:
 `Series.define` is the decorator form of `Series.unfold`. The seed is Q2 2026, and each call returns the current period, its value, and the next period.
 
 ```py
-@Series.define("SpaceX revenue", accrual(YF.cmonthly), seed=Q2_2026)
+@Series.define("SpaceX revenue", accrue(YF.cmonthly), seed=Q2_2026)
 def revenue(
     period: Period,
 ) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:

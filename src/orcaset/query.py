@@ -69,7 +69,7 @@ def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     return query
 
 
-def accrual(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
+def accrue(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
     """Build a period query that weights overlapping cells by ``yf``.
 
     An exact key hit returns the cell value unchanged. Otherwise each cell
@@ -86,7 +86,7 @@ def accrual(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
     return query
 
 
-def accrual_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
+def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
     """Build an accrual query that replaces an ``Na`` answer with ``fill``."""
 
     def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[float]:
@@ -123,7 +123,7 @@ def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float
     """Sum cells that exactly tile ``q``; ``Na`` on any gap or partial overlap.
 
     Unlike ``exact``, a query that is the union of adjacent cells is answered.
-    Unlike ``accrual``, a query that cuts through a cell is ``Na``. Any ``Na``
+    Unlike ``accrue``, a query that cuts through a cell is ``Na``. Any ``Na``
     among the tiling cells is ``Na``.
     """
     total = 0.0

@@ -9,7 +9,7 @@ from datetime import date, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-from orcaset import Cell, Effect, Period, Series, accrual, get
+from orcaset import Cell, Effect, Period, Series, accrue, get
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
@@ -17,7 +17,7 @@ _HEADERS = {
     "Accept": "text/html,application/xhtml+xml",
 }
 _ARCHIVE_YEAR = re.compile(r"/travel/passenger-volumes/(\d{4})")
-_BY_DAYS = accrual(lambda start, end: float((end - start).days))
+_BY_DAYS = accrue(lambda start, end: float((end - start).days))
 _FIRST_REPORTING_YEAR = 2026
 
 

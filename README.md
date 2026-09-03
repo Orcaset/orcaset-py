@@ -25,9 +25,9 @@ The block below builds a simple model with revenue, costs, and profit in nine li
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from itertools import islice
-from orcaset import YF, Context, Period, PeriodSeries, Stmt, Total, accrual, fixed_width_table, get_at, isna
+from orcaset import YF, Context, Period, PeriodSeries, Stmt, Total, accrue, fixed_width_table, get_at, isna
 
-@PeriodSeries.define("Revenue", accrual(YF.cmonthly))
+@PeriodSeries.define("Revenue", accrue(YF.cmonthly))
 def revenue() -> Iterable[tuple[Period, float | CellFactory[float]]]:
     for k in Period.seq(date(2026, 1, 1), relativedelta(months=1)):
         

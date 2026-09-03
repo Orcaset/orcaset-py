@@ -17,7 +17,7 @@ from orcaset import (
     Stmt,
     Thunk,
     Total,
-    accrual,
+    accrue,
     date_union,
     exact_or,
     fixed_width_table,
@@ -46,7 +46,7 @@ annual_nwc_increase = 5.0
 tax_rate = 0.4
 purchase_multiple = 5.0
 ltv = 0.6
-ACCRUE = accrual(YF.cmonthly)
+ACCRUE = accrue(YF.cmonthly)
 
 annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 exit_multiple = Cell("Exit multiple", lambda: 5.0)

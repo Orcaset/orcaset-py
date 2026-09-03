@@ -12,7 +12,7 @@ income = ops.add("income", gross_profit, rd, sga, merge_keys=period_union)
 ```
 
 The query function on each series remains responsible for arbitrary-period behavior;
-this model uses `accrual(YF.cmonthly)`.
+this model uses `accrue(YF.cmonthly)`.
 
 ## Run
 

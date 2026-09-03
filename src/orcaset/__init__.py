@@ -25,8 +25,8 @@ from orcaset.maybe import (
 from orcaset.period import Period, date_union, period_union
 from orcaset.query import (
     DayCount,
-    accrual,
-    accrual_or,
+    accrue,
+    accrue_or,
     covered,
     exact,
     exact_or,
@@ -106,8 +106,8 @@ __all__ = [
     "Thunk",
     "UnfoldStep",
     "abs_distance",
-    "accrual",
-    "accrual_or",
+    "accrue",
+    "accrue_or",
     "add_some",
     "append_cells",
     "combine_some",

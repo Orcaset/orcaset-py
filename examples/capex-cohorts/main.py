@@ -14,7 +14,7 @@ from orcaset import (
     Period,
     Series,
     Thunk,
-    accrual,
+    accrue,
     exact,
     get,
     get_at,
@@ -24,7 +24,7 @@ from orcaset import (
 
 YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
-by_days = accrual(lambda start, end: (end - start).days)
+by_days = accrue(lambda start, end: (end - start).days)
 
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
     "capex",
