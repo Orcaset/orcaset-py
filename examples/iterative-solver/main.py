@@ -11,9 +11,9 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
     Context,
+    Effect,
     Period,
     Series,
-    Step,
     Thunk,
     abs_distance,
     accrual_or,
@@ -32,7 +32,7 @@ def debt(day: date) -> tuple[date, float | Thunk[float], date]:
         return day, 100.0, day + MONTH
     period = Period(day - MONTH, day)
 
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         begin = yield from get_at(debt, period.start)
         interest_amt = yield from get_at(interest, period)
         return begin + interest_amt
@@ -44,7 +44,7 @@ def debt(day: date) -> tuple[date, float | Thunk[float], date]:
     "Interest", accrual_or(YF.act360, 0.0), seed=Period(MODEL_START, MODEL_START + MONTH)
 )
 def interest(period: Period) -> tuple[Period, Thunk[float], Period]:
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         begin = yield from get_at(debt, period.start)
         end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
         return (begin + end) * 0.5 * MONTHLY_RATE

@@ -12,10 +12,10 @@ from scrape import tsa_last_date, tsa_passengers
 
 from orcaset import (
     YF,
+    Effect,
     Maybe,
     Period,
     Series,
-    Step,
     Stmt,
     Thunk,
     Total,
@@ -71,7 +71,7 @@ type ForecastState = int | Period
 
 def passenger_step(
     state: ForecastState,
-) -> Step[tuple[Period, float | Thunk[float], ForecastState]]:
+) -> Effect[tuple[Period, float | Thunk[float], ForecastState]]:
     if isinstance(state, int) and state < len(HISTORY):
         period, values = HISTORY[state]
         return period, values["passenger_revenue"], state + 1
@@ -79,7 +79,7 @@ def passenger_step(
     if isinstance(state, int):
         qtd, prior_qtd = qtd_windows(NOWCAST_QUARTER, (yield from get(tsa_last_date)))
 
-        def estimate() -> Step[float]:
+        def estimate() -> Effect[float]:
             prior = yield from get_at(passenger, NOWCAST_QUARTER.shift(-QUARTER))
             current_tsa = yield from get_at(tsa_passengers, qtd)
             prior_tsa = yield from get_at(tsa_passengers, prior_qtd)
@@ -93,7 +93,7 @@ def passenger_step(
 
     period = state
 
-    def hold() -> Step[float]:
+    def hold() -> Effect[float]:
         value = yield from get_at(passenger, NOWCAST_QUARTER)
         if isna(value):
             raise ValueError("missing current-quarter passenger revenue")

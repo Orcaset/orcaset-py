@@ -95,12 +95,12 @@ class Demand[V]:
         self.iterate = iterate
 
 
-type Step[V] = Generator[Demand[Any], Any, V]
+type Effect[V] = Generator[Demand[Any], Any, V]
 """A suspendable computation that yields ``Demand``s and returns a ``V``."""
 
 
 @overload
-def get_at[K: Hashable, V](rule: KeyedRule[K, V], key: K) -> Step[V]: ...
+def get_at[K: Hashable, V](rule: KeyedRule[K, V], key: K) -> Effect[V]: ...
 
 
 @overload
@@ -112,7 +112,7 @@ def get_at[K: Hashable, V](
     distance: Callable[[V, V], float],
     tol: float | None = None,
     max_iter: int | None = None,
-) -> Step[V]: ...
+) -> Effect[V]: ...
 
 
 def get_at[K: Hashable, V](
@@ -123,7 +123,7 @@ def get_at[K: Hashable, V](
     distance: Callable[[V, V], float] | Any = _MISSING,
     tol: float | None = None,
     max_iter: int | None = None,
-) -> Step[V]:
+) -> Effect[V]:
     """Request the value of ``rule`` at ``key`` from within ``compute``.
 
     Use with ``yield from`` so the resolved value keeps its type:
@@ -141,7 +141,7 @@ def get_at[K: Hashable, V](
 
 
 @overload
-def get[V](rule: Rule[V]) -> Step[V]: ...
+def get[V](rule: Rule[V]) -> Effect[V]: ...
 
 
 @overload
@@ -152,7 +152,7 @@ def get[V](
     distance: Callable[[V, V], float],
     tol: float | None = None,
     max_iter: int | None = None,
-) -> Step[V]: ...
+) -> Effect[V]: ...
 
 
 def get[V](
@@ -162,7 +162,7 @@ def get[V](
     distance: Callable[[V, V], float] | Any = _MISSING,
     tol: float | None = None,
     max_iter: int | None = None,
-) -> Step[V]:
+) -> Effect[V]:
     """Request the value of an unkeyed ``Rule`` from within ``compute``.
 
     Use with ``yield from``:
@@ -198,7 +198,7 @@ class Rule[V](_Identity, ABC):
     """
 
     @abstractmethod
-    def compute(self) -> Step[V] | V:
+    def compute(self) -> Effect[V] | V:
         """Compute this rule's value.
 
         Rules with dependencies are written as generators: request other
@@ -223,7 +223,7 @@ class KeyedRule[K: Hashable, V](_Identity, ABC):
     """
 
     @abstractmethod
-    def compute(self, key: K, /) -> Step[V] | V:
+    def compute(self, key: K, /) -> Effect[V] | V:
         """Compute the value of this rule at ``key``.
 
         Same generator conventions as ``Rule.compute``, but keyed. The
@@ -244,25 +244,25 @@ class Cell[V](Rule[V]):
     def __init__(
         self,
         name: str,
-        fn: Callable[[], Step[V] | V],
+        fn: Callable[[], Effect[V] | V],
         *,
         structural: bool = False,
     ) -> None:
         super().__init__(name, structural=structural)
         self.fn = fn
 
-    def compute(self) -> Step[V] | V:
+    def compute(self) -> Effect[V] | V:
         return self.fn()
 
     @classmethod
-    def define[V2](cls, name: str) -> Callable[[Callable[[], Step[V2] | V2]], Cell[V2]]:
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Effect[V2] | V2]], Cell[V2]]:
         """Decorator: build a ``Cell`` from a zero-arg compute function.
 
         The decorated function becomes the cell, so its body can close over
         that name — including ``get`` of itself for a demand cycle.
         """
 
-        def decorator(fn: Callable[[], Step[V2] | V2]) -> Cell[V2]:
+        def decorator(fn: Callable[[], Effect[V2] | V2]) -> Cell[V2]:
             return cls(name, fn)
 
         return decorator
@@ -276,25 +276,25 @@ class KeyedCell[K: Hashable, V](KeyedRule[K, V]):
     ``compute`` needs extra state or methods.
     """
 
-    def __init__(self, name: str, fn: Callable[[K], Step[V] | V]) -> None:
+    def __init__(self, name: str, fn: Callable[[K], Effect[V] | V]) -> None:
         super().__init__(name)
         self.fn = fn
 
-    def compute(self, key: K, /) -> Step[V] | V:
+    def compute(self, key: K, /) -> Effect[V] | V:
         return self.fn(key)
 
     @classmethod
     def define[K2: Hashable, V2](
         cls,
         name: str,
-    ) -> Callable[[Callable[[K2], Step[V2] | V2]], KeyedCell[K2, V2]]:
+    ) -> Callable[[Callable[[K2], Effect[V2] | V2]], KeyedCell[K2, V2]]:
         """Decorator: build a ``KeyedCell`` from a keyed compute function.
 
         The decorated function becomes the cell, so its body can close over
         that name.
         """
 
-        def decorator(fn: Callable[[K2], Step[V2] | V2]) -> KeyedCell[K2, V2]:
+        def decorator(fn: Callable[[K2], Effect[V2] | V2]) -> KeyedCell[K2, V2]:
             return cls(name, fn)
 
         return decorator

@@ -7,11 +7,11 @@ from orcaset import (
     Cell,
     Cells,
     Context,
+    Effect,
     Maybe,
     Na,
     Period,
     Series,
-    Step,
     Thunk,
     date_union,
     exact,
@@ -28,7 +28,7 @@ from orcaset import (
 MONTH = relativedelta(months=1)
 
 
-def covering(q: Period, cells: Cells[Period, float]) -> Step[Maybe[float]]:
+def covering(q: Period, cells: Cells[Period, float]) -> Effect[Maybe[float]]:
     """Test ``QueryFn``: value of the cell whose period contains ``q``."""
     node = yield from get(cells)
     while node is not None:
@@ -41,7 +41,7 @@ def covering(q: Period, cells: Cells[Period, float]) -> Step[Maybe[float]]:
     return Na
 
 
-def prorated(q: Period, cells: Cells[Period, float]) -> Step[Maybe[float]]:
+def prorated(q: Period, cells: Cells[Period, float]) -> Effect[Maybe[float]]:
     """Test ``QueryFn``: day-count share of the covering cell's value."""
     node = yield from get(cells)
     while node is not None:
@@ -329,7 +329,7 @@ def test_neg_cells_answer_from_spine():
     keys = ctx.get(Cell("keys", lambda: keys_until(negated.cells, d)))
     assert keys == [d]
 
-    def first_cell_value() -> Step[Maybe[float]]:
+    def first_cell_value() -> Effect[Maybe[float]]:
         node = yield from get(negated.cells)
         assert node is not None
         return (yield from get(node.cell))

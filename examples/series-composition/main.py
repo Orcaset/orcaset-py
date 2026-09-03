@@ -10,10 +10,10 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
     Context,
+    Effect,
     Maybe,
     Period,
     Series,
-    Step,
     Stmt,
     Thunk,
     Total,
@@ -34,7 +34,7 @@ QUERY = accrual(YF.cmonthly)
 def revenue_step(period: Period) -> tuple[Period, float | Thunk[float], Period]:
     """Each cell is the prior period's answer grown by 1%; seed is 100."""
 
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         prior = yield from get_at(revenue_step, period.from_start(-MONTHLY))
         return prior * 1.01 if not isna(prior) else 100.0
 

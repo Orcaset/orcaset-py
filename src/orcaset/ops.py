@@ -10,7 +10,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from orcaset.maybe import Maybe, Na, isna, map_some
-from orcaset.rule import Step, get, get_at
+from orcaset.rule import Effect, get, get_at
 from orcaset.series import Cells, Key, KeyMerge, Series, Thunk, merge_cells, unfold_cells
 
 type _Source[K: Key] = Series[K, Any, Maybe[float]]
@@ -37,13 +37,13 @@ def combine[K: Key](
         raise ValueError("combine requires at least one source series")
     sources = tuple(sources)
 
-    def values_at(key: K) -> Step[Maybe[float]]:
+    def values_at(key: K) -> Effect[Maybe[float]]:
         values: list[Maybe[float]] = []
         for source in sources:
             values.append((yield from get_at(source, key)))
         return fn(values)
 
-    def query(q: K, _cells: Cells[K, Maybe[float]]) -> Step[Maybe[float]]:
+    def query(q: K, _cells: Cells[K, Maybe[float]]) -> Effect[Maybe[float]]:
         return (yield from values_at(q))
 
     def cell(key: K) -> Thunk[Maybe[float]]:
@@ -66,14 +66,14 @@ def map_values[K: Key, W, T](
     and queries both honor the source's own query semantics.
     """
 
-    def value_at(key: K) -> Step[T]:
+    def value_at(key: K) -> Effect[T]:
         value = yield from get_at(source, key)
         return fn(value)
 
-    def query(q: K, _cells: Cells[K, T]) -> Step[T]:
+    def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
         return (yield from value_at(q))
 
-    def step(cells: Cells[K, Any]) -> Step[tuple[K, Thunk[T], Cells[K, Any]] | None]:
+    def step(cells: Cells[K, Any]) -> Effect[tuple[K, Thunk[T], Cells[K, Any]] | None]:
         node = yield from get(cells)
         if node is None:
             return None
@@ -92,12 +92,12 @@ def map2[K: Key, A, B, C](
 ) -> Series[K, Maybe[C], Maybe[C]]:
     """Map ``fn`` over two series across their lazily merged domain."""
 
-    def value_at(key: K) -> Step[Maybe[C]]:
+    def value_at(key: K) -> Effect[Maybe[C]]:
         left_value = yield from get_at(left, key)
         right_value = yield from get_at(right, key)
         return fn(left_value, right_value)
 
-    def query(q: K, _cells: Cells[K, Maybe[C]]) -> Step[Maybe[C]]:
+    def query(q: K, _cells: Cells[K, Maybe[C]]) -> Effect[Maybe[C]]:
         return (yield from value_at(q))
 
     def cell(key: K) -> Thunk[Maybe[C]]:

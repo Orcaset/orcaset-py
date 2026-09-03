@@ -13,6 +13,11 @@ The series core has been rebuilt on a lazy cons-chain representation. The
 period/date convenience layers, statements, and formatters have been removed
 pending a rebuild on the new core.
 
+### Changed
+
+- Renamed the effectful generator type from `Step[V]` to `Effect[V]`, and the
+  unfold callback type from `UnfoldFn` to `UnfoldStep`.
+
 ### Added
 
 - `Cons(key, cell, tail)` and `Cells[K, V]` (a `Rule` resolving the first
@@ -20,7 +25,7 @@ pending a rebuild on the new core.
   other rules, so value-dependent domains are legal anywhere in a walk and
   exhaustion is an explicit `None`.
 - `unfold_cells(name, seed=, step=)` builds a chain from a state-stepping
-  function (`UnfoldFn`), replacing loop-variable capture with parameter
+  function (`UnfoldStep`), replacing loop-variable capture with parameter
   passing. Keys must be strictly ascending; violations raise `ValueError`.
 - `map_cells(name, source, fn)` transforms cells one-for-one without forcing
   their values; `scan_cells(name, source, seed=, fn=)` additionally carries

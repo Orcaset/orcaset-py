@@ -9,10 +9,10 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     Context,
+    Effect,
     Maybe,
     Period,
     Series,
-    Step,
     Thunk,
     accrual,
     exact,
@@ -41,7 +41,7 @@ def build_cohort(source_key: Period) -> Cohort:
 
     periods = list(Period.seq(source_key.end, YEAR, source_key.end + YEAR * 2))
 
-    def depreciation() -> Step[float]:
+    def depreciation() -> Effect[float]:
         spend = yield from get_at(capex, source_key)
         if isna(spend):
             raise ValueError(f"missing capex for {source_key}")
@@ -65,7 +65,7 @@ cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
 )
 
 
-def sum_cohorts_at_period(period: Period) -> Step[float]:
+def sum_cohorts_at_period(period: Period) -> Effect[float]:
     total = 0.0
     node = yield from get(cohort_schedules.cells)
     while node is not None:

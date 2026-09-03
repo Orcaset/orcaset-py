@@ -11,10 +11,10 @@ from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
     Context,
+    Effect,
     Maybe,
     Period,
     Series,
-    Step,
     Stmt,
     Thunk,
     covered,
@@ -38,7 +38,7 @@ def forecast_cells(last: Period | None):
         raise ValueError("revenue history must not be empty")
 
     def step(period: Period) -> tuple[Period, Thunk[float], Period]:
-        def value() -> Step[float]:
+        def value() -> Effect[float]:
             if period.start == last.end:
                 prior = yield from get_at(hist_revenue, last)
                 if isna(prior):

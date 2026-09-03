@@ -6,13 +6,25 @@
 import json
 from dataclasses import dataclass
 from datetime import date
-from typing import Self, assert_type
+from typing import Self
 from urllib.request import Request, urlopen
 
 from dateutil.relativedelta import relativedelta
 
-from orcaset import YF, Context, Maybe, Period, Series, Step, Thunk, accrual, get_at, isna
+from orcaset import (
+    YF,
+    Context,
+    Effect,
+    Maybe,
+    Period,
+    Series,
+    Thunk,
+    accrual,
+    get_at,
+    multiply_some,
+)
 
+# ---- Assumptions ----
 CONCEPT_URL = (
     "https://data.sec.gov/api/xbrl/companyconcept/"
     "CIK0001181412/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json"
@@ -26,6 +38,7 @@ _HEADERS = {
 }
 
 
+# ---- Type definitions to hold provenance information ----
 @dataclass(frozen=True, slots=True)
 class EdgarCitation:
     accn: str
@@ -37,7 +50,7 @@ class EdgarCitation:
 
 
 class CitedFloat(float):
-    """A float carrying EDGAR provenance; arithmetic returns a plain float."""
+    """A float carrying EDGAR provenance. Arithmetic operations return a plain float."""
 
     citation: EdgarCitation
     __slots__ = ("citation",)
@@ -57,6 +70,7 @@ class CitedFloat(float):
         return str(self) if spec == "" else format(float(self), spec)
 
 
+# ---- Helper function to load data from EDGAR ----
 def load_frame(url: str, frame: str) -> CitedFloat:
     with urlopen(Request(url, headers=_HEADERS), timeout=30.0) as response:
         payload: object = json.load(response)
@@ -65,26 +79,21 @@ def load_frame(url: str, frame: str) -> CitedFloat:
     return CitedFloat(float(fact["val"]), EdgarCitation(fact["accn"], frame, url))
 
 
-def revenue_step(period: Period) -> tuple[Period, float | Thunk[float], Period]:
+# ---- Model definition ----
+@Series.define("SpaceX revenue", accrual(YF.cmonthly), seed=Q2_2026)
+def revenue(
+    period: Period,
+) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:
     if period == Q2_2026:
-        value: float | Thunk[float] = Thunk(lambda: load_frame(CONCEPT_URL, FRAME))
+        value = Thunk(lambda: load_frame(CONCEPT_URL, FRAME))
     else:
+        prior = yield from get_at(revenue, period.from_start(-QUARTER))
+        value = multiply_some((prior, 1.10))
 
-        def grow() -> Step[float]:
-            prior = yield from get_at(revenue, period.from_start(-QUARTER))
-            if isna(prior):
-                raise ValueError(f"missing prior revenue for {period}")
-            return prior * 1.10
-
-        value = Thunk(grow)
     return period, value, period.from_end(QUARTER)
 
 
-revenue: Series[Period, float, Maybe[float]] = Series.unfold(
-    "SpaceX revenue", accrual(YF.cmonthly), seed=Q2_2026, step=revenue_step
-)
-assert_type(revenue, Series[Period, float, Maybe[float]])
-
+# ---- Output ----
 ctx = Context()
 for period in Period.seq(Q2_2026.start, QUARTER, date(2026, 12, 31)):
     print(f"{period} revenue: {ctx.get_at(revenue, period):,.0f}")

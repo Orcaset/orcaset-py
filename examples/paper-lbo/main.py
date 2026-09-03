@@ -8,12 +8,12 @@ from orcaset import (
     YF,
     Cell,
     Context,
+    Effect,
     Group,
     Maybe,
     Period,
     Rule,
     Series,
-    Step,
     Stmt,
     Thunk,
     Total,
@@ -54,7 +54,7 @@ exit_multiple = Cell("Exit multiple", lambda: 5.0)
 
 @Series.define("Revenue", ACCRUE, seed=next(Period.seq(acquisition_date, year_offset)))
 def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         prior = yield from get_at(revenue_step, period.from_start(-year_offset))
         if isna(prior):
             return initial_revenue
@@ -81,7 +81,7 @@ def interest_step(
     if period.start >= acquisition_date + hold_period:
         return None
 
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         beginning = yield from get_at(debt_before_balloon, period.start)
         ending = yield from get_at(
             debt_before_balloon,
@@ -120,7 +120,7 @@ fcf = ops.add(
 )
 
 
-def draw_value() -> Step[Maybe[float]]:
+def draw_value() -> Effect[Maybe[float]]:
     ntm_ebitda = yield from get_at(ebitda, Period(acquisition_date, acquisition_date + year_offset))
     return multiply_some((ntm_ebitda, purchase_multiple, ltv))
 
@@ -138,7 +138,7 @@ def debt_sweep_step(
     if period.start >= acquisition_date + hold_period:
         return None
 
-    def value() -> Step[float]:
+    def value() -> Effect[float]:
         beginning = yield from get_at(debt_before_balloon, period.start)
         free_cash_flow = yield from get_at(fcf, period)
         if isna(beginning) or isna(free_cash_flow):
@@ -156,7 +156,7 @@ debt_sweep = Series.unfold(
 )
 
 
-def payment(period: Period) -> Step[float]:
+def payment(period: Period) -> Effect[float]:
     return value_or((yield from get_at(debt_sweep, period)), 0.0)
 
 
@@ -176,7 +176,7 @@ def cumulate[V](
         day: date,
         _flow: Rule[V],
     ) -> tuple[Thunk[Maybe[float]], date]:
-        def value() -> Step[Maybe[float]]:
+        def value() -> Effect[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
             flow = yield from get_at(flows, day)
             if isna(prior):
@@ -199,7 +199,7 @@ pre_balloon_debt_flows = ops.add(
 debt_before_balloon = cumulate("Debt before balloon", pre_balloon_debt_flows)
 
 
-def balloon_value() -> Step[float]:
+def balloon_value() -> Effect[float]:
     remaining = yield from get_at(debt_before_balloon, acquisition_date + hold_period)
     return -value_or(remaining, 0.0)
 
@@ -219,7 +219,7 @@ debt_cash_flows = ops.add(
 debt_balance = cumulate("Debt balance", debt_cash_flows)
 
 
-def purchase_price_value() -> Step[Maybe[float]]:
+def purchase_price_value() -> Effect[Maybe[float]]:
     entry_ebitda = yield from get_at(
         ebitda, Period(acquisition_date, acquisition_date + year_offset)
     )
@@ -233,7 +233,7 @@ purchase_price = Series.of(
 )
 
 
-def exit_value_fn() -> Step[Maybe[float]]:
+def exit_value_fn() -> Effect[Maybe[float]]:
     exit_ebitda = yield from get_at(
         ebitda,
         Period(
@@ -252,7 +252,7 @@ exit_value = Series.of(
 )
 
 
-def fcf_payment(period: Period) -> Step[float]:
+def fcf_payment(period: Period) -> Effect[float]:
     return value_or((yield from get_at(fcf, period)), 0.0)
 
 

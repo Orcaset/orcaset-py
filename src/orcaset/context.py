@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass, field
 from typing import Any, NoReturn, cast
 
-from orcaset.rule import _UNIT, Iterate, KeyedRule, Rule, Step
+from orcaset.rule import _UNIT, Effect, Iterate, KeyedRule, Rule
 
 type RuleKey = tuple[int, Hashable]
 type Target = KeyedRule[Any, Any] | Rule[Any]
@@ -140,7 +140,7 @@ def _history_lines(values: tuple[Any, ...], residuals: tuple[float, ...]) -> lis
     ]
 
 
-def _completed(value: Any) -> Step[Any]:
+def _completed(value: Any) -> Effect[Any]:
     """A step that immediately completes with `value`."""
     return value
     yield  # unreachable; makes this function a generator
@@ -201,7 +201,7 @@ class Context:
         self,
         target: Target,
         key: Hashable,
-        compute: Callable[[], Step[V] | V],
+        compute: Callable[[], Effect[V] | V],
     ) -> V:
         cell: RuleKey = (target.id, key)
         self._targets[target.id] = target
@@ -221,7 +221,7 @@ class Context:
         # component can cut it; the scheduler iterates until every seeded
         # cell observed this iteration is within its tolerance.
         stack_start = len(self._stack)
-        frames: list[Step[Any]] = []
+        frames: list[Effect[Any]] = []
         self._push(cell, compute(), frames)
         to_send: Any = None
         try:
@@ -260,7 +260,7 @@ class Context:
 
         return cast(V, self._compute_cache[cell])
 
-    def _push(self, cell: RuleKey, result: Step[Any] | Any, frames: list[Step[Any]]) -> None:
+    def _push(self, cell: RuleKey, result: Effect[Any] | Any, frames: list[Effect[Any]]) -> None:
         self._stack.append(cell)
         self._on_stack.add(cell)
         if isinstance(result, Generator):
@@ -272,7 +272,7 @@ class Context:
         self,
         child: RuleKey,
         iterate: Iterate[Any] | None,
-        frames: list[Step[Any]],
+        frames: list[Effect[Any]],
         stack_start: int,
     ) -> Any:
         cycle_start = self._stack.index(child)
@@ -306,7 +306,7 @@ class Context:
             specs[back_edge_target] = back_edge_iterate
         return specs
 
-    def _unwind(self, cycle_start: int, frames: list[Step[Any]]) -> None:
+    def _unwind(self, cycle_start: int, frames: list[Effect[Any]]) -> None:
         while len(self._stack) > cycle_start:
             frames[-1].close()
             frames.pop()
@@ -525,7 +525,7 @@ class Context:
         self._deps.setdefault(consumer, set()).add(dependency)
 
 
-def _start(target: Target, key: Hashable) -> Step[Any] | Any:
+def _start(target: Target, key: Hashable) -> Effect[Any] | Any:
     if isinstance(target, Rule):
         return target.compute()
     return target.compute(key)

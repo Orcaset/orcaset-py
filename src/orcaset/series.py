@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator, Hashable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, Self
 
-from orcaset.rule import Cell, KeyedRule, Rule, Step, get
+from orcaset.rule import Cell, Effect, KeyedRule, Rule, get
 
 
 class Key(Hashable, Protocol):
@@ -32,7 +32,7 @@ class Thunk[V]:
 
     __slots__ = ("fn",)
 
-    def __init__(self, fn: Callable[[], Step[V] | V]) -> None:
+    def __init__(self, fn: Callable[[], Effect[V] | V]) -> None:
         self.fn = fn
 
 
@@ -51,13 +51,13 @@ class Cons[K: Key, V]:
 
 
 type Cells[K: Key, V] = Rule[Cons[K, V] | None]
-type UnfoldFn[S, K: Key, V] = Callable[
+type UnfoldStep[S, K: Key, V] = Callable[
     [S],
-    Step[tuple[K, V | Thunk[V], S] | None] | tuple[K, V | Thunk[V], S] | None,
+    Effect[tuple[K, V | Thunk[V], S] | None] | tuple[K, V | Thunk[V], S] | None,
 ]
 """Produce a cell and next state from an unfold state, or end the chain."""
 
-type QueryFn[K: Key, V, W] = Callable[[K, Cells[K, V]], Step[W] | W]
+type QueryFn[K: Key, V, W] = Callable[[K, Cells[K, V]], Effect[W] | W]
 """Fold a query over a cell chain, with optional early termination."""
 
 type KeyMerge[K: Key] = Callable[[K, K], tuple[K, K | None, K | None]]
@@ -83,8 +83,8 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         """The rule resolving the first node of this series."""
         return self._cells
 
-    def compute(self, q: K, /) -> Step[W]:
-        return (yield from _as_step(self._query(q, self._cells)))
+    def compute(self, q: K, /) -> Effect[W]:
+        return (yield from _as_effect(self._query(q, self._cells)))
 
     @classmethod
     def unfold[S](
@@ -93,7 +93,7 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         query: QueryFn[K, V, W],
         *,
         seed: S,
-        step: UnfoldFn[S, K, V],
+        step: UnfoldStep[S, K, V],
     ) -> Series[K, V, W]:
         """Build a series by repeatedly applying ``step`` to an evolving state."""
         return cls(name, unfold_cells(name, seed=seed, step=step), query)
@@ -147,10 +147,10 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         query: QueryFn[K, V, W],
         *,
         seed: S,
-    ) -> Callable[[UnfoldFn[S, K, V]], Series[K, V, W]]:
+    ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]:
         """Decorator form of ``unfold`` for self-referential series bodies."""
 
-        def decorator(step: UnfoldFn[S, K, V]) -> Series[K, V, W]:
+        def decorator(step: UnfoldStep[S, K, V]) -> Series[K, V, W]:
             return cls.unfold(name, query, seed=seed, step=step)
 
         return decorator
@@ -165,17 +165,17 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         series_name: str,
         prev_key: K | None,
         state: S,
-        step: UnfoldFn[S, K, V],
+        step: UnfoldStep[S, K, V],
     ) -> None:
         name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
         super().__init__(name, structural=True)
         self._series_name = series_name
         self._prev_key = prev_key
         self._state = state
-        self._step = step
+        self._unfold_step = step
 
-    def compute(self) -> Step[Cons[K, V] | None]:
-        result = yield from _as_step(self._step(self._state))
+    def compute(self) -> Effect[Cons[K, V] | None]:
+        result = yield from _as_effect(self._unfold_step(self._state))
         if result is None:
             return None
         key, value, next_state = result
@@ -186,7 +186,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         return Cons(
             key,
             Cell(f"{self._series_name}@{key}", _cell_fn(value), structural=True),
-            _UnfoldRule(self._series_name, key, next_state, self._step),
+            _UnfoldRule(self._series_name, key, next_state, self._unfold_step),
         )
 
 
@@ -194,7 +194,7 @@ def unfold_cells[S, K: Key, V](
     name: str,
     *,
     seed: S,
-    step: UnfoldFn[S, K, V],
+    step: UnfoldStep[S, K, V],
 ) -> Cells[K, V]:
     """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation."""
     return _UnfoldRule(name, None, seed, step)
@@ -207,7 +207,7 @@ def map_cells[K: Key, A, B](
 ) -> Cells[K, B]:
     """Map cells one-for-one without forcing their values."""
 
-    def step(cells: Cells[K, A]) -> Step[tuple[K, B | Thunk[B], Cells[K, A]] | None]:
+    def step(cells: Cells[K, A]) -> Effect[tuple[K, B | Thunk[B], Cells[K, A]] | None]:
         node = yield from get(cells)
         if node is None:
             return None
@@ -227,7 +227,7 @@ def scan_cells[K: Key, A, S, B](
 
     def step(
         state: tuple[Cells[K, A], S],
-    ) -> Step[tuple[K, B | Thunk[B], tuple[Cells[K, A], S]] | None]:
+    ) -> Effect[tuple[K, B | Thunk[B], tuple[Cells[K, A], S]] | None]:
         cells, acc = state
         node = yield from get(cells)
         if node is None:
@@ -259,7 +259,7 @@ class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
         self._source = source
         self._cont = cont
 
-    def compute(self) -> Step[Cons[K, V] | None]:
+    def compute(self) -> Effect[Cons[K, V] | None]:
         node = yield from get(self._source)
         if node is not None:
             return Cons(
@@ -326,7 +326,7 @@ def merge_cells[K: Key, V](
 
     def step(
         frontiers: tuple[_Frontier[K], ...],
-    ) -> Step[tuple[K, V | Thunk[V], tuple[_Frontier[K], ...]] | None]:
+    ) -> Effect[tuple[K, V | Thunk[V], tuple[_Frontier[K], ...]] | None]:
         refilled: list[_Frontier[K]] = []
         for pending, tail in frontiers:
             if pending is None and tail is not None:
@@ -362,7 +362,7 @@ def merge_cells[K: Key, V](
     return unfold_cells(name, seed=seed, step=step)
 
 
-def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Step[V] | V]:
+def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Effect[V] | V]:
     if isinstance(value, Thunk):
         return value.fn
     if isinstance(value, Generator):
@@ -372,12 +372,12 @@ def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Step[V] | V]:
     return lambda value=value: value
 
 
-def _as_step[V](value: Step[V] | V) -> Step[V]:
-    """Normalize plain and generator return values to a ``Step``."""
+def _as_effect[V](value: Effect[V] | V) -> Effect[V]:
+    """Normalize plain and generator return values to an ``Effect``."""
     if isinstance(value, Generator):
         return value
 
-    def completed() -> Step[V]:
+    def completed() -> Effect[V]:
         if False:
             yield
         return value
@@ -385,7 +385,7 @@ def _as_step[V](value: Step[V] | V) -> Step[V]:
     return completed()
 
 
-def keys_until[K: Key, V](cells: Cells[K, V], stop: K) -> Step[list[K]]:
+def keys_until[K: Key, V](cells: Cells[K, V], stop: K) -> Effect[list[K]]:
     """Collect keys through ``stop`` without forcing cells or a past frontier."""
     keys: list[K] = []
     node = yield from get(cells)
