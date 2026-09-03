@@ -23,7 +23,16 @@ from orcaset.maybe import (
     value_or,
 )
 from orcaset.period import Period, date_union, period_union
-from orcaset.query import DayCount, accrual, covered, exact, exact_or, last, last_or
+from orcaset.query import (
+    DayCount,
+    accrual,
+    accrual_or,
+    covered,
+    exact,
+    exact_or,
+    last,
+    last_or,
+)
 from orcaset.rule import (
     Cell,
     Demand,
@@ -98,6 +107,7 @@ __all__ = [
     "UnfoldFn",
     "abs_distance",
     "accrual",
+    "accrual_or",
     "add_some",
     "append_cells",
     "combine_some",

@@ -62,8 +62,8 @@ pending a rebuild on the new core.
   and `map2` constructors without a repeated `merge_keys=` argument.
 - `keys_until(cells, stop)` collects keys through `stop` without forcing
   cells or a past frontier.
-- `exact_or(default)` and `last_or(default)` build query policies with an
-  explicit value for misses.
+- `exact_or(default)`, `last_or(default)`, and `accrual_or(yf, fill)`, build
+  query policies with an explicit value for misses.
 - `Context.dependencies(..., structural=False)` and `rule_dependencies` fold
   internal cell-chain traversal by default; `structural=True` retains the full
   scheduler-level tree.
@@ -97,9 +97,6 @@ pending a rebuild on the new core.
 - `PeriodSeries`, `PeriodSeriesBase`, `PeriodMapSeries`, `PeriodMap2Series`,
   `PeriodExtendSeries`, `DateSeries`, `DateSeriesBase`, `DateMapSeries`,
   `DateMap2Series`, `DateExtendSeries`, and the `scan`/`paired` transforms.
-- `exact_or` and `accrual_or`. Misses answer `Na` and propagate; substituting
-  a default belongs at the point of use (`value_or`, `ops.filled`), not in the
-  query.
 - `Stmt`, `Group`, `Total`, `StatementResult`, the `*Row`/`*Value` types, and
   the `formatters` module (`fixed_width_table`, `markdown_table`, `csv_table`,
   `ValueFormatter`, `DateFormatter`).

@@ -9,22 +9,25 @@ from itertools import islice
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
+    YF,
     Context,
     Period,
     Series,
     Step,
     Thunk,
     abs_distance,
-    exact_or,
+    accrual_or,
     get_at,
+    last_or,
 )
 
 MODEL_START = date(2025, 12, 31)
 MONTH = relativedelta(months=1, day=31)
-RATE = 0.10
+MONTHLY_RATE = 0.10
 
 
-def debt_step(day: date) -> tuple[date, float | Thunk[float], date]:
+@Series.define("Debt", last_or(0.0), seed=MODEL_START)
+def debt(day: date) -> tuple[date, float | Thunk[float], date]:
     if day == MODEL_START:
         return day, 100.0, day + MONTH
     period = Period(day - MONTH, day)
@@ -37,20 +40,17 @@ def debt_step(day: date) -> tuple[date, float | Thunk[float], date]:
     return day, Thunk(value), day + MONTH
 
 
-debt = Series.unfold("Debt", exact_or(0.0), seed=MODEL_START, step=debt_step)
-
-
-@Series.define("Interest", exact_or(0.0), seed=next(Period.seq(MODEL_START, MONTH)))
-def interest_step(period: Period) -> tuple[Period, Thunk[float], Period]:
+@Series.define(
+    "Interest", accrual_or(YF.act360, 0.0), seed=Period(MODEL_START, MODEL_START + MONTH)
+)
+def interest(period: Period) -> tuple[Period, Thunk[float], Period]:
     def value() -> Step[float]:
         begin = yield from get_at(debt, period.start)
         end = yield from get_at(debt, period.end, seed=0.0, distance=abs_distance)
-        return RATE * 0.5 * (begin + end)
+        return (begin + end) * 0.5 * MONTHLY_RATE
 
     return period, Thunk(value), period.from_end(MONTH)
 
-
-interest = interest_step
 
 if __name__ == "__main__":
     ctx = Context()

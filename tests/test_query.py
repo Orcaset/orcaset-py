@@ -13,6 +13,7 @@ from orcaset import (
     Series,
     Thunk,
     accrual,
+    accrual_or,
     covered,
     exact,
     exact_or,
@@ -125,6 +126,18 @@ def test_accrual_propagates_na_cells():
     assert isna(ctx.get_at(series, Period(P1.start, P2.end)))
     # An exact hit passes the cell through, Na included.
     assert ctx.get_at(series, P2) is Na
+
+
+def test_accrual_or_fills_na_answers():
+    series: Series[Period, Maybe[float], float] = Series.of(
+        "revenue", accrual_or(YF.cmonthly, 7.0), [(P1, 100.0), (P2, Na)]
+    )
+
+    ctx = Context()
+    assert ctx.get_at(series, P1) == 100.0
+    assert ctx.get_at(series, P2) == 7.0
+    assert ctx.get_at(series, P3) == 7.0
+    assert ctx.get_at(series, Period(P1.start, P2.end)) == 7.0
 
 
 def test_accrual_never_forces_cells_outside_query():

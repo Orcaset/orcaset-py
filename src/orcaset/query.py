@@ -81,29 +81,44 @@ def accrual(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
     """
 
     def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Step[Maybe[float]]:
-        total = 0.0
-        hit = False
-        node = yield from get(cells)
-        while node is not None:
-            k = node.key
-            if k < q:
-                node = yield from get(node.tail)
-                continue
-            if q < k:
-                break
-            value = yield from get(node.cell)
-            if k == q:
-                return value
-            if isna(value):
-                return Na
-            overlap_start = max(k.start, q.start)
-            overlap_end = min(k.end, q.end)
-            total += value * (yf(overlap_start, overlap_end) / yf(k.start, k.end))
-            hit = True
-            node = yield from get(node.tail)
-        return total if hit else Na
+        return (yield from _accrue(q, cells, yf))
 
     return query
+
+
+def accrual_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
+    """Build an accrual query that replaces an ``Na`` answer with ``fill``."""
+
+    def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Step[float]:
+        return value_or((yield from _accrue(q, cells, yf)), fill)
+
+    return query
+
+
+def _accrue(
+    q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount
+) -> Step[Maybe[float]]:
+    total = 0.0
+    hit = False
+    node = yield from get(cells)
+    while node is not None:
+        k = node.key
+        if k < q:
+            node = yield from get(node.tail)
+            continue
+        if q < k:
+            break
+        value = yield from get(node.cell)
+        if k == q:
+            return value
+        if isna(value):
+            return Na
+        overlap_start = max(k.start, q.start)
+        overlap_end = min(k.end, q.end)
+        total += value * (yf(overlap_start, overlap_end) / yf(k.start, k.end))
+        hit = True
+        node = yield from get(node.tail)
+    return total if hit else Na
 
 
 def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Step[Maybe[float]]:
