@@ -141,24 +141,6 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         return cls.unfold(name, query, seed=0, step=step)
 
     @classmethod
-    def from_rule(
-        cls,
-        name: str,
-        query: QueryFn[K, V, W],
-        pairs: Rule[Sequence[tuple[K, V | Thunk[V]]]],
-    ) -> Series[K, V, W]:
-        """Build a finite series from a lazily resolved sequence of pairs."""
-
-        def step(index: int) -> Step[tuple[K, V | Thunk[V], int] | None]:
-            resolved = yield from get(pairs)
-            if index == len(resolved):
-                return None
-            key, value = resolved[index]
-            return key, value, index + 1
-
-        return cls.unfold(name, query, seed=0, step=step)
-
-    @classmethod
     def define[S](
         cls,
         name: str,

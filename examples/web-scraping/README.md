@@ -5,9 +5,9 @@ prior-quarter-to-date traffic to nowcast Southwest Airlines passenger revenue. F
 and other revenue are held at their last reported values.
 
 The scrape is part of the model rather than a preprocessing step. `tsa_passengers` uses
-`Series.from_rule` with a `Cell` that downloads all rows on first structural demand.
-The context caches those rows, so later tails reuse them. A separate
-`Cell` walks to the final observed date, and the passenger nowcast depends on that cell.
+`Series.unfold` to download all rows on first structural demand and carry them through
+the remaining unfold states. A separate `Cell` walks to the final observed date, and
+the passenger nowcast depends on that cell.
 
 Values and chain nodes are cached within a `Context`. A fresh context evaluates the
 model again and therefore performs a fresh scrape.

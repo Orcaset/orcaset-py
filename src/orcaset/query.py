@@ -95,9 +95,7 @@ def accrual_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float
     return query
 
 
-def _accrue(
-    q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount
-) -> Step[Maybe[float]]:
+def _accrue(q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount) -> Step[Maybe[float]]:
     total = 0.0
     hit = False
     node = yield from get(cells)

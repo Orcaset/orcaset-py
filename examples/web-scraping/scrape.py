@@ -68,10 +68,24 @@ def checkpoint_pairs() -> list[tuple[Period, float]]:
     ]
 
 
-tsa_passengers = Series.from_rule(
+type CheckpointState = None | tuple[list[tuple[Period, float]], int]
+
+
+def checkpoint_step(
+    state: CheckpointState,
+) -> tuple[Period, float, CheckpointState] | None:
+    pairs, index = (checkpoint_pairs(), 0) if state is None else state
+    if index == len(pairs):
+        return None
+    period, count = pairs[index]
+    return period, count, (pairs, index + 1)
+
+
+tsa_passengers = Series.unfold(
     "TSA checkpoint passengers",
     _BY_DAYS,
-    Cell("TSA checkpoint rows", checkpoint_pairs),
+    seed=None,
+    step=checkpoint_step,
 )
 
 

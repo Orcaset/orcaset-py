@@ -196,24 +196,6 @@ def test_thunk_and_plain_values():
         Context().get_at(bad, date(2024, 1, 31))
 
 
-def test_from_rule_resolves_pairs_lazily_once_per_context():
-    calls: list[bool] = []
-
-    def pairs() -> list[tuple[date, float]]:
-        calls.append(True)
-        return [(date(2024, 1, 31), 1.0), (date(2024, 2, 29), 2.0)]
-
-    source = Cell("Pairs", pairs)
-    series = Series.from_rule("From rule", exact, source)
-    assert calls == []
-
-    ctx = Context()
-    assert ctx.get_at(series, date(2024, 2, 29)) == 2.0
-    assert calls == [True]
-    assert ctx.get_at(series, date(2024, 1, 31)) == 1.0
-    assert calls == [True]
-
-
 def test_map_cells_preserves_keys_and_defers_source_values():
     forced: list[float] = []
 
