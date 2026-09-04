@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Append a monthly forecast to a finite quarterly history."""
+"""Extend a seris of quarterly historicals with a monthly forecaset."""
 
 from datetime import date
 from itertools import islice
@@ -10,68 +10,72 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
+    Cell,
+    Cells,
+    Cons,
     Context,
     Effect,
     Maybe,
     Period,
+    Rule,
     Series,
     Stmt,
-    Thunk,
-    covered,
+    accrue,
     fixed_width_table,
-    get_at,
+    get,
     isna,
 )
 
 MONTHLY = relativedelta(months=1)
-HISTORICAL: list[tuple[Period, float]] = [
+MONTHLY_GROWTH_RATE = 0.10
+
+# ---- Historical series ----
+HISTORICAL = [
     (Period(date(2025, 1, 1), date(2025, 4, 1)), 300.0),
     (Period(date(2025, 4, 1), date(2025, 7, 1)), 330.0),
     (Period(date(2025, 7, 1), date(2025, 10, 1)), 363.0),
 ]
 
-hist_revenue = Series.of("hist_revenue", covered, HISTORICAL)
+accrue_monthly = accrue(YF.cmonthly)
+hist_revenue = Series.of("hist_revenue", accrue_monthly, HISTORICAL)
 
 
-def forecast_cells(last: Period | None):
-    if last is None:
-        raise ValueError("revenue history must not be empty")
+# ---- Forecast series ----
+def grow(period: Period, prior: Rule[float]) -> Cells[Period, float]:
 
-    def step(period: Period) -> tuple[Period, Thunk[float], Period]:
+    def node() -> Cons[Period, float]:
         def value() -> Effect[float]:
-            if period.start == last.end:
-                prior = yield from get_at(hist_revenue, last)
-                if isna(prior):
-                    raise ValueError(f"missing last historical revenue {last}")
-                run_rate = (
-                    prior
-                    * YF.cmonthly(period.start, period.end)
-                    / YF.cmonthly(last.start, last.end)
-                )
-                return run_rate * 1.01
-            prior = yield from get_at(forecast, period.from_start(-MONTHLY))
-            if isna(prior):
-                raise ValueError(f"missing prior forecast revenue for {period}")
-            return prior * 1.01
+            return (yield from get(prior)) * (1 + MONTHLY_GROWTH_RATE)
 
-        return period, Thunk(value), period.from_end(MONTHLY)
+        this = Cell(f"forecast_revenue@{period}", value)
+        return Cons(period, this, grow(period.from_end(MONTHLY), this))
 
-    forecast = Series.unfold(
-        "forecast_revenue",
-        covered,
-        seed=next(Period.seq(last.end, MONTHLY)),
-        step=step,
-    )
-    return forecast.cells
+    return Cell(f"forecast_revenue.tail@{period}", node, structural=True)
 
 
-revenue = Series.extend(
-    "revenue",
-    covered,
-    base=hist_revenue.cells,
-    cont=forecast_cells,
-)
+def forecast_cells(last: Cons[Period, float] | None) -> Cells[Period, float]:
+    # If there is no history, terminate without any forecast cells.
+    if last is None:
+        return Cell("forecast_revenue.cells", lambda: None, structural=True)
 
+    # The first forecast month is the last historical period's end plus one month.
+    first = last.key.from_end(MONTHLY)
+
+    def run_rate() -> Effect[float]:
+        quarter = yield from get(last.cell)
+        return (
+            quarter
+            * YF.cmonthly(first.start, first.end)
+            / YF.cmonthly(last.key.start, last.key.end)
+        )
+
+    return grow(first, Cell("forecast_revenue.run_rate", run_rate))
+
+
+revenue = Series.extend("revenue", accrue_monthly, base=hist_revenue.cells, cont=forecast_cells)
+
+
+# ---- Output ----
 ctx = Context()
 quarters = [period for period, _ in HISTORICAL]
 forecast_months = list(islice(Period.seq(date(2025, 10, 1), MONTHLY), 3))
@@ -86,9 +90,9 @@ for quarter in quarters:
     print(f"  {quarter}: {show(ctx.get_at(revenue, quarter))}")
 
 intra = Period(date(2025, 9, 1), date(2025, 10, 1))
-print(f"\nPartial historical period stays Na ({intra}): {show(ctx.get_at(revenue, intra))}")
+print(f"\nPartial historical period is prorated ({intra}): {show(ctx.get_at(revenue, intra))}")
 
-print("\nRight of seam (monthly projection, 1% growth off last-quarter run-rate)")
+print("\nRight of seam (monthly projection, 10% growth off the prior month)")
 for month in forecast_months:
     print(f"  {month}: {show(ctx.get_at(revenue, month))}")
 
