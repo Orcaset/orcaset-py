@@ -109,7 +109,7 @@ combined = Series.extend(
 )
 ```
 
-`forecast_cells(last)` receives the last base key, or `None` when the base is empty. It is not invoked for queries that stop inside the base. Leading continuation nodes not entirely after the last base key are clipped without forcing their values. The base must terminate for the continuation to become reachable.
+`forecast_cells(last)` receives the last base `Cons` (`last.key`, `last.cell`), or `None` when the base is empty, so the continuation can start from the frontier key or read the last cell without querying back through the composed series. It is not invoked for queries that stop inside the base, and no base tail is forced ahead of the walk. Keys must stay strictly ascending across the seam; a continuation that overlaps the base raises `ValueError`. The base must terminate for the continuation to become reachable.
 
 Use `Series.append` when the continuation chain is fixed rather than built from the frontier. Both operations produce one chain governed by the single query supplied to the resulting series; test queries on each side and across the seam.
 

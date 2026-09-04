@@ -5,6 +5,8 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     Cell,
+    Cells,
+    Cons,
     Context,
     Maybe,
     Na,
@@ -12,6 +14,7 @@ from orcaset import (
     Series,
     Thunk,
     exact,
+    get,
     get_at,
     isna,
     keys_until,
@@ -57,9 +60,9 @@ def test_extend_lazy_continuation():
     base = Series.of("Base", exact, [(FY17, 1.0)])
     calls: list[Period | None] = []
 
-    def cont(last: Period | None):
-        calls.append(last)
-        assert last == FY17
+    def cont(last: Cons[Period, float] | None):
+        assert last is not None
+        calls.append(last.key)
         return unfold_cells(
             "Continuation",
             seed=FY18,
@@ -77,12 +80,12 @@ def test_extend_lazy_continuation():
     assert calls == [FY17]
 
 
-def test_extend_clips_overlapping_continuation():
+def test_extend_rejects_overlapping_continuation():
     forced: list[bool] = []
 
     def poison() -> float:
         forced.append(True)
-        raise AssertionError("clipped continuation cell was forced")
+        raise AssertionError("overlapping continuation cell was forced")
 
     base = Series.of("Base", exact, [(FY17, 1.0)])
     continuation = Series.of(
@@ -98,22 +101,18 @@ def test_extend_clips_overlapping_continuation():
     )
     ctx = Context()
 
-    assert ctx.get(Cell("keys", lambda: keys_until(series.cells, FY19))) == [
-        FY17,
-        FY18,
-        FY19,
-    ]
     assert ctx.get_at(series, FY17) == 1.0
-    assert ctx.get_at(series, FY18) == 2.0
+    with pytest.raises(ValueError, match="strictly ascending"):
+        ctx.get_at(series, FY18)
     assert forced == []
 
 
 def test_extend_empty_base():
     base = Series.of("Empty", exact, [])
     continuation = Series.of("Continuation", exact, [(FY17, 1.0), (FY18, 2.0)])
-    calls: list[Period | None] = []
+    calls: list[Cons[Period, float] | None] = []
 
-    def cont(last: Period | None):
+    def cont(last: Cons[Period, float] | None):
         calls.append(last)
         return continuation.cells
 
@@ -129,7 +128,7 @@ def test_extend_self_referential_compounding():
     base = Series.of("Base rent", exact, [(FY17, some(1.777777778))])
     growth = Series.of("Growth", exact, [(FY18, 0.035), (FY19, 0.035)])
 
-    def cont(last: Period | None):
+    def cont(last: Cons[Period, Maybe[float]] | None):
         assert last is not None
 
         def step(p: Period):
@@ -144,7 +143,7 @@ def test_extend_self_referential_compounding():
 
         return unfold_cells(
             "Market rent continuation",
-            seed=last.shift(YEAR),
+            seed=last.key.shift(YEAR),
             step=step,
         )
 
@@ -160,3 +159,61 @@ def test_extend_self_referential_compounding():
     assert ctx.get_at(market_rent, FY17) == 1.777777778
     assert ctx.get_at(market_rent, FY18) == pytest.approx(fy18_value)
     assert ctx.get_at(market_rent, FY19) == pytest.approx(fy18_value * 1.035)
+
+
+def test_extend_continuation_reads_last_cell():
+    forced: list[Period] = []
+
+    def observed(period: Period, value: float) -> Thunk[float]:
+        def cell() -> float:
+            forced.append(period)
+            return value
+
+        return Thunk(cell)
+
+    base = Series.of("Base", exact, [(FY17, observed(FY17, 2.0)), (FY18, observed(FY18, 3.0))])
+
+    def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
+        assert last is not None
+        return unfold_cells(
+            "Continuation",
+            seed=last.key.shift(YEAR),
+            step=lambda p: (p, Thunk(lambda: (yield from get(last.cell)) * 10.0), p.shift(YEAR)),
+        )
+
+    series = Series.extend("Extended", exact, base=base.cells, cont=cont)
+    ctx = Context()
+
+    assert ctx.get_at(series, FY19) == 30.0
+    assert ctx.get_at(series, FY20) == 30.0
+    assert forced == [FY18]
+
+
+def test_extend_base_tail_may_depend_on_extended_series():
+    """The frontier is found without peeking, so a base tail may consult the
+    extended series at the key it just emitted (a case-3 tail) without a cycle."""
+
+    def actuals_step(state: tuple[Period, Period | None]):
+        period, prev = state
+        if prev is not None:
+            current = yield from get_at(extended, prev)
+            if not isna(current) and current >= 2.0:
+                return None
+        return period, float(period.start.year - 2015), (period.shift(YEAR), period)
+
+    actuals = unfold_cells("Actuals", seed=(FY17, None), step=actuals_step)
+
+    def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
+        assert last is not None
+        return unfold_cells(
+            "Continuation",
+            seed=last.key.shift(YEAR),
+            step=lambda p: (p, 100.0, p.shift(YEAR)),
+        )
+
+    extended: Series[Period, float, Maybe[float]] = Series.extend(
+        "Extended", exact, base=actuals, cont=cont
+    )
+    ctx = Context()
+
+    assert [ctx.get_at(extended, p) for p in (FY17, FY18, FY19, FY20)] == [1.0, 2.0, 100.0, 100.0]

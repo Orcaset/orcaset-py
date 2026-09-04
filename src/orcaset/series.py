@@ -60,6 +60,10 @@ type UnfoldStep[S, K: Key, V] = Callable[
 type QueryFn[K: Key, V, W] = Callable[[K, Cells[K, V]], Effect[W] | W]
 """Fold a query over a cell chain, with optional early termination."""
 
+type Continuation[K: Key, V] = Callable[[Cons[K, V] | None], Cells[K, V]]
+"""Build the chain that follows a base chain, given the base's last node
+(``None`` when the base is empty)."""
+
 type KeyMerge[K: Key] = Callable[[K, K], tuple[K, K | None, K | None]]
 """Merge two pending heads: the first tile of their union, then what remains
 of each operand after it (``None`` when consumed). ``period_union`` and
@@ -105,22 +109,10 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         query: QueryFn[K, V, W],
         *,
         base: Cells[K, V],
-        cont: Callable[[K | None], Cells[K, V]],
+        cont: Continuation[K, V],
     ) -> Series[K, V, W]:
         """Build a series that continues ``base`` lazily at its frontier."""
         return cls(name, extend_cells(name, base, cont), query)
-
-    @classmethod
-    def append(
-        cls,
-        name: str,
-        query: QueryFn[K, V, W],
-        *,
-        first: Cells[K, V],
-        then: Cells[K, V],
-    ) -> Series[K, V, W]:
-        """Build a series by appending ``then`` after ``first``."""
-        return cls(name, append_cells(name, first, then), query)
 
     @classmethod
     def of(
@@ -154,7 +146,6 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
             return cls.unfold(name, query, seed=seed, step=step)
 
         return decorator
-
 
 
 class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
@@ -238,64 +229,42 @@ def scan_cells[K: Key, A, S, B](
     return unfold_cells(name, seed=(source, seed), step=step)
 
 
-class _SpliceRule[K: Key, V](Rule[Cons[K, V] | None]):
-    """Splice a continuation onto a source chain when its frontier is reached.
-
-    Clipping assumes the usual transitivity of the key order: along an
-    ascending chain, nodes entirely after the last base key keep surviving.
-    """
-
-    def __init__(
-        self,
-        series_name: str,
-        prev_key: K | None,
-        source: Cells[K, V],
-        cont: Callable[[K | None], Cells[K, V]],
-    ) -> None:
-        name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
-        super().__init__(name, structural=True)
-        self._series_name = series_name
-        self._prev_key = prev_key
-        self._source = source
-        self._cont = cont
-
-    def compute(self) -> Effect[Cons[K, V] | None]:
-        node = yield from get(self._source)
-        if node is not None:
-            return Cons(
-                node.key,
-                node.cell,
-                _SpliceRule(self._series_name, node.key, node.tail, self._cont),
-            )
-
-        cont_cells = self._cont(self._prev_key)
-        node = yield from get(cont_cells)
-        while node is not None and self._prev_key is not None and not self._prev_key < node.key:
-            node = yield from get(node.tail)
-        return node
-
-
 def extend_cells[K: Key, V](
     name: str,
     base: Cells[K, V],
-    cont: Callable[[K | None], Cells[K, V]],
+    cont: Continuation[K, V],
 ) -> Cells[K, V]:
-    """Continue ``base`` lazily with a chain built from its last key.
+    """Continue ``base`` lazily with a chain built from its last node.
 
-    ``cont`` receives the last base key, or ``None`` for an empty base, and is
-    invoked only when a walk reaches the base frontier. Leading continuation
-    nodes not entirely after the last base key are clipped.
+    Every base tail is wrapped by a rule that carries the node just emitted.
+    When the wrapped tail is exhausted, ``cont`` receives that node (``None``
+    for an empty base) and the wrapper resolves to the head of the returned
+    chain, so nothing past the seam is wrapped. ``cont`` is invoked only when a
+    walk reaches the base frontier, and no base tail is forced ahead of the
+    walk, so a base tail may itself depend on the extended series at the key
+    it just emitted.
+
+    Keys must stay strictly ascending across the seam: a continuation whose
+    first key is not entirely after the last base key raises ``ValueError``
+    without forcing any cell.
     """
-    return _SpliceRule(name, None, base, cont)
 
+    def wrap(prev: Cons[K, V] | None, tail: Cells[K, V]) -> Cells[K, V]:
+        def compute() -> Effect[Cons[K, V] | None]:
+            node = yield from get(tail)
+            if node is not None:
+                return Cons(node.key, node.cell, wrap(node, node.tail))
+            node = yield from get(cont(prev))
+            if node is not None and prev is not None and not prev.key < node.key:
+                raise ValueError(
+                    f"keys must be strictly ascending: got {prev.key!r} then {node.key!r}"
+                )
+            return node
 
-def append_cells[K: Key, V](
-    name: str,
-    first: Cells[K, V],
-    then: Cells[K, V],
-) -> Cells[K, V]:
-    """Append ``then`` after ``first``; overlap with ``first`` is clipped."""
-    return extend_cells(name, first, lambda _last: then)
+        label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
+        return Cell(label, compute, structural=True)
+
+    return wrap(None, base)
 
 
 type _Frontier[K: Key] = tuple[K | None, Cells[K, Any] | None]

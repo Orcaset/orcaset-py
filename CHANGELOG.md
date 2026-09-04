@@ -39,10 +39,13 @@ pending a rebuild on the new core.
   pairs), and the `@Series.define(name, query, seed=)` decorator for
   self-referential bodies.
 - `extend_cells(name, base, cont)` continues a chain lazily at its frontier.
-  `cont` receives the last base key (`None` when empty), is invoked only when
-  a walk exhausts the base, and its leading nodes not entirely after the last
-  base key are clipped without forcing their cells. `append_cells(name, first,
-  then)` is the fixed-continuation form.
+  `cont` (a `Continuation[K, V]`) receives the last base `Cons` (`None` when
+  empty), so a continuation can seed from the last key or read the last cell
+  directly. It is invoked only when a walk exhausts the base; no base tail is
+  forced ahead of the walk, so a base tail may depend on the extended series
+  at the key it just emitted. Keys must stay strictly ascending across the
+  seam; an overlapping continuation raises `ValueError` without forcing any
+  cell.
 - `merge_cells(name, chains, merge, cell)` and `KeyMerge[K]`: merge ascending
   chains into one chain whose keys re-tile their union, with one pending head
   of lookahead per operand and source cells never forced. `merge` must satisfy
