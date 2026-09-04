@@ -3,6 +3,7 @@
 
 """Typed currency units prevent invalid cross-currency arithmetic."""
 
+import operator
 from dataclasses import dataclass
 from datetime import date
 
@@ -10,7 +11,6 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     Context,
-    Maybe,
     Period,
     Series,
     exact,
@@ -21,6 +21,11 @@ from orcaset import (
 
 MODEL_START = date(2025, 12, 31)
 MONTH = relativedelta(months=1, day=31)
+
+
+# ---- Define currency types ----
+# Each currency type can only be added with itself.
+# This is both a static type checking and a compile-time guarantee.
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,35 +48,48 @@ class EUR:
         return EUR(self.amount + other.amount)
 
 
-def constant_series[V](name: str, value: V) -> Series[Period, V, Maybe[V]]:
-    return Series.unfold(
-        name,
-        exact,
-        seed=next(Period.seq(MODEL_START, MONTH)),
-        step=lambda period: (period, value, period.from_end(MONTH)),
-    )
+# ---- Define constant value series ----
+usd_product = Series.of(
+    "USD product revenue", exact, pairs=zip(Period.seq(MODEL_START, MONTH), [USD(100.0)])
+)
+usd_services = Series.of(
+    "USD services revenue", exact, pairs=zip(Period.seq(MODEL_START, MONTH), [USD(25.0)])
+)
+eur_revenue = Series.of(
+    "EUR revenue", exact, pairs=zip(Period.seq(MODEL_START, MONTH), [EUR(80.0)])
+)
 
+# ---- Demonstrate type-aware composition ----
 
-usd_revenue = constant_series("USD revenue", USD(100.0))
-eur_revenue = constant_series("EUR revenue", EUR(80.0))
+# OK: same-currency total composes.
+usd_total = ops.map2(
+    "USD total",
+    usd_product,
+    usd_services,
+    fn=map2_some(operator.add),
+    merge_keys=period_union,
+)
 
-
-def add_currencies(left: USD, right: EUR) -> USD:
-    return left + right
-
-
-# A type checker rejects the incompatible second operand passed to USD.__add__.
+# ERROR: different-currency total is rejected where the series are
+# composed: pyrefly reports the ``fn`` argument as incompatible with the
+# operands' value types, and evaluating it raises ``TypeError``.
 invalid_total = ops.map2(
     "invalid total",
-    usd_revenue,
+    usd_product,
     eur_revenue,
-    fn=map2_some(add_currencies),
+    fn=map2_some(operator.add),
     merge_keys=period_union,
 )
 
 if __name__ == "__main__":
     ctx = Context()
-    january = next(Period.seq(MODEL_START, MONTH))
-    print(f"{usd_revenue.name}: {ctx.get_at(usd_revenue, january)}")
+    january = Period(MODEL_START, MODEL_START + MONTH)
+    print(f"{usd_product.name}: {ctx.get_at(usd_product, january)}")
+    print(f"{usd_services.name}: {ctx.get_at(usd_services, january)}")
+    print(f"{usd_total.name}: {ctx.get_at(usd_total, january)}")
     print(f"{eur_revenue.name}: {ctx.get_at(eur_revenue, january)}")
-    print(f"{invalid_total.name}: {ctx.get_at(invalid_total, january)}")
+
+    try:
+        print(f"{invalid_total.name}: {ctx.get_at(invalid_total, january)}")
+    except TypeError:
+        print("ERROR: Cannot add USD and EUR.")
