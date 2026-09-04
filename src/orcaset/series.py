@@ -115,6 +115,18 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         return cls(name, extend_cells(name, base, cont), query)
 
     @classmethod
+    def append(
+        cls,
+        name: str,
+        query: QueryFn[K, V, W],
+        *,
+        first: Cells[K, V],
+        then: Cells[K, V],
+    ) -> Series[K, V, W]:
+        """Build a series that continues ``first`` with a fixed ``then`` chain."""
+        return cls.extend(name, query, base=first, cont=lambda _: then)
+
+    @classmethod
     def of(
         cls,
         name: str,

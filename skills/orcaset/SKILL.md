@@ -27,7 +27,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 4. Choose `Series.of` for finite literal pairs, `Series.unfold` or `@Series.define` for lazy/stateful domains, and `Series.extend` or `Series.append` for horizontal composition.
 5. Compose answer-level calculations with `ops`; use `map_cells`, `scan_cells`, or `merge_cells` only for genuine chain transformations.
 6. Query every public export directly in a fresh `Context`. Exercise ordinary, missing, partial, boundary, continuation, and cyclic cases as applicable.
-7. Inspect dependency trees, then run formatting, static checking, tests, and economic reconciliations.
+7. For statement output, compose `Stmt`, `Total`, and `Group`, then render with `fixed_width_table`, `markdown_table`, or `csv_table`. Inspect dependency trees, then run static checking, tests, and economic reconciliations.
 
 ## References
 

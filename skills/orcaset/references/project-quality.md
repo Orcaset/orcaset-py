@@ -21,7 +21,9 @@ project/
 
 Keep assumptions and timeline definitions low in the import graph. Domain modules should export named Orcaset nodes. Model definition may create rules, series, and lazy chains at import time; contexts, resolved values, printing, network calls, and output files belong in an entrypoint, report function, leaf thunk, or tests as appropriate.
 
-Prefer exports from `orcaset.__all__`; do not depend on underscored internals or on legacy names that remain importable only as implementation residue. The API is experimental, so inspect the installed version and changelog before using remembered constructors. The unfold core uses generic `Series` rather than specialized `PeriodSeries`/`DateSeries`, and it does not provide the old statement, formatter, `Replayable`, `CellStream`, or value-level `scan` APIs.
+Prefer exports from `orcaset.__all__`; do not depend on underscored internals or on legacy names that remain importable only as implementation residue. The API is experimental, so inspect the installed version and changelog before using remembered constructors. The unfold core uses generic `Series` rather than specialized `PeriodSeries`/`DateSeries`, and it does not provide the old `Replayable`, `CellStream`, or value-level `scan` APIs.
+
+Use `Stmt`, `Total`, and `Group` to evaluate named lines into a `StatementResult`, then `fixed_width_table`, `markdown_table`, or `csv_table` to render it. Those adapters are reporting surfaces, not model nodes: keep the underlying series as the public graph exports.
 
 ## Static quality
 

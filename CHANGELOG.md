@@ -9,9 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-03
+
 The series core has been rebuilt on a lazy cons-chain representation. The
-period/date convenience layers, statements, and formatters have been removed
-pending a rebuild on the new core.
+specialized period/date series classes have been removed; statement views
+and formatters have been rebuilt on generic `Series`.
 
 ### Changed
 
@@ -73,6 +75,12 @@ pending a rebuild on the new core.
 - `Context.dependencies(..., structural=False)` and `rule_dependencies` fold
   internal cell-chain traversal by default; `structural=True` retains the full
   scheduler-level tree.
+- `Stmt`, `Group`, `Total`, `StatementResult`, and the statement row/value
+  types, rebuilt on generic `Series`. Period-keyed series answer at each
+  requested period; date-keyed series answer at period boundaries or the
+  requested dates.
+- `fixed_width_table`, `markdown_table`, `csv_table`, `ValueFormatter`, and
+  `DateFormatter` for rendering statement results.
 
 ### Changed
 
@@ -103,9 +111,6 @@ pending a rebuild on the new core.
 - `PeriodSeries`, `PeriodSeriesBase`, `PeriodMapSeries`, `PeriodMap2Series`,
   `PeriodExtendSeries`, `DateSeries`, `DateSeriesBase`, `DateMapSeries`,
   `DateMap2Series`, `DateExtendSeries`, and the `scan`/`paired` transforms.
-- `Stmt`, `Group`, `Total`, `StatementResult`, the `*Row`/`*Value` types, and
-  the `formatters` module (`fixed_width_table`, `markdown_table`, `csv_table`,
-  `ValueFormatter`, `DateFormatter`).
 
 ## [0.9.0] - 2026-08-31
 
@@ -354,7 +359,8 @@ pending a rebuild on the new core.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/orcaset/orcaset-py/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/orcaset/orcaset-py/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/orcaset/orcaset-py/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/orcaset/orcaset-py/compare/v0.7.1...v0.8.0
