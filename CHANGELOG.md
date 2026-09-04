@@ -9,6 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Removed
+
+- `Series.append`. Use `Series.extend` with a continuation that ignores the
+  last node and returns the next chain: `cont=lambda _: then.cells`.
+
 ## [0.10.0] - 2026-09-03
 
 The series core has been rebuilt on a lazy cons-chain representation. The

@@ -31,14 +31,14 @@ FY19 = next(_FISCAL_YEARS)
 FY20 = next(_FISCAL_YEARS)
 
 
-def test_append_two_literal_series():
+def test_extend_two_literal_series():
     first = Series.of("First", exact, [(FY17, 1.0), (FY18, 2.0)])
     then = Series.of("Then", exact, [(FY19, 3.0), (FY20, 4.0)])
-    series = Series.append(
-        "Appended",
+    series = Series.extend(
+        "Extended",
         exact,
-        first=first.cells,
-        then=then.cells,
+        base=first.cells,
+        cont=lambda _: then.cells,
     )
     ctx = Context()
 
