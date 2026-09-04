@@ -19,4 +19,15 @@ inspection retains the path from total depreciation through the cohort to source
 uv run python examples/capex-cohorts/main.py
 ```
 
-The script prints annual and partial-period values plus representative dependency trees.
+The script prints annual and partial-period values plus representative dependency trees:
+
+```txt
+Period end               2026-12-31  2027-12-31  2028-12-31  2029-12-31
+Capex                         100.0       100.0       100.0       100.0
+
+Depreciation@2026-12-31         0.0        50.0        50.0         0.0
+Depreciation@2027-12-31         0.0         0.0        50.0        50.0
+Depreciation@2028-12-31         0.0         0.0         0.0        50.0
+
+Total depreciation              0.0        50.0       100.0       100.0
+```
