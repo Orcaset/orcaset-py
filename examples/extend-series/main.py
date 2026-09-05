@@ -1,107 +1,103 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Extend a seris of quarterly historicals with a monthly forecaset."""
+"""Compose series horizontally over a larger time domain."""
 
 from datetime import date
-from itertools import islice
+from typing import Any
 
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Cell,
-    Cells,
     Cons,
     Context,
     Effect,
     Maybe,
+    Na,
     Period,
-    Rule,
     Series,
     Stmt,
     accrue,
+    continue_series,
+    covered,
+    exact,
     fixed_width_table,
-    get,
-    isna,
+    get_at,
+    multiply_some,
+    period_split,
 )
 
-MONTHLY = relativedelta(months=1)
-MONTHLY_GROWTH_RATE = 0.10
-
-# ---- Historical series ----
-HISTORICAL = [
-    (Period(date(2025, 1, 1), date(2025, 4, 1)), 300.0),
-    (Period(date(2025, 4, 1), date(2025, 7, 1)), 330.0),
-    (Period(date(2025, 7, 1), date(2025, 10, 1)), 363.0),
-]
-
+# ---- Inputs and assumptions ----
+MONTH = relativedelta(months=1, day=31)  # Keep successive boundaries at month end.
+Q3 = Period(date(2025, 6, 30), date(2025, 9, 30))
+OCT = Q3.from_end(MONTH)
+NOV = OCT.from_end(MONTH)
+DEC = NOV.from_end(MONTH)
+JAN = DEC.from_end(MONTH)
 accrue_monthly = accrue(YF.cmonthly)
-hist_revenue = Series.of("hist_revenue", accrue_monthly, HISTORICAL)
+
+historical = [(Q3, 300.0)]
+projected = [(Q3, 0.0), (OCT, 110.0), (NOV, Na), (DEC, 121.0)]
 
 
-# ---- Forecast series ----
-def grow(period: Period, prior: Rule[float]) -> Cells[Period, float]:
-
-    def node() -> Cons[Period, float]:
-        def value() -> Effect[float]:
-            return (yield from get(prior)) * (1 + MONTHLY_GROWTH_RATE)
-
-        this = Cell(f"forecast_revenue@{period}", value)
-        return Cons(period, this, grow(period.from_end(MONTHLY), this))
-
-    return Cell(f"forecast_revenue.tail@{period}", node, structural=True)
+# ---- Series definitions ----
+actuals = Series.of("Actuals", covered, historical)  # `covered` query function
+projections = Series.of("Projections", accrue_monthly, projected)  # `accrue_monthly` query function
 
 
-def forecast_cells(last: Cons[Period, float] | None) -> Cells[Period, float]:
-    # If there is no history, terminate without any forecast cells.
-    if last is None:
-        return Cell("forecast_revenue.cells", lambda: None, structural=True)
+def terminal_revenue(
+    last_node: Cons[Period, Maybe[float]] | None,
+) -> Series[Period, Maybe[float], Maybe[float]]:
+    """Grow revenue each month at a 2% annual rate after prior series ends."""
+    # If there is no prior node (e.g., the prior series is empty), return an empty series.
+    if last_node is None:
+        return Series.of("Terminal growth", accrue_monthly, [])
 
-    # The first forecast month is the last historical period's end plus one month.
-    first = last.key.from_end(MONTHLY)
+    # Otherwise, grow revenue each month at a 2% annual rate after the prior series ends.
+    # Note that this series is lazily bound to `revenue`
+    @Series.define("Terminal growth", accrue_monthly, seed=last_node.key)
+    def growth(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
+        prior_month = yield from get_at(revenue, period)
+        value = multiply_some((prior_month, (1 + 0.02 * YF.cmonthly(*period))))
+        return period.from_end(MONTH), value, period.from_end(MONTH)
 
-    def run_rate() -> Effect[float]:
-        quarter = yield from get(last.cell)
-        return (
-            quarter
-            * YF.cmonthly(first.start, first.end)
-            / YF.cmonthly(last.key.start, last.key.end)
-        )
-
-    return grow(first, Cell("forecast_revenue.run_rate", run_rate))
+    return growth
 
 
-revenue = Series.extend("revenue", accrue_monthly, base=hist_revenue.cells, cont=forecast_cells)
+# ---- Series composition ----
+type Segment = Series[Period, Any, Maybe[float]]
+
+components: Series[int, Segment, Maybe[Segment]] = Series.of(
+    "Revenue components", exact, [(0, actuals), (1, projections)]
+)
+base: Series[Period, Maybe[float], Maybe[float]] = Series.flatten(
+    "Actuals and projections",
+    components.cells,
+    query=covered,
+    split_keys=period_split,
+)
+
+revenue = Series.flatten(
+    "Revenue",
+    continue_series("Revenue components", base, terminal_revenue),
+    query=covered,
+    split_keys=period_split,
+)
 
 
 # ---- Output ----
 ctx = Context()
-quarters = [period for period, _ in HISTORICAL]
-forecast_months = list(islice(Period.seq(date(2025, 10, 1), MONTHLY), 3))
+print(fixed_width_table(Stmt(revenue).values_for_periods(ctx, [Q3, OCT, NOV, DEC, JAN])))
 
+partial_actual = Period(date(2025, 8, 31), Q3.end)
+bad_crossing = Period(date(2025, 8, 31), NOV.end)
+print(f"\nPartial actual ({partial_actual}):", ctx.get_at(revenue, partial_actual))
+print(f"Bad seam crossing ({bad_crossing}):", ctx.get_at(revenue, bad_crossing))
 
-def show(value: Maybe[float] | float) -> str:
-    return "Na" if isna(value) else f"{value:.4f}"
+print(f"\nBase Q3 value ({Q3}):", ctx.get_at(base, Q3))
 
+half_forecast = Period(DEC.start, date(2026, 1, 15))
+print(f"\nCross projection-forecast seam ({half_forecast}):", ctx.get_at(revenue, half_forecast))
 
-print("Left of seam (historical quarters)")
-for quarter in quarters:
-    print(f"  {quarter}: {show(ctx.get_at(revenue, quarter))}")
-
-intra = Period(date(2025, 9, 1), date(2025, 10, 1))
-print(f"\nPartial historical period is prorated ({intra}): {show(ctx.get_at(revenue, intra))}")
-
-print("\nRight of seam (monthly projection, 10% growth off the prior month)")
-for month in forecast_months:
-    print(f"  {month}: {show(ctx.get_at(revenue, month))}")
-
-projected_quarter = Period(forecast_months[0].start, forecast_months[-1].end)
-quarterly_statement = Stmt(revenue).values_for_periods(ctx, [*quarters, projected_quarter])
-
-print("\nOne composed row")
-print(fixed_width_table(quarterly_statement))
-
-aligned = Period(date(2025, 7, 1), date(2025, 12, 1))
-print(f"\nDeps: revenue @ {aligned} (query crosses the seam)\n")
-print(ctx.dependencies(revenue, aligned))
+print(f"\nDependencies for {JAN} revenue:\n{ctx.dependencies(revenue, JAN)}")

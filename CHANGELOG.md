@@ -9,6 +9,26 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `Series.flatten(name, components, *, query, split_keys)`: lazily compose an
+  integer-keyed chain of component series, each retaining its own query rules.
+  The current component is walked before the next is requested, so infinite
+  components need no eagerly discovered bounds. Crossing queries are split
+  into lazy component answers and folded by the explicit outer query. Raw
+  component cell types may differ; flattened cells hold query answers.
+  Continuation keys are clipped at each seam, including straddling periods,
+  and clipped values delegate to the original source. Derived and nested
+  components are supported. Empty or wholly clipped components are skipped;
+  the first and last nonempty components answer outside the flattened spine.
+- `continue_series(name, base, cont)`: build a lazy two-component chain for
+  `flatten`. The continuation receives the last raw base node (or `None`),
+  and is constructed once per context only when demanded after exhaustion.
+- `KeySplit[K]`, `period_split`, and `date_split` for partitioning queries
+  and clipping continuation keys at component seams.
+- A `flatten-series` example showing actuals, two projection months, and
+  terminal growth composed as series values.
+
 ### Removed
 
 - `Series.append`. Use `Series.extend` with a continuation that ignores the

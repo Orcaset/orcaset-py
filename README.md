@@ -86,6 +86,11 @@ print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
 <!-- fmt: on -->
 See the demo scripts in the [examples](./examples) folder for additional review.
 
+For horizontal composition with different query rules, see
+[series of series](./examples/flatten-series). `Series.flatten` preserves
+each component's queries and supports infinite domains; `continue_series`
+adds terminal growth only if a base series eventually ends.
+
 ## License
 
 Orcaset is licensed under the Server Side Public License. You can freely use it to build internal models for underwriting, valuation, risk, or other analysis. See [LICENSE](./LICENSE) for details.

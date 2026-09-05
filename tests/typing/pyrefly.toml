@@ -1,0 +1,7 @@
+project-includes = ["check_*.py"]
+search-path = ["../../src"]
+strict-callable-subtyping = true
+
+[errors]
+implicit-any = true
+unused-ignore = true

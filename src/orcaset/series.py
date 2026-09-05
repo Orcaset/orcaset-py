@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator, Hashable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, Self
 
-from orcaset.rule import Cell, Effect, KeyedRule, Rule, get
+from orcaset.rule import Cell, Effect, KeyedRule, Rule, get, get_at
 
 
 class Key(Hashable, Protocol):
@@ -69,6 +69,14 @@ type KeyMerge[K: Key] = Callable[[K, K], tuple[K, K | None, K | None]]
 of each operand after it (``None`` when consumed). ``period_union`` and
 ``date_union`` are the canonical instances."""
 
+type KeySplit[K: Key] = Callable[[K, K], tuple[K | None, K | None]]
+"""Split a query at the end of a key into its inside and after parts.
+
+The nonempty parts must partition the query in order, and the after part
+must be entirely after the key. ``period_split`` and ``date_split`` are the
+canonical instances. Also used to clip component keys at a preceding seam.
+"""
+
 
 class Series[K: Key, V, W](KeyedRule[K, W]):
     """A queryable series backed by an effectful cons-list built by unfold.
@@ -113,6 +121,85 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     ) -> Series[K, V, W]:
         """Build a series that continues ``base`` lazily at its frontier."""
         return cls(name, extend_cells(name, base, cont), query)
+
+    @classmethod
+    def flatten(
+        cls,
+        name: str,
+        components: Cells[int, Series[K, Any, W]],
+        *,
+        query: QueryFn[K, W, W],
+        split_keys: KeySplit[K],
+    ) -> Series[K, W, W]:
+        """Flatten a lazy chain of series, preserving each component's query.
+
+        Outer integer keys specify component order, not domain bounds. Walk
+        the current component before requesting the next outer node: an
+        infinite component leaves all following components untouched.
+
+        A component owns queries through its last key; the next nonempty
+        component owns the territory after it, including any gap before its
+        first key. Empty or fully clipped components are skipped. The first
+        and last nonempty components also answer before and after the spine.
+
+        A query within one component delegates to it unchanged. A crossing
+        query is partitioned at component seams and ``query`` folds a lazy
+        chain of their answers, keyed by the respective subqueries. Use
+        ``covered`` to sum period answers, or ``exact`` to reject crossing
+        queries without reading their values. An empty composition is also
+        answered by ``query``, over an empty chain.
+
+        Cells hold component query answers, so raw component value types may
+        differ. Overlapping continuation keys are clipped at the seam; their
+        values query the original component on the clipped key. No component
+        query is ever called with a replacement chain.
+
+        Finite queries require only a finite prefix of each relevant domain
+        (as with other ordered scans); an infinite prefix of empty components
+        or keys that never advance past a query cannot produce an answer.
+        """
+        owners = _flatten_owners(name, components, split_keys)
+
+        def answer(key: K, owner: Rule[_Component[K, W]]) -> Effect[W]:
+            component = yield from get(owner)
+            source = yield from get(component.cell)
+            return (yield from get_at(source, key))
+
+        def value(key: K, owner: Rule[_Component[K, W]]) -> Thunk[W]:
+            return Thunk(lambda: answer(key, owner))
+
+        def part(
+            state: tuple[K | None, Cells[K, _Component[K, W]]],
+        ) -> Effect[tuple[K, Thunk[W], tuple[K | None, Cells[K, _Component[K, W]]]] | None]:
+            remaining, cursor = state
+            if remaining is None:
+                return None
+            node = yield from get(cursor)
+            if node is None:
+                return None
+            owner = yield from get(node.cell)
+            while True:
+                inside, after = split_keys(remaining, node.key)
+                if after is None:
+                    # Do not peek into the tail at an interior query endpoint.
+                    return remaining, value(remaining, node.cell), (None, node.tail)
+                following = yield from get(node.tail)
+                if following is None:
+                    # The final component retains its own beyond-spine policy.
+                    return remaining, value(remaining, node.cell), (None, node.tail)
+                next_owner = yield from get(following.cell)
+                if next_owner is not owner and inside is not None:
+                    return inside, value(inside, node.cell), (after, node.tail)
+                node, owner = following, next_owner
+
+        def compute(q: K, _cells: Cells[K, W]) -> Effect[W]:
+            parts = unfold_cells(f"{name}.parts@{q}", seed=(q, owners), step=part)
+            head = yield from get(parts)
+            if head is not None and head.key == q:
+                return (yield from get(head.cell))
+            return (yield from _as_effect(query(q, parts)))
+
+        return cls(name, map_cells(name, owners, value), compute)
 
     @classmethod
     def of(
@@ -265,6 +352,80 @@ def extend_cells[K: Key, V](
         return Cell(label, compute, structural=True)
 
     return wrap(None, base)
+
+
+def continue_series[K: Key, V, W](
+    name: str,
+    base: Series[K, V, W],
+    cont: Callable[[Cons[K, V] | None], Series[K, Any, W]],
+) -> Cells[int, Series[K, Any, W]]:
+    """Build ``[base, lazy cont(last)]`` for ``Series.flatten``.
+
+    ``cont`` receives the last raw base node, or ``None`` if empty. Its
+    construction is memoized per context; reading the first outer node does
+    not inspect the base. Flatten only requests the outer tail after the
+    base ends, so an infinite base never constructs its continuation. Direct
+    callers must obey the same discipline: requesting this outer tail itself
+    exhausts the base, whose end may depend on other rules.
+    """
+
+    def step(
+        index: int,
+    ) -> Effect[tuple[int, Series[K, Any, W] | Thunk[Series[K, Any, W]], int] | None]:
+        if index == 0:
+            return 0, base, 1
+        if index != 1:
+            return None
+        last: Cons[K, V] | None = None
+        node = yield from get(base.cells)
+        while node is not None:
+            last = node
+            node = yield from get(node.tail)
+        return 1, Thunk(lambda: cont(last)), 2
+
+    return unfold_cells(name, seed=0, step=step)
+
+
+type _Component[K: Key, W] = Cons[int, Series[K, Any, W]]
+type _FlattenState[K: Key, W] = tuple[
+    Cells[int, Series[K, Any, W]], _Component[K, W] | None, Cells[K, Any] | None, K | None
+]
+
+
+def _flatten_owners[K: Key, W](
+    name: str,
+    components: Cells[int, Series[K, Any, W]],
+    split_keys: KeySplit[K],
+) -> Cells[K, _Component[K, W]]:
+    """A shared flatmap walk: each emitted key retains its outer owner node.
+
+    Owner identity marks a seam, including when a source object is reused.
+    Both flattened cells and query routing walk this memoized chain. Only
+    structural rules are read; source values remain behind source queries.
+    """
+
+    def step(
+        state: _FlattenState[K, W],
+    ) -> Effect[tuple[K, _Component[K, W], _FlattenState[K, W]] | None]:
+        outer, owner, inner, previous = state
+        while True:
+            if owner is None:
+                owner = yield from get(outer)
+                if owner is None:
+                    return None
+                source = yield from get(owner.cell)
+                inner = source.cells
+            assert inner is not None
+            node = yield from get(inner)
+            if node is None:
+                outer, owner, inner = owner.tail, None, None
+                continue
+            key = node.key if previous is None else split_keys(node.key, previous)[1]
+            inner = node.tail
+            if key is not None:
+                return key, owner, (outer, owner, inner, key)
+
+    return unfold_cells(f"{name}.owners", seed=(components, None, None, None), step=step)
 
 
 type _Frontier[K: Key] = tuple[K | None, Cells[K, Any] | None]

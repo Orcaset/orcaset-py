@@ -144,3 +144,17 @@ def date_union(left: date, right: date, /) -> tuple[date, date | None, date | No
     if right < left:
         return right, left, None
     return left, None, None
+
+
+def period_split(q: Period, k: Period, /) -> tuple[Period | None, Period | None]:
+    """Split ``q`` at ``k.end`` into adjacent inside and after pieces."""
+    if q.end <= k.end:
+        return q, None
+    if k.end <= q.start:
+        return None, q
+    return Period(q.start, k.end), Period(k.end, q.end)
+
+
+def date_split(q: date, k: date, /) -> tuple[date | None, date | None]:
+    """A point query belongs inside through ``k``, or entirely after it."""
+    return (q, None) if q <= k else (None, q)

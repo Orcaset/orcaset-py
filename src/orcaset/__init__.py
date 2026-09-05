@@ -22,7 +22,7 @@ from orcaset.maybe import (
     some,
     value_or,
 )
-from orcaset.period import Period, date_union, period_union
+from orcaset.period import Period, date_split, date_union, period_split, period_union
 from orcaset.query import (
     DayCount,
     accrue,
@@ -52,10 +52,12 @@ from orcaset.series import (
     Continuation,
     Key,
     KeyMerge,
+    KeySplit,
     QueryFn,
     Series,
     Thunk,
     UnfoldStep,
+    continue_series,
     extend_cells,
     keys_until,
     map_cells,
@@ -100,6 +102,7 @@ __all__ = [
     "Iterate",
     "Key",
     "KeyMerge",
+    "KeySplit",
     "KeyedCell",
     "KeyedRule",
     "LineRow",
@@ -126,8 +129,10 @@ __all__ = [
     "accrue_or",
     "add_some",
     "combine_some",
+    "continue_series",
     "covered",
     "csv_table",
+    "date_split",
     "date_union",
     "exact",
     "exact_or",
@@ -147,6 +152,7 @@ __all__ = [
     "merge_cells",
     "multiply_some",
     "ops",
+    "period_split",
     "period_union",
     "scan_cells",
     "some",

@@ -16,6 +16,3 @@ These self-contained examples demonstrate common financial-modeling patterns and
 | [Web scraping](web-scraping/) | Embeds inline data retrieval over the web and JSON parsing to directly ingest data from an outside data source. |
 
 Open an example's README for its model structure, highlighted feature, and run instructions.
-
-See [Linked-list example porting notes](PORTING_NOTES.md) for API friction and proposed
-convenience functions discovered while implementing these examples.
