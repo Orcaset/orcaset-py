@@ -96,22 +96,9 @@ Use chain helpers when the output's domain or structural state truly depends on 
 
 Wrap a transformed chain with `Series(name, cells, query)`. Do not use `scan_cells` as an eager value fold: a rollforward cell should use its carried prior key to demand the prior public balance through `get_at`.
 
-## Extend a chain
+## Join or extend series
 
-`Series.extend` continues a base chain only when a walk reaches its frontier:
-
-```python
-combined = Series.extend(
-    "Revenue",
-    covered,
-    base=history.cells,
-    cont=forecast_cells,
-)
-```
-
-`forecast_cells(last)` receives the last base `Cons` (`last.key`, `last.cell`), or `None` when the base is empty, so the continuation can start from the frontier key or read the last cell without querying back through the composed series. It is not invoked for queries that stop inside the base, and no base tail is forced ahead of the walk. Keys must stay strictly ascending across the seam; a continuation that overlaps the base raises `ValueError`. The base must terminate for the continuation to become reachable.
-
-A fixed continuation is just `cont=lambda _: then.cells`. The composed series is governed by the single query supplied to `Series.extend`; test queries on each side and across the seam.
+Use `Series.flatten` when joined segments must retain their own query rules, with `continue_series` when the next segment depends on where the base ends. Use `Series.extend` to continue raw cells under one shared query policy. Read [series-composition.md](series-composition.md) for selection, seam behavior, and lazy continuation patterns.
 
 ## Custom queries
 
