@@ -12,6 +12,9 @@ from scrape import tsa_last_date, tsa_passengers
 
 from orcaset import (
     YF,
+    Cell,
+    Cells,
+    Cons,
     Effect,
     Maybe,
     Period,
@@ -23,41 +26,38 @@ from orcaset import (
     get,
     get_at,
     isna,
+    multiply_some,
     ops,
     period_union,
+    unfold_cells,
 )
 
+# ---- Assumptions and history ----
 QUARTER = relativedelta(months=3, day=31)
 ACCRUE = accrue(YF.cmonthly)
 CSV_PATH = Path(__file__).resolve().parent / "data" / "luv_operating_revenue.csv"
 COLUMNS = ("passenger_revenue", "freight", "other")
 
 
-def parse_quarter_label(label: str) -> Period:
-    tag, year_text = label.split()
-    end = date(int(year_text), int(tag[1:]) * 3, 1) + relativedelta(day=31)
-    return Period(end - QUARTER, end)
+HISTORY: list[tuple[Period, dict[str, float]]] = []
+with CSV_PATH.open(newline="", encoding="utf-8") as handle:
+    for row in DictReader(handle):
+        tag, year_text = row["quarter"].split()
+        end = date(int(year_text), int(tag[1:]) * 3, 1) + relativedelta(day=31)
+        HISTORY.append(
+            (Period(end - QUARTER, end), {column: float(row[column]) for column in COLUMNS})
+        )
+if not HISTORY:
+    raise RuntimeError(f"no revenue rows in {CSV_PATH}")
 
-
-def load_history(path: Path = CSV_PATH) -> list[tuple[Period, dict[str, float]]]:
-    with path.open(newline="", encoding="utf-8") as handle:
-        rows = [
-            (
-                parse_quarter_label(row["quarter"]),
-                {column: float(row[column]) for column in COLUMNS},
-            )
-            for row in DictReader(handle)
-        ]
-    if not rows:
-        raise RuntimeError(f"no revenue rows in {path}")
-    return rows
-
-
-HISTORY = load_history()
 NOWCAST_QUARTER = HISTORY[-1][0].from_end(QUARTER)
 
 
-def qtd_windows(current: Period, last_observation: date) -> tuple[Period, Period]:
+# ---- Model definitions ----
+@Cell.define("TSA nowcast windows")
+def nowcast_windows() -> Effect[tuple[Period, Period]]:
+    last_observation = yield from get(tsa_last_date)
+    current = NOWCAST_QUARTER
     if last_observation <= current.start or last_observation > current.end:
         raise ValueError(f"last TSA date {last_observation.isoformat()} is not inside {current}")
     prior = current.shift(-QUARTER)
@@ -66,60 +66,53 @@ def qtd_windows(current: Period, last_observation: date) -> tuple[Period, Period
     )
 
 
-type ForecastState = int | Period
-
-
-def passenger_step(
-    state: ForecastState,
-) -> Effect[tuple[Period, float | Thunk[float], ForecastState]]:
-    if isinstance(state, int) and state < len(HISTORY):
-        period, values = HISTORY[state]
-        return period, values["passenger_revenue"], state + 1
-
-    if isinstance(state, int):
-        qtd, prior_qtd = qtd_windows(NOWCAST_QUARTER, (yield from get(tsa_last_date)))
-
-        def estimate() -> Effect[float]:
-            prior = yield from get_at(passenger, NOWCAST_QUARTER.shift(-QUARTER))
-            current_tsa = yield from get_at(tsa_passengers, qtd)
-            prior_tsa = yield from get_at(tsa_passengers, prior_qtd)
-            if isna(prior) or isna(current_tsa) or isna(prior_tsa):
-                raise ValueError("missing TSA QTD inputs for passenger revenue")
-            if prior_tsa == 0.0:
-                raise ValueError("prior-quarter TSA QTD is zero")
-            return prior * (current_tsa / prior_tsa)
-
-        return NOWCAST_QUARTER, Thunk(estimate), NOWCAST_QUARTER.from_end(QUARTER)
-
-    period = state
-
-    def hold() -> Effect[float]:
-        value = yield from get_at(passenger, NOWCAST_QUARTER)
-        if isna(value):
-            raise ValueError("missing current-quarter passenger revenue")
-        return value
-
-    return period, Thunk(hold), period.from_end(QUARTER)
-
-
-passenger: Series[Period, float, Maybe[float]] = Series.unfold(
-    "Passenger", ACCRUE, seed=0, step=passenger_step
+passenger_history = Series.of(
+    "Passenger history",
+    ACCRUE,
+    [(period, values["passenger_revenue"]) for period, values in HISTORY],
+)
+freight_history = Series.of(
+    "Freight history", ACCRUE, [(period, values["freight"]) for period, values in HISTORY]
+)
+other_history = Series.of(
+    "Other history", ACCRUE, [(period, values["other"]) for period, values in HISTORY]
 )
 
 
-def held_series(name: str, column: str) -> Series[Period, float, Maybe[float]]:
-    def step(state: ForecastState) -> tuple[Period, float, ForecastState]:
-        if isinstance(state, int) and state < len(HISTORY):
-            period, values = HISTORY[state]
-            return period, values[column], state + 1
-        period = HISTORY[-1][0].from_end(QUARTER) if isinstance(state, int) else state
-        return period, HISTORY[-1][1][column], period.from_end(QUARTER)
+@Series.define("Passenger forecast", ACCRUE, seed=NOWCAST_QUARTER)
+def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
+    if period == NOWCAST_QUARTER:
+        prior_rev = yield from get_at(passenger_history, period.shift(-QUARTER))
+        qtd, prior_qtd = yield from get(nowcast_windows)
+        current_tsa = yield from get_at(tsa_passengers, qtd)
+        prior_tsa = yield from get_at(tsa_passengers, prior_qtd)
+        if prior_tsa == 0.0 or isna(prior_tsa):
+            raise ValueError("prior-quarter TSA QTD is zero or missing")
+        traffic_growth = multiply_some((current_tsa, 1 / prior_tsa))
+        value = multiply_some((prior_rev, traffic_growth))
+    else:
+        value = yield from get_at(passenger_forecast, NOWCAST_QUARTER)
 
-    return Series.unfold(name, ACCRUE, seed=0, step=step)
+    return period, value, period.from_end(QUARTER)
 
 
-freight = held_series("Freight", "freight")
-other = held_series("Other", "other")
+passenger = Series.extend(
+    "Passenger", ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells
+)
+
+
+def constant_forecast(last: Cons[Period, float] | None) -> Cells[Period, float]:
+    if last is None:
+        raise ValueError("missing revenue history")
+    return unfold_cells(
+        "Held forecast",
+        seed=last.key.from_end(QUARTER),
+        step=lambda period: (period, Thunk(lambda: get(last.cell)), period.from_end(QUARTER)),
+    )
+
+
+freight = Series.extend("Freight", ACCRUE, base=freight_history.cells, cont=constant_forecast)
+other = Series.extend("Other", ACCRUE, base=other_history.cells, cont=constant_forecast)
 total_operating_revenue = ops.add(
     "Total operating revenue",
     passenger,
@@ -128,6 +121,7 @@ total_operating_revenue = ops.add(
     merge_keys=period_union,
 )
 
+# ---- Statement definition ----
 operating_revenue_stmt = Stmt(
     tsa_passengers,
     Total(total_operating_revenue, [passenger, freight, other]),

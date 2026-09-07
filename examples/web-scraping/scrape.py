@@ -3,31 +3,29 @@
 
 """TSA checkpoint volumes as a lazily fetched daily orcaset series."""
 
-import re
 from datetime import date, timedelta
+from operator import itemgetter
 
 import requests
 from bs4 import BeautifulSoup
 
-from orcaset import Cell, Effect, Period, Series, accrue, get
+from orcaset import Cell, Cons, Effect, Period, Series, accrue, get, unfold_cells
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
     "User-Agent": "orcaset-web-scraping-example/0.1 (+https://github.com/orcaset/orcaset-py)",
     "Accept": "text/html,application/xhtml+xml",
 }
-_ARCHIVE_YEAR = re.compile(r"/travel/passenger-volumes/(\d{4})")
 _BY_DAYS = accrue(lambda start, end: float((end - start).days))
-_FIRST_REPORTING_YEAR = 2026
 
 
-def _get(url: str) -> str:
+def fetch_html(url: str) -> str:
     response = requests.get(url, headers=_HEADERS, timeout=30.0)
     response.raise_for_status()
     return response.text
 
 
-def _parse_rows(html: str, url: str) -> list[tuple[date, float]]:
+def parse_checkpoint_rows(html: str, url: str) -> list[tuple[date, float]]:
     soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table", limit=1)
     if not tables:
@@ -45,51 +43,33 @@ def _parse_rows(html: str, url: str) -> list[tuple[date, float]]:
                 float(cells[1].replace(",", "")),
             )
         )
+    # TSA publishes newest-first; unfold_cells requires strictly ascending keys.
+    parsed.sort(key=itemgetter(0))
     return parsed
 
 
-def checkpoint_volumes(url: str = TSA_URL) -> list[tuple[date, float]]:
-    html = _get(url)
-    by_date = dict(_parse_rows(html, url))
-    for year_text in sorted(set(_ARCHIVE_YEAR.findall(html))):
-        if int(year_text) < _FIRST_REPORTING_YEAR:
-            continue
-        archive_url = f"{url.rstrip('/')}/{year_text}"
-        by_date.update(_parse_rows(_get(archive_url), archive_url))
-    if not by_date:
-        raise RuntimeError(f"no checkpoint rows parsed from {url}")
-    return sorted(by_date.items())
+@Cell.define("Fetch and parse TSA checkpoints")
+def checkpoint_step() -> Effect[Cons[Period, float] | None]:
+    """Fetch the current-year page only when the series' first node is demanded."""
+    html = fetch_html(TSA_URL)
+    rows = parse_checkpoint_rows(html, TSA_URL)
+
+    def step(index: int) -> tuple[Period, float, int] | None:
+        if index == len(rows):
+            return None
+        travel_date, count = rows[index]
+        period = Period(travel_date - timedelta(days=1), travel_date)
+        return period, count, index + 1
+
+    daily = unfold_cells("TSA checkpoint daily rows", seed=0, step=step)
+    return (yield from get(daily))
 
 
-def checkpoint_pairs() -> list[tuple[Period, float]]:
-    return [
-        (Period(travel_date - timedelta(days=1), travel_date), count)
-        for travel_date, count in checkpoint_volumes()
-    ]
+tsa_passengers = Series("TSA checkpoint passengers", checkpoint_step, _BY_DAYS)
 
 
-type CheckpointState = None | tuple[list[tuple[Period, float]], int]
-
-
-def checkpoint_step(
-    state: CheckpointState,
-) -> tuple[Period, float, CheckpointState] | None:
-    pairs, index = (checkpoint_pairs(), 0) if state is None else state
-    if index == len(pairs):
-        return None
-    period, count = pairs[index]
-    return period, count, (pairs, index + 1)
-
-
-tsa_passengers = Series.unfold(
-    "TSA checkpoint passengers",
-    _BY_DAYS,
-    seed=None,
-    step=checkpoint_step,
-)
-
-
-def find_last_date() -> Effect[date]:
+@Cell.define("TSA checkpoint last date")
+def tsa_last_date() -> Effect[date]:
     node = yield from get(tsa_passengers.cells)
     if node is None:
         raise RuntimeError("TSA checkpoint series is empty")
@@ -98,6 +78,3 @@ def find_last_date() -> Effect[date]:
         if next_node is None:
             return node.key.end
         node = next_node
-
-
-tsa_last_date = Cell("TSA checkpoint last date", find_last_date)
