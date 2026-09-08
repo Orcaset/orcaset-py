@@ -57,6 +57,8 @@ Model values are queried and resolved in a `Context` that holds the state for a 
 Orcaset also ships a `Stmt` class which can be used to build structured statements formatted into CSV, markdown, fixed-width, or other custom formats.
 
 ```py
+from orcaset import Context, Stmt, Total, fixed_width_table
+
 ctx = Context()
 periods = list(islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4))
 statement = Stmt(Total(profit, [revenue, costs])).values_for_periods(ctx, periods)
@@ -77,11 +79,7 @@ print(fixed_width_table(statement))
 print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
 
 # Costs@Period(2026-01-01, 2026-02-01) = -50.0
-#   revenue@Period(2026-01-01, 2026-02-01) = 100.0
-#     revenue.cells = <orcaset.series.Replayable object at 0x1017bcec0>
-#     revenue@Period(2026-01-01, 2026-02-01) = 100.0
-#       revenue@Period(2025-12-01, 2026-01-01) = Na
-#         revenue.cells = <orcaset.series.Replayable object at 0x1017bcec0>
+#   Revenue@Period(2026-01-01, 2026-02-01) = 100.0
 ```
 <!-- fmt: on -->
 See the demo scripts in the [examples](./examples) folder for additional review.
