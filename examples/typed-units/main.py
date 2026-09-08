@@ -73,11 +73,12 @@ usd_total = ops.map2(
 # ERROR: different-currency total is rejected where the series are
 # composed: pyrefly reports the ``fn`` argument as incompatible with the
 # operands' value types, and evaluating it raises ``TypeError``.
+# Remove the type ignore comment to see the error.
 invalid_total = ops.map2(
     "invalid total",
     usd_product,
     eur_revenue,
-    fn=map2_some(operator.add),
+    fn=map2_some(operator.add),  # type: ignore
     merge_keys=period_union,
 )
 
