@@ -1,16 +1,89 @@
 # Paper LBO
 
-This example implements the Wharton Career Services paper LBO case with pro forma
-financials, a circular average-debt interest calculation, sources and uses, returns,
-and a two-variable IRR sensitivity.
+This example builds a simple paper LBO case. It creates a linked three-statement model to highlight two `orcaset` model patterns.
 
-The model uses `Series.unfold` for recursive operating lines, `Series.of` for finite
-date-keyed cash flows, and explicit `period_union` / `date_union` merge policies for
-arithmetic. A local `cumulate` helper uses `scan_cells` to create a running debt balance.
+1. Sensitivity analysis using `Cell` rules to hold assumptions that might change.
+2. Circular value references resolved using iterative calculations for the debt draws.
 
-The interest lookup supplies `seed=0.0` and `maybe_abs_distance` at the circular ending
-debt demand. `Context` uses that cut to solve the fixed point. Sensitivities replace the
-NaN
+## Sensitivity analysis
+
+The script prints IRR sensitivity to exit multiple and revenue growth rate.
+
+Rather than defining the exit multiple and revenue growth rate assumptions as bare floats, the model wraps them in `Cell`s. The `Cell` type is a simple class that lifts a zero-argument function into an unkeyed rule that the effect handlers can evaluate. It is approximately:
+
+```py
+class Cell:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def compute(self):
+        return self.fn()
+```
+
+When the value from the cell is needed, the inner function is invoked and the value is stored in the context. The cell *object* doesn't change, only its value. This gives the rest of the model a stable object to reference while the underlying value updates.
+
+```py
+annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
+exit_multiple = Cell("Exit multiple", lambda: 5.0)
+```
+
+Evaluating the sensitivity is simply a matter of (nested) iterations over the assumption values, resolving the output in a *fresh* context each time.
+
+```py
+# Assumptions
+growth_rates = (0.06, 0.08, 0.10, 0.12, 0.14)
+exit_multiples = (3.0, 4.0, 5.0, 6.0, 7.0)
+
+table: list[list[str]] = []  # table to collect nested list of results
+
+for multiple in exit_multiples:  # iterate over multiples
+    exit_multiple.fn = lambda multiple=multiple: multiple
+    row = [f"{multiple:.1f}x".rjust(6)]
+
+    for growth in growth_rates:  # iterate over growth rates
+        annual_revenue_growth.fn = lambda growth=growth: growth
+        scenario = Context()
+
+        scenario_cashflows: list[float] = []  # collect cash flows for IRR calc
+        for day in cf_dates:
+            value = scenario.get_at(levered_cash_flow, day)
+            if isna(value):
+                raise ValueError(f"missing levered cash flow for {day}")
+            scenario_cashflows.append(value)
+        row.append(f"{float(npf.irr(scenario_cashflows)):.2%}".rjust(8))
+    table.append(row)
+```
+
+Sensitivity can be three or more levels deep, unlike spreadsheet data tables which are limited to two dimensions.
+
+## Iterative calculations
+
+Debt draws/repayment plug cash flow gap/surplus, creating a circular dependency between the average debt balance (calculated as the average of beginning and ending debt over the period), interest expense, and cash flow. While this is a simple model and it is technically feasible to unwind the circularity, the case explicitly includes circular construction.
+
+Orcaset natively handles cyclic dependencies. The only requirement is to define a seed value and distance function at least once in the cycle.
+
+This model defines the initial seed value and distance function in the `interest` definition, specifically in the getter for ending debt.
+
+```py
+@Series.define("Interest", ...)
+def interest(period: Period):
+    if period.start >= acquisition_date + hold_period:
+        return None
+    beginning = yield from get_at(debt_before_balloon, period.start)
+
+    # Starting seed and distance function
+    ending = yield from get_at(
+        debt_before_balloon,
+        period.end,
+        seed=0.0,
+        distance=maybe_abs_distance,
+    )
+    ...
+```
+
+The default context solver converges when the change in value falls below `1e-9` within 1,000 iterations.
+
+See the [iterative-solver](../iterative-solver/) example for additional detail.
 
 ## Run
 
@@ -76,7 +149,7 @@ Total uses: 200.0
 ```
 
 ```txt
-IRR sensitivity
+IRR sensitivity to exit multiple and revenue growth rate
              6%       8%      10%      12%      14%
   3.0x   -1.32%    3.02%    6.99%   10.67%   14.12%
   4.0x    9.92%   13.64%   17.15%   20.50%   23.72%
@@ -89,7 +162,7 @@ IRR sensitivity
 
 | File | Role |
 | --- | --- |
-| [`references/wharton-lbo-practice-model.xlsx`](references/wharton-lbo-practice-model.xlsx) | Original practice workbook. |
+| [`references/wharton-lbo-practice-model.xlsx`](references/wharton-lbo-practice-model.xlsx) | Original case workbook. |
 | [`references/example-opus-excel-build-script.py`](references/example-opus-excel-build-script.py) | Reference Excel build script. |
 | [`references/example-sol-excel-build-script.mjs`](references/example-sol-excel-build-script.mjs) | Reference Excel build script. |
-| [`references/automated-excel-agent-example.xlsx`](references/automated-excel-agent-example.xlsx) | Reference agent-built workbook. |
+| [`references/automated-excel-agent-example.xlsx`](references/automated-excel-agent-example.xlsx) | Reference agent-built workbook showing LibreOffice-Excel compatibility errors. |

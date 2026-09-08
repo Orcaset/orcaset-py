@@ -18,6 +18,7 @@ from orcaset import (
     Thunk,
     Total,
     accrue,
+    add_some,
     date_union,
     exact_or,
     fixed_width_table,
@@ -25,6 +26,7 @@ from orcaset import (
     get_at,
     isna,
     last,
+    map2_some,
     map_some,
     maybe_abs_distance,
     multiply_some,
@@ -34,6 +36,7 @@ from orcaset import (
     value_or,
 )
 
+# ---- Assumptions and constants ----
 acquisition_date = date(2022, 12, 31)
 hold_period = relativedelta(years=5)
 year_offset = relativedelta(years=1)
@@ -52,61 +55,50 @@ annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 exit_multiple = Cell("Exit multiple", lambda: 5.0)
 
 
-@Series.define("Revenue", ACCRUE, seed=next(Period.seq(acquisition_date, year_offset)))
-def revenue_step(period: Period) -> tuple[Period, Thunk[float], Period]:
-    def value() -> Effect[float]:
-        prior = yield from get_at(revenue_step, period.from_start(-year_offset))
-        if isna(prior):
-            return initial_revenue
+# ---- Model definitions ----
+@Series.define("Revenue", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+def revenue(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
+    if period.start == acquisition_date:
+        value: Maybe[float] = initial_revenue
+    else:
+        prior = yield from get_at(revenue, period.from_start(-year_offset))
         growth = yield from get(annual_revenue_growth)
-        return prior * (1 + growth)
+        value = multiply_some((prior, add_some((1, growth))))
+    return period, value, period.from_end(year_offset)
 
-    return period, Thunk(value), period.from_end(year_offset)
 
-
-revenue: Series[Period, Maybe[float], Maybe[float]] = revenue_step
 ebitda = ops.scale("EBITDA", revenue, ebitda_margin)
-da: Series[Period, float, Maybe[float]] = Series.unfold(
+da = Series.unfold(
     "D&A",
     ACCRUE,
-    seed=next(Period.seq(acquisition_date, year_offset)),
+    seed=Period(acquisition_date, acquisition_date + year_offset),
     step=lambda period: (period, annual_da, period.from_end(year_offset)),
 )
 ebit = ops.add("EBIT", ebitda, da, merge_keys=period_union)
 
 
-def interest_step(
-    period: Period,
-) -> tuple[Period, Thunk[float], Period] | None:
+@Series.define("Interest", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+def interest(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | None]:
     if period.start >= acquisition_date + hold_period:
         return None
-
-    def value() -> Effect[float]:
-        beginning = yield from get_at(debt_before_balloon, period.start)
-        ending = yield from get_at(
-            debt_before_balloon,
-            period.end,
-            seed=0.0,
-            distance=maybe_abs_distance,
-        )
-        return 0.0 if isna(beginning) or isna(ending) else (beginning + ending) / 2 * -interest_rate
-
-    return period, Thunk(value), period.from_end(year_offset)
+    beginning = yield from get_at(debt_before_balloon, period.start)
+    ending = yield from get_at(
+        debt_before_balloon,
+        period.end,
+        seed=0.0,
+        distance=maybe_abs_distance,
+    )
+    value = multiply_some((add_some((beginning, ending)), 0.5, -interest_rate))
+    return period, value, period.from_end(year_offset)
 
 
-interest = Series.unfold(
-    "Interest",
-    ACCRUE,
-    seed=next(Period.seq(acquisition_date, year_offset)),
-    step=interest_step,
-)
 ebt = ops.add("EBT", ebit, interest, merge_keys=period_union)
 taxes = ops.scale("Taxes", ebt, -tax_rate)
 capex = ops.scale("Capex", revenue, -capex_pct_revenue)
-change_in_nwc: Series[Period, float, Maybe[float]] = Series.unfold(
+change_in_nwc = Series.unfold(
     "Change in NWC",
     ACCRUE,
-    seed=next(Period.seq(acquisition_date, year_offset)),
+    seed=Period(acquisition_date, acquisition_date + year_offset),
     step=lambda period: (period, -annual_nwc_increase, period.from_end(year_offset)),
 )
 fcf = ops.add(
@@ -125,35 +117,25 @@ def draw_value() -> Effect[Maybe[float]]:
     return multiply_some((ntm_ebitda, purchase_multiple, ltv))
 
 
-draws = Series.of(
+draws = Series[date, Maybe[float], Maybe[float]].of(
     "Draws",
     exact_or(0.0),
     [(acquisition_date, Thunk(draw_value))],
 )
 
 
-def debt_sweep_step(
-    period: Period,
-) -> tuple[Period, Thunk[float], Period] | None:
+@Series.define("Cash sweep", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+def debt_sweep(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | None]:
     if period.start >= acquisition_date + hold_period:
         return None
+    beginning = yield from get_at(debt_before_balloon, period.start)
+    free_cash_flow = yield from get_at(fcf, period)
 
-    def value() -> Effect[float]:
-        beginning = yield from get_at(debt_before_balloon, period.start)
-        free_cash_flow = yield from get_at(fcf, period)
-        if isna(beginning) or isna(free_cash_flow):
-            return 0.0
-        return -min(beginning, free_cash_flow)
+    def sweep(bal: float, cash: float) -> float:
+        return -min(bal, cash)
 
-    return period, Thunk(value), period.from_end(year_offset)
-
-
-debt_sweep = Series.unfold(
-    "Cash sweep",
-    ACCRUE,
-    seed=next(Period.seq(acquisition_date, year_offset)),
-    step=debt_sweep_step,
-)
+    value = map2_some(sweep)(beginning, free_cash_flow)
+    return period, value, period.from_end(year_offset)
 
 
 def payment(period: Period) -> Effect[float]:
@@ -161,11 +143,12 @@ def payment(period: Period) -> Effect[float]:
 
 
 sweep_periods = list(Period.seq(acquisition_date, year_offset, acquisition_date + hold_period))
-sweep_payments = Series.of(
+sweep_payments = Series[date, Maybe[float], Maybe[float]].of(
     "Sweep payments",
     exact_or(0.0),
     [(period.end, Thunk(lambda period=period: payment(period))) for period in sweep_periods],
 )
+
 
 def cumulate[V](
     name: str,
@@ -179,9 +162,7 @@ def cumulate[V](
         def value() -> Effect[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
             flow = yield from get_at(flows, day)
-            if isna(prior):
-                return flow
-            return prior + value_or(flow, 0.0)
+            return add_some((prior, flow))
 
         return Thunk(value), day
 
@@ -204,7 +185,7 @@ def balloon_value() -> Effect[float]:
     return -value_or(remaining, 0.0)
 
 
-balloon_payment = Series.of(
+balloon_payment = Series[date, Maybe[float], Maybe[float]].of(
     "Balloon payment",
     exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(balloon_value))],
@@ -226,7 +207,7 @@ def purchase_price_value() -> Effect[Maybe[float]]:
     return multiply_some((entry_ebitda, -purchase_multiple))
 
 
-purchase_price = Series.of(
+purchase_price = Series[date, Maybe[float], Maybe[float]].of(
     "Purchase price",
     exact_or(0.0),
     [(acquisition_date, Thunk(purchase_price_value))],
@@ -245,7 +226,7 @@ def exit_value_fn() -> Effect[Maybe[float]]:
     return multiply_some((exit_ebitda, multiple))
 
 
-exit_value = Series.of(
+exit_value = Series[date, Maybe[float], Maybe[float]].of(
     "Exit value",
     exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(exit_value_fn))],
@@ -256,7 +237,7 @@ def fcf_payment(period: Period) -> Effect[float]:
     return value_or((yield from get_at(fcf, period)), 0.0)
 
 
-year_end_fcf_payment = Series.of(
+year_end_fcf_payment = Series[date, Maybe[float], Maybe[float]].of(
     "Year end fcf payment",
     exact_or(0.0),
     [(period.end, Thunk(lambda period=period: fcf_payment(period))) for period in sweep_periods],
@@ -290,6 +271,7 @@ stmt = Stmt(
     ),
 )
 
+# ---- Display the results ----
 ctx = Context()
 display_periods = Period.list(
     acquisition_date, year_offset, acquisition_date + hold_period + year_offset
@@ -322,12 +304,14 @@ print()
 print("Uses", f" Purchase price: {pp}", f"Total uses: {pp}", sep="\n")
 
 print()
-print("IRR sensitivity")
-print(f"{'':6} " + " ".join(f"{growth:>8.0%}" for growth in (0.06, 0.08, 0.10, 0.12, 0.14)))
-for multiple in (3.0, 4.0, 5.0, 6.0, 7.0):
+growth_rates = (0.06, 0.08, 0.10, 0.12, 0.14)
+exit_multiples = (3.0, 4.0, 5.0, 6.0, 7.0)
+
+table: list[list[str]] = []
+for multiple in exit_multiples:
     exit_multiple.fn = lambda multiple=multiple: multiple
     row = [f"{multiple:.1f}x".rjust(6)]
-    for growth in (0.06, 0.08, 0.10, 0.12, 0.14):
+    for growth in growth_rates:
         annual_revenue_growth.fn = lambda growth=growth: growth
         scenario = Context()
         scenario_cashflows: list[float] = []
@@ -337,4 +321,8 @@ for multiple in (3.0, 4.0, 5.0, 6.0, 7.0):
                 raise ValueError(f"missing levered cash flow for {day}")
             scenario_cashflows.append(value)
         row.append(f"{float(npf.irr(scenario_cashflows)):.2%}".rjust(8))
+    table.append(row)
+
+print("IRR sensitivity to exit multiple and revenue growth rate")
+for row in [[f"{'':6}", *[f"{growth:>8.0%}" for growth in growth_rates]], *table]:
     print(" ".join(row))

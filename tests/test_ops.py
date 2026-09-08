@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date
 
 import pytest
@@ -221,7 +222,7 @@ def test_combine_hands_na_to_fn_unchanged():
     empty = Series.of("Empty", exact, [])
     seen: list[list[Maybe[float]]] = []
 
-    def fn(values):
+    def fn(values: Sequence[Maybe[float]]) -> float:
         seen.append(list(values))
         return sum(v for v in values if not isna(v))
 
