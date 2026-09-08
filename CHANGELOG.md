@@ -9,6 +9,8 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-08
+
 ### Added
 
 - `Series.flatten(name, components, *, query, split_keys)`: lazily compose an
@@ -26,8 +28,6 @@ change between minor releases.
   and is constructed once per context only when demanded after exhaustion.
 - `KeySplit[K]`, `period_split`, and `date_split` for partitioning queries
   and clipping continuation keys at component seams.
-- A `flatten-series` example showing actuals, two projection months, and
-  terminal growth composed as series values.
 
 ### Removed
 
@@ -384,7 +384,8 @@ and formatters have been rebuilt on generic `Series`.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/orcaset/orcaset-py/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/orcaset/orcaset-py/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/orcaset/orcaset-py/compare/v0.8.0...v0.8.1
