@@ -36,21 +36,24 @@ Use `Series.unfold` when the domain is lazy, infinite, stateful, or determined b
 
 ```python
 @Series.define("Revenue", accrue(YF.cmonthly), seed=first_period)
-def revenue(period: Period) -> tuple[Period, float | Thunk[float], Period]:
-    def value() -> Effect[float]:
-        prior = yield from get_at(revenue, period.shift(-YEAR))
-        return 100.0 if isna(prior) else prior * 1.05
-
-    return period, Thunk(value), period.from_end(YEAR)
+def revenue(period: Period) -> Effect[tuple[Period, float, Period]]:
+    amount = yield from get_at(source_revenue, period)
+    if isna(amount):
+        raise ValueError(f"missing source revenue for {period}")
+    return period, amount * 1.05, period.from_end(YEAR)
 ```
 
 `@Series.define` is the decorator form of `Series.unfold`; use it when the step must refer to the series being defined. State is passed explicitly, so the old loop-factory closure pattern is unnecessary.
 
 Keys must be strictly ascending. For `Period`, `a < b` means `a.end <= b.start`; overlapping periods are mutually incomparable and cannot be emitted successively. Stop a finite unfold with `None`.
 
-## Defer values deliberately
+## Prefer direct values; defer only when needed
 
-An unfold result treats only `Thunk(fn)` as deferred computation. Every other object—including a callable—is a literal value. Wrap computations that demand other rules:
+`Series.define`, `Series.unfold`, and `unfold_cells` accept steps returning `tuple[K, V | Thunk[V], S] | None`, either directly or through `Effect`. Prefer returning `V`: perform dependency reads with `yield from get(...)` or `yield from get_at(...)` in the step, then return the computed value. The step is already lazy and runs when its chain node is demanded.
+
+Use `Thunk[V]` when the `Cons` must become available before its value can resolve. For example, a future self-reference may need to traverse the current node to reach a later key. Check the actual traversal dependencies: neither a self-reference nor an effectful read by itself establishes a need for `Thunk`. Deferral is also appropriate when a required key-only walk must avoid value computation or I/O.
+
+An unfold result treats only `Thunk(fn)` as deferred computation. Every other object—including a callable—is a literal value. When separate value deferral is required:
 
 ```python
 def value() -> Effect[float]:
@@ -60,7 +63,7 @@ def value() -> Effect[float]:
 return key, Thunk(value), next_state
 ```
 
-Do not put a live generator in the value slot; Orcaset raises `TypeError`. Use a plain value when it is already known. Keeping values deferred allows key-only walks to remain cheap and prevents structure inspection from causing I/O or model evaluation.
+Do not put a live generator in the value slot; Orcaset raises `TypeError`. An effectful step yielding dependencies and returning a tuple containing `V` is valid; returning a generator as that tuple's value is not. The direct-value preference applies to unfold steps; callbacks such as `map_cells` and `scan_cells` do not accept effectful callback results, so their effectful value computations still need `Thunk`.
 
 ## Compose answers with `ops`
 

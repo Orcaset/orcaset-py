@@ -37,7 +37,7 @@ Choose one sign convention and retain it on exported movements. A draw is normal
 
 Interest and operating cash flow earned over an interval remain `Period`-keyed. Draws, purchases, repayments, and exit proceeds occurring on a day are `date`-keyed. A balance is date-keyed and queried at `period.start` and `period.end`.
 
-Do not combine date and period series directly. For a finite period schedule, a dated adapter can use `Series.of` with `(period.end, Thunk(...))` pairs. For a lazy schedule, unfold the periods into ending-date keys and have each thunk query the original flow at that period.
+Do not combine date and period series directly. For a finite period schedule, a dated adapter can use `Series.of` with `(period.end, Thunk(...))` pairs. For a lazy schedule, prefer an effectful unfold step that queries the original flow at that period and returns its value with the ending-date key.
 
 Balances that carry between events use `last`; event flows where no event means zero normally use `exact_or(0.0)`. The public balance on a settlement date should be post-settlement. If a circular formula needs a pre-settlement balance, model a clearly named helper and then add the settlement event into the public balance on the same date.
 
@@ -55,7 +55,7 @@ ending = yield from get_at(
 interest_amount = rate * 0.5 * (beginning + ending)
 ```
 
-One executed seed/distance specification anywhere in the cycle is sufficient from any query entrypoint. It is a solver cut, not a missing-value default.
+One executed seed/distance specification anywhere in the cycle is sufficient from any query entrypoint. It is a solver cut, not a missing-value default. A seeded value cycle, such as interest expense and debt, does not by itself require `Thunk`: prefer direct unfold values unless resolving them requires a `Cons` node that is still being constructed. Seed/distance resolves numerical circularity; `Thunk` separates node construction from value resolution.
 
 - Use `abs_distance` for `float` answers.
 - Use `maybe_abs_distance` for `Maybe[float]` answers.

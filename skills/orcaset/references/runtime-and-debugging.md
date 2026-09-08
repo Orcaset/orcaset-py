@@ -28,7 +28,7 @@ probe = Cell("Revenue keys", lambda: keys_until(revenue.cells, stop))
 keys = ctx.get(probe)
 ```
 
-For custom inspection, start with `node = yield from get(series.cells)` and advance with `yield from get(node.tail)`. Demand `node.cell` only when the value is actually needed. A key walk that triggers source I/O or value calculation usually indicates a missing `Thunk` or a structural step that is doing value work.
+For custom inspection, start with `node = yield from get(series.cells)` and advance with `yield from get(node.tail)`. Demand `node.cell` only when the value is actually needed. With direct unfold values, a key walk also computes those values; this is expected. Investigate a missing `Thunk` only when traversal must precede value resolution or the model requires key-only walks to avoid computation or I/O.
 
 ## Trace dependencies
 

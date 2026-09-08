@@ -15,7 +15,7 @@ def value() -> Effect[float]:
     return prior * (1.0 + rate)
 ```
 
-Do not read a separate global float when the exported `Cell` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency requires a thunk or rule that demands the cell.
+Do not read a separate global float when the exported `Cell` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency must be demanded effectfully in a rule, unfold step, or thunk.
 
 `Cell.fn` is public and may be replaced. Resolve each scenario in a fresh context because a context intentionally memoizes one run:
 
@@ -46,8 +46,8 @@ The float arithmetic helpers are specialized to `Maybe[float]`. For rich types, 
 
 ## Values with provenance
 
-A sourced value may carry immutable citation metadata such as document, filing, page, URL, retrieval date, or table coordinates. Keep fetching and parsing at a leaf where possible, wrap it in `Thunk`, and make derived formulas demand that cell. This preserves lazy I/O and a dependency path back to the source.
+A sourced value may carry immutable citation metadata such as document, filing, page, URL, retrieval date, or table coordinates. Keep fetching and parsing at a leaf where possible and make derived formulas demand that leaf. Use an effectful unfold step returning a direct value by default; use `Thunk` when I/O must wait until the cell value is demanded rather than its chain node. Both retain a dependency path back to the source.
 
 Arithmetic may preserve metadata in a domain type or intentionally produce a plain derived value. Validate the leaf metadata separately from the derived number, then trace a representative result to confirm that provenance remains visible through dependencies.
 
-If an unfold step needs external data to decide the domain itself, perform the read effectfully in the step and carry the parsed structural state forward. If only the value depends on external data, keep the step structural and defer the read in a `Thunk`.
+If an unfold step needs external data to decide the domain itself, perform the read effectfully in the step and carry the parsed structural state forward. If only the value depends on external data, a direct value is still the default; defer the read in a `Thunk` when key discovery must avoid that I/O.
