@@ -22,7 +22,7 @@ The context memoizes each rule/key and records these dependency edges. Do not ad
 
 ## Construct a series
 
-Use `Series.of` for finite, already-known pairs. The iterable is materialized when the series is built, but `Thunk` values remain deferred:
+Use `Series.of` for a sequence of already-known pairs. Wrap generators and `enumerate` results in a list or tuple before passing them. The sequence is used directly, and `Thunk` values remain deferred:
 
 ```python
 history = Series.of(

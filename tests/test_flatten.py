@@ -48,7 +48,7 @@ type AmountQuery = QueryFn[Period, Maybe[float], Maybe[float]]
 
 
 def components[K: Key, W](*sources: Series[K, Any, W]) -> Cells[int, Series[K, Any, W]]:
-    return Series.of("components", exact, enumerate(sources)).cells
+    return Series.of("components", exact, list(enumerate(sources))).cells
 
 
 def joined(*sources: Amounts, query: AmountQuery = covered) -> Amounts:

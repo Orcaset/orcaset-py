@@ -9,6 +9,12 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- `Series.of` now requires a `Sequence` of pairs and uses it directly without
+  copying. Callers must explicitly convert generators and other iterables to
+  lists or tuples.
+
 ## [0.11.1] - 2026-09-09
 
 ### Fixed

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Hashable, Iterable, Sequence
+from collections.abc import Callable, Generator, Hashable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, Self
 
@@ -206,15 +206,14 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         cls,
         name: str,
         query: QueryFn[K, V, W],
-        pairs: Iterable[tuple[K, V | Thunk[V]]],
+        pairs: Sequence[tuple[K, V | Thunk[V]]],
     ) -> Series[K, V, W]:
-        """Build a series from eagerly materialized literal pairs."""
-        materialized = tuple(pairs)
+        """Build a series from a sequence of literal pairs."""
 
         def step(index: int) -> tuple[K, V | Thunk[V], int] | None:
-            if index == len(materialized):
+            if index == len(pairs):
                 return None
-            key, value = materialized[index]
+            key, value = pairs[index]
             return key, value, index + 1
 
         return cls.unfold(name, query, seed=0, step=step)
