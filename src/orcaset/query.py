@@ -120,15 +120,13 @@ def _accrue(q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount) -> Effe
 
 
 def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float]]:
-    """Sum cells that exactly tile ``q``; ``Na`` on any gap or partial overlap.
+    """Sum one or more cells that exactly tile ``q`` or return ``Na`` on any gap or partial overlap.
 
     Unlike ``exact``, a query that is the union of adjacent cells is answered.
-    Unlike ``accrue``, a query that cuts through a cell is ``Na``. Any ``Na``
-    among the tiling cells is ``Na``.
+    Unlike ``accrue``, a query that cuts through a cell is ``Na``. Any ``Na`` among the tiling cells is ``Na``.
     """
     total = 0.0
     expected_start = q.start
-    covered_end: date | None = None
     node = yield from get(cells)
     while node is not None:
         k = node.key
@@ -143,9 +141,8 @@ def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float
         if isna(value):
             return Na
         total += value
+        if k.end >= q.end:
+            return total
         expected_start = k.end
-        covered_end = k.end
         node = yield from get(node.tail)
-    if covered_end != q.end:
-        return Na
-    return total
+    return Na
