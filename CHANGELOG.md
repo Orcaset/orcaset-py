@@ -9,6 +9,19 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `Context.depends_on(source, target)` and
+  `Context.path_to(source, target, *, structural=False)` for asking whether
+  one cell transitively demanded another, and for the shortest demand path
+  between them. Each endpoint is a `Rule` or a `(KeyedRule, key)` pair
+  (`KeyedRuleRef`). A `(series, key)` target names the series' value at `key`
+  however it was realized: the query cell, or the stored cell when `key` is
+  one of the series' own keys. `path_to` returns `DepNode`s from source to
+  target with the final node at the address `target` names, folds interior
+  structural rules unless `structural=True`, and returns `None` when no path
+  exists.
+
 ### Changed
 
 - `Series.of` now requires a `Sequence` of pairs and uses it directly without

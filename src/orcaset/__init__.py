@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: SSPL-1.0
 
 from orcaset import ops
-from orcaset.context import Context, ConvergenceError, CycleError, DepNode
+from orcaset.context import Context, ConvergenceError, CycleError, DepNode, KeyedRuleRef
 from orcaset.formatters import (
     DateFormatter,
     ValueFormatter,
@@ -105,6 +105,7 @@ __all__ = [
     "KeySplit",
     "KeyedCell",
     "KeyedRule",
+    "KeyedRuleRef",
     "LineRow",
     "Maybe",
     "Na",

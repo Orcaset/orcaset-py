@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass, field
 from typing import Any, NoReturn, cast
 
 from orcaset.rule import _UNIT, Effect, Iterate, KeyedRule, Rule
+from orcaset.series import Cons, Series
 
 type RuleKey = tuple[int, Hashable]
 type Target = KeyedRule[Any, Any] | Rule[Any]
+type KeyedRuleRef[K: Hashable] = tuple[KeyedRule[K, Any], K]
+"""A keyed rule paired with one of its keys, naming a single cell."""
 
 
 _MISSING: Any = object()
@@ -81,9 +85,7 @@ class ConvergenceError(RuntimeError):
                     f"  {seeded_label}: distance={seeded_residual}, tol={seeded_tol} ({met})"
                 )
             for missing in unobserved:
-                missing_label = _format_cell(
-                    names.get(missing[0], str(missing[0])), missing[1]
-                )
+                missing_label = _format_cell(names.get(missing[0], str(missing[0])), missing[1])
                 lines.append(f"  {missing_label}: not observed this iteration")
             lines.append(f"  cut {label}:")
             lines.extend(history)
@@ -196,6 +198,48 @@ class Context:
         """Resolve an unkeyed rule, then return its dependency tree."""
         self.get(rule)
         return self._dep_node((rule.id, _UNIT), seen=set(), structural=structural)
+
+    def depends_on[SK: Hashable, TK: Hashable](
+        self,
+        source: Rule[Any] | KeyedRuleRef[SK],
+        target: Rule[Any] | KeyedRuleRef[TK],
+    ) -> bool:
+        """Whether ``source`` depends on ``target``.
+
+        ``source`` is resolved first so the demand graph is complete. A cell
+        depends on itself only through a demand cycle. A ``(series, key)``
+        target names the series' value at ``key`` however it was realized:
+        the query cell, or the stored cell when ``key`` is one of the series'
+        own keys and the chain was unfolded that far.
+        """
+        start = self._materialize(source)
+        return self._search(start, self._goals(target)) is not None
+
+    def path_to[SK: Hashable, TK: Hashable](
+        self,
+        source: Rule[Any] | KeyedRuleRef[SK],
+        target: Rule[Any] | KeyedRuleRef[TK],
+        *,
+        structural: bool = False,
+    ) -> tuple[DepNode, ...] | None:
+        """Shortest demand path from ``source`` to ``target``, or ``None``.
+
+        Nodes run from ``source`` to ``target``.
+        Ties are broken by rule name, key, and id. Structural rules are
+        dropped from the interior by default. Pass ``structural=True`` to keep
+        them. The final node is reported at the address ``target`` names,
+        even when the walk arrives at a series' stored cell.
+        """
+        start = self._materialize(source)
+        path = self._search(start, self._goals(target))
+        if path is None:
+            return None
+        nodes = [self._path_node(path[0])]
+        for cell in path[1:-1]:
+            if structural or not self._targets[cell[0]].structural:
+                nodes.append(self._path_node(cell))
+        nodes.append(self._goal_node(path[-1], target))
+        return tuple(nodes)
 
     def _resolve[V](
         self,
@@ -464,6 +508,84 @@ class Context:
         path = tuple(self._stack[cycle_start:])
         raise CycleError(path, names=self._target_names())
 
+    def _materialize(self, ref: Rule[Any] | KeyedRuleRef[Any]) -> RuleKey:
+        if isinstance(ref, tuple):
+            rule, key = ref
+            self.get_at(rule, key)
+            return (rule.id, key)
+        self.get(ref)
+        return (ref.id, _UNIT)
+
+    def _goals(self, ref: Rule[Any] | KeyedRuleRef[Any]) -> frozenset[RuleKey]:
+        if not isinstance(ref, tuple):
+            return frozenset({(ref.id, _UNIT)})
+        rule, key = ref
+        goals = {(rule.id, key)}
+        stored = self._stored_cell(rule, key)
+        if stored is not None:
+            goals.add(stored)
+        return frozenset(goals)
+
+    def _stored_cell(self, rule: KeyedRule[Any, Any], key: Hashable) -> RuleKey | None:
+        """The cached stored cell of ``rule`` at ``key``, if it is a series.
+
+        Reads only the cache: a stored cell can be depended on only if the
+        chain was already unfolded to it. Stops at the first key not before
+        ``key`` so it never looks past what a computation forced.
+        """
+        if not isinstance(rule, Series):
+            return None
+        node = self._compute_cache.get((rule.cells.id, _UNIT))
+        while isinstance(node, Cons):
+            if node.key == key:
+                return (node.cell.id, _UNIT)
+            try:
+                before = node.key < key
+            except TypeError:
+                return None
+            if not before:
+                return None
+            node = self._compute_cache.get((node.tail.id, _UNIT))
+        return None
+
+    def _search(self, start: RuleKey, goals: frozenset[RuleKey]) -> list[RuleKey] | None:
+        """Breadth-first path of length >= 1 from ``start`` to any goal."""
+        parents: dict[RuleKey, RuleKey] = {}
+        seen = {start}
+        queue = deque([start])
+        while queue:
+            cell = queue.popleft()
+            for child in self._sorted_children(cell):
+                if child in goals:
+                    path = [child, cell]
+                    while path[-1] != start:
+                        path.append(parents[path[-1]])
+                    path.reverse()
+                    return path
+                if child not in seen:
+                    seen.add(child)
+                    parents[child] = cell
+                    queue.append(child)
+        return None
+
+    def _path_node(self, cell: RuleKey) -> DepNode:
+        return DepNode(
+            name=self._targets[cell[0]].name, key=cell[1], value=self._compute_cache[cell]
+        )
+
+    def _goal_node(self, cell: RuleKey, ref: Rule[Any] | KeyedRuleRef[Any]) -> DepNode:
+        value = self._compute_cache[cell]
+        if isinstance(ref, tuple):
+            rule, key = ref
+            return DepNode(name=rule.name, key=key, value=value)
+        return DepNode(name=ref.name, key=_UNIT, value=value)
+
+    def _sorted_children(self, cell: RuleKey) -> list[RuleKey]:
+        def sort_key(child: RuleKey) -> tuple[str, str, int]:
+            return (self._targets[child[0]].name, repr(child[1]), child[0])
+
+        return sorted(self._deps.get(cell, ()), key=sort_key)
+
     def _dep_node(
         self,
         cell: RuleKey,
@@ -478,11 +600,7 @@ class Context:
             return DepNode(name=name, key=key, value=value, deps=())
 
         seen = seen | {cell}
-
-        def sort_key(child: RuleKey) -> tuple[str, str, int]:
-            return (self._targets[child[0]].name, repr(child[1]), child[0])
-
-        children = sorted(self._deps.get(cell, ()), key=sort_key)
+        children = self._sorted_children(cell)
         return DepNode(
             name=name,
             key=key,
@@ -507,11 +625,7 @@ class Context:
         if cell in seen:
             return ()
         seen = seen | {cell}
-
-        def sort_key(child: RuleKey) -> tuple[str, str, int]:
-            return (self._targets[child[0]].name, repr(child[1]), child[0])
-
-        children = sorted(self._deps.get(cell, ()), key=sort_key)
+        children = self._sorted_children(cell)
         return tuple(
             node
             for child in children

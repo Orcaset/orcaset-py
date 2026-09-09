@@ -75,11 +75,22 @@ print(fixed_width_table(statement))
 `orcaset` uses effect handlers to trace calculation dependencies and memoize values within a run context. Dependencies can be inspected through the context object.
 
 ```py
-# Print the dependency tree for January 2026 costs
+# Get a node's full dependency tree
 print(ctx.dependencies(costs, Period(date(2026, 1, 1), date(2026, 2, 1))))
-
 # Costs@Period(2026-01-01, 2026-02-01) = -50.0
 #   Revenue@Period(2026-01-01, 2026-02-01) = 100.0
+
+# Ask whether one cell reached another
+q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
+jan = Period(date(2026, 1, 1), date(2026, 2, 1))
+print(ctx.depends_on((profit, q1), (revenue, jan)))
+# True
+
+# Get the dependency path between to nodes, if any
+nodes = [node for node in ctx.path_to((profit, q1), (revenue, jan)) or ()]
+print(" > ".join(str(node) for node in nodes))
+# Profit@Period(2026-01-01, 2026-04-01) = 165.5 > Revenue@Period(2026-01-01, 2026-04-01) = 331.0 > Revenue@Period(2026-01-01, 2026-02-01) = 100.0
+
 ```
 <!-- fmt: on -->
 See the demo scripts in the [examples](./examples) folder for additional review.
