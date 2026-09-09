@@ -9,6 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `AnyRule[K]`: a `Rule` of any value, or a `KeyedRule[K, Any]` paired with a
+  key of type `K`.
+
 ## [0.11.1] - 2026-09-09
 
 ### Fixed

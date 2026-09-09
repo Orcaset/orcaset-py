@@ -233,6 +233,15 @@ class KeyedRule[K: Hashable, V](_Identity, ABC):
         ...
 
 
+type AnyRule[K: Hashable] = Rule[Any] | tuple[KeyedRule[K, Any], K]
+"""A ``Rule`` of any value, or a ``KeyedRule`` paired with a matching key.
+
+The key type is tied to the ``KeyedRule``: ``AnyRule[K]`` accepts
+``Rule[Any]`` or ``tuple[KeyedRule[K, Any], K]``, so a keyed rule cannot
+be paired with a key from a different key space.
+"""
+
+
 class Cell[V](Rule[V]):
     """Unkeyed rule whose ``compute`` delegates to a zero-arg ``fn``.
 

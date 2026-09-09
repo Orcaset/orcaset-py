@@ -34,6 +34,7 @@ from orcaset.query import (
     last_or,
 )
 from orcaset.rule import (
+    AnyRule,
     Cell,
     Demand,
     Effect,
@@ -84,6 +85,7 @@ from orcaset.yf import YF
 
 __all__ = [
     "YF",
+    "AnyRule",
     "Cell",
     "Cells",
     "Cons",
