@@ -9,6 +9,13 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-09
+
+### Fixed
+
+- `covered` now returns as soon as a tiling cell ends on the query, so a finite
+  query over a longer or infinite chain no longer walks remaining cells.
+
 ## [0.11.0] - 2026-09-08
 
 ### Added
@@ -384,7 +391,8 @@ and formatters have been rebuilt on generic `Series`.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/orcaset/orcaset-py/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/orcaset/orcaset-py/compare/v0.8.1...v0.9.0
