@@ -52,6 +52,6 @@ Run the formatter, configured type checker, tests, and executable model when req
 - balances reconcile opening value plus signed movements to ending value;
 - schedules reconcile source amount, allocations, and residual value;
 - scenario `Cell` changes affect dependents in a fresh context;
-- dependency traces contain the expected upstream rules and structural traces explain any domain-sensitive behavior.
+- `Context.depends_on` confirms expected upstream relationships at representative keys; use `Context.path_to` for a connecting path and `structural=True` for domain-sensitive behavior (see [runtime-and-debugging.md](runtime-and-debugging.md)).
 
 Test a small representative horizon first: the first recursive cell, an ordinary later cell, a miss, each important boundary, and any cycle. For chain operations, separately test the advertised keys and values so accidental forcing, clipping, gaps, or merge errors are visible.

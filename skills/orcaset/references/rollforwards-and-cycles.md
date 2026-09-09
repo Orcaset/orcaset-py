@@ -68,4 +68,4 @@ An unseeded cycle raises `CycleError`; inspect its path. A non-converging cycle 
 
 ## Reconcile
 
-For every balance, test opening value plus signed movements equals ending value. Probe the opening date, ordinary period starts and ends, between-event dates, and settlement dates. For financing, also reconcile draws, sweeps, balloon payments, exit proceeds, and resulting equity cash flows. Inspect the dependency tree for an ordinary rollforward cell and for a cyclic or boundary cell.
+For every balance, test opening value plus signed movements equals ending value. Probe the opening date, ordinary period starts and ends, between-event dates, and settlement dates. For financing, also reconcile draws, sweeps, balloon payments, exit proceeds, and resulting equity cash flows. Use `Context.depends_on` to check expected upstream balances and movements for an ordinary rollforward cell and a cyclic or boundary cell; use `Context.path_to` when you need to explain a connection (see [runtime-and-debugging.md](runtime-and-debugging.md)).

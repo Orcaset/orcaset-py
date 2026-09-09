@@ -30,20 +30,29 @@ keys = ctx.get(probe)
 
 For custom inspection, start with `node = yield from get(series.cells)` and advance with `yield from get(node.tail)`. Demand `node.cell` only when the value is actually needed. With direct unfold values, a key walk also computes those values; this is expected. Investigate a missing `Thunk` only when traversal must precede value resolution or the model requires key-only walks to avoid computation or I/O.
 
-## Trace dependencies
+## Verify dependencies with targeted queries
 
-Use the same context that produced the answer:
+Use `Context.depends_on(source, target)` to check whether an output depends directly or transitively on an expected input. Use `Context.path_to(source, target)` when you need to explain the connection. Do not manually walk, expand, or print full dependency trees for model verification; large graphs can make that prohibitively expensive.
+
+Use the same context that produced the answer. Both methods resolve the source automatically, so they also work in a fresh context. Pass a keyed `Series` or `KeyedRule` as `(rule, key)` and an unkeyed `Rule` or `Cell` directly:
 
 ```python
-tree = ctx.dependencies(revenue, period)
-print(tree)
+assert ctx.depends_on((revenue, period), growth)
+assert ctx.depends_on((debt, period.end), (debt, period.start))
 
-assumption_tree = ctx.rule_dependencies(growth)
+path = ctx.path_to((revenue, period), growth)
+assert path is not None
+for node in path:
+    print(node.name, node.key, node.value)
 ```
 
-The returned `DepNode` has `name`, `key`, `value`, and `deps`. By default, Orcaset folds internal cell-chain traversal nodes so the tree emphasizes economic dependencies. Pass `structural=True` to either trace method when debugging unfold tails, domain decisions, extension frontiers, or merges.
+Choose source/target pairs that reflect the model's intended formulas; these examples assume revenue reads growth and closing debt reads opening debt. Check representative keys and relevant expected or forbidden dependencies, rather than enumerating every reachable node.
 
-A missing expected edge often reveals a hard-coded value, direct function call, local accumulation, or eagerly materialized cache. Extra `.cells` and `.tail@...` nodes in a structural trace show scheduler mechanics, not extra economic formulas.
+`depends_on` returns a boolean; direction is from the consuming output to its upstream input. `path_to` returns one shortest demand path as a tuple of `DepNode` objects ordered from source to target, or `None` if no path exists. Path nodes have `name`, `key`, and `value`, with empty `deps`; there is no subtree to recurse into. Pass `structural=True` to `path_to` to retain internal chain nodes when investigating unfold tails, domain decisions, extension frontiers, or merges.
+
+These checks describe dependencies demanded in this run, not all possible scenario branches. A `(series, key)` target matches its query cell or its stored cell if that key was already unfolded; looking up the target does not force additional unfolding. A node depends on itself only through a demand cycle. Use a fresh context after changing inputs, and retain numerical and economic reconciliation checks alongside graph assertions.
+
+A missing expected dependency often reveals a hard-coded value, direct function call, local accumulation, or eagerly materialized cache. Extra `.cells` and `.tail@...` nodes in a structural path show scheduler mechanics, not extra economic formulas.
 
 ## Debug in this order
 
@@ -52,7 +61,7 @@ A missing expected edge often reveals a hard-coded value, direct function call, 
 3. Inspect exact key boundaries and walk only enough of the domain to locate the query.
 4. Query each immediate upstream node at the relevant key.
 5. Check the query function and whether `Na`, a default, or an error is intended.
-6. Print the default dependency tree; use `structural=True` if the domain or frontier is suspect.
+6. Check the suspected source/target relationship with `depends_on`; inspect `path_to` if needed, using `structural=True` if the domain or frontier is suspect.
 7. For a cycle, inspect the cycle path or convergence history.
 8. Retry in a fresh context if any mutable input function changed.
 9. Add a focused regression assertion before changing the formula.

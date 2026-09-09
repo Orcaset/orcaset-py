@@ -27,7 +27,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 4. Choose `Series.of` for finite literal pairs and `Series.unfold` or `@Series.define` for lazy/stateful domains. Use `Series.flatten` to join segments while preserving their query rules, `continue_series` for a lazy next segment, or `Series.extend` for a raw-chain continuation under one query policy.
 5. Compose answer-level calculations with `ops`; use `map_cells`, `scan_cells`, or `merge_cells` only for genuine chain transformations.
 6. Query every public export directly in a fresh `Context`. Exercise ordinary, missing, partial, boundary, continuation, and cyclic cases as applicable.
-7. For statement output, compose `Stmt`, `Total`, and `Group`, then render with `fixed_width_table`, `markdown_table`, or `csv_table`. Inspect dependency trees, then run static checking, tests, and economic reconciliations.
+7. For statement output, compose `Stmt`, `Total`, and `Group`, then render with `fixed_width_table`, `markdown_table`, or `csv_table`. Verify expected dependencies with `Context.depends_on`; use `Context.path_to` when a connecting path is needed (see [runtime-and-debugging.md](references/runtime-and-debugging.md)). Do not manually walk or print full dependency trees for verification. Run static checking, tests, and economic reconciliations.
 
 ## References
 
@@ -44,4 +44,4 @@ Read only what the task needs:
 
 ## Completion gate
 
-Before finishing, confirm that public outputs remain Orcaset nodes; keys are strictly ascending; deferred values use `Thunk`; dependencies are effectful; query, miss, and boundary behavior is intentional; traces show the expected economic graph; and static checking plus tests pass.
+Before finishing, confirm that public outputs remain Orcaset nodes; keys are strictly ascending; deferred values use `Thunk`; dependencies are effectful; query, miss, and boundary behavior is intentional; `depends_on` checks confirm the expected economic dependencies; and static checking plus tests pass.
