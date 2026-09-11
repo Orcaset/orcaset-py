@@ -11,6 +11,8 @@ change between minor releases.
 
 ### Added
 
+- `query.average(yf)` for day-count-weighted averaging across overlapping
+  period values.
 - `Series.unfold`, `Series.define`, `unfold_cells`, and `scan_cells` accept a
   `Thunk` seed, resolved once by the chain's head rule. This allows a series'
   initial state and domain to depend lazily on other rules.

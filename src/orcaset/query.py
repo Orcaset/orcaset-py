@@ -18,6 +18,7 @@ __all__ = [
     "DayCount",
     "accrue",
     "accrue_or",
+    "average",
     "covered",
     "exact",
     "exact_or",
@@ -103,6 +104,41 @@ def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]
 
     def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[float]:
         return value_or((yield from _accrue(q, cells, yf)), fill)
+
+    return query
+
+
+def average[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
+    """Build a period query that averages overlapping cell values by ``yf``.
+
+    Each overlapping cell is weighted by the length of its overlap with ``q``.
+    ``Na`` is returned when no cell overlaps ``q`` or an overlapping cell is
+    ``Na``.
+    """
+
+    def query(q: Period, cells: Cells[Period, V]) -> Effect[Maybe[float]]:
+        weighted_total = 0.0
+        total_weight = 0.0
+        node = yield from get(cells)
+        while node is not None:
+            k = node.key
+            if k < q:
+                node = yield from get(node.tail)
+                continue
+            if q < k:
+                break
+            value = yield from get(node.cell)
+            if isna(value):
+                return Na
+            overlap_start = max(k.start, q.start)
+            overlap_end = min(k.end, q.end)
+            weight = yf(overlap_start, overlap_end)
+            weighted_total += cast(float, value) * weight
+            total_weight += weight
+            if k.end >= q.end:
+                return weighted_total / total_weight
+            node = yield from get(node.tail)
+        return weighted_total / total_weight if total_weight else Na
 
     return query
 

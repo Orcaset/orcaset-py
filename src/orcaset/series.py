@@ -235,12 +235,6 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     ) -> Series[K, V, W]:
         """Build a series from a sequence of pairs or a rule resolving one."""
 
-        def initial() -> Effect[tuple[Pairs[K, V], int]]:
-            source = pairs
-            if isinstance(source, Rule):
-                source = yield from get(source)
-            return source, 0
-
         def step(
             state: tuple[Pairs[K, V], int],
         ) -> tuple[K, V | Thunk[V], tuple[Pairs[K, V], int]] | None:
@@ -250,7 +244,13 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
             key, value = source[index]
             return key, value, (source, index + 1)
 
-        return cls.unfold(name, query, seed=Thunk(initial), step=step)
+        if isinstance(pairs, Rule):
+
+            def initial() -> Effect[tuple[Pairs[K, V], int]]:
+                return (yield from get(pairs)), 0
+
+            return cls.unfold(name, query, seed=Thunk(initial), step=step)
+        return cls.unfold(name, query, seed=(pairs, 0), step=step)
 
     @classmethod
     @overload
