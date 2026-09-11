@@ -15,14 +15,13 @@ from orcaset import (
     YF,
     Context,
     Effect,
-    Maybe,
     Period,
     Series,
     Thunk,
     accrue,
     get_at,
-    multiply_some,
 )
+from orcaset.maybe import Maybe, mul_some
 
 # ---- Assumptions ----
 CONCEPT_URL = (
@@ -88,7 +87,7 @@ def revenue(
         value = Thunk(lambda: load_frame(CONCEPT_URL, FRAME))
     else:
         prior = yield from get_at(revenue, period.from_start(-QUARTER))
-        value = multiply_some((prior, 1.10))
+        value = mul_some(prior, 1.10)
 
     return period, value, period.from_end(QUARTER)
 

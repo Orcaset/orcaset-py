@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from datetime import date
 from typing import assert_type
 
-from orcaset import Maybe, Series, date_union, exact, ops
+from orcaset import Series, date_union, exact, ops
+from orcaset.maybe import Maybe
 
 D = date(2026, 1, 31)
 left_values: list[tuple[date, Maybe[int]]] = [(D, 1)]

@@ -14,10 +14,9 @@ from orcaset import (
     Period,
     Series,
     accrue_or,
-    add_some,
     get_at,
-    isna,
     last,
+    maybe,
     maybe_abs_distance,
 )
 
@@ -40,7 +39,7 @@ def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     begin = yield from get_at(debt, prior_date)
     interest_amt = yield from get_at(interest, Period(prior_date, current_date))
 
-    return current_date, add_some((begin, interest_amt)), current_date
+    return current_date, maybe.sum_some(begin, interest_amt), current_date
 
 
 @Series.define("Interest", accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
@@ -52,10 +51,10 @@ def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     # and a way to check for convergence.
     end = yield from get_at(debt, period.end, seed=0.0, distance=maybe_abs_distance)
 
-    if isna(begin):
+    if maybe.isna(begin):
         avg_balance = 0.0
     else:
-        avg_balance = begin if isna(end) else (begin + end) * 0.5
+        avg_balance = begin if maybe.isna(end) else (begin + end) * 0.5
 
     return period, avg_balance * MONTHLY_RATE, period.from_end(MONTH)
 

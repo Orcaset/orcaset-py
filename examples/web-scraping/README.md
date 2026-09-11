@@ -51,8 +51,8 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
         prior_tsa = yield from get_at(tsa_passengers, prior_qtd)  # Prior QTD checkpoint volume
         if prior_tsa == 0.0 or isna(prior_tsa):
             raise ValueError("prior-quarter TSA QTD is zero or missing")
-        traffic_growth = multiply_some((current_tsa, 1 / prior_tsa))
-        value = multiply_some((prior_rev, traffic_growth))
+        traffic_growth = maybe.mul_some(current_tsa, 1 / prior_tsa)
+        value = maybe.mul_some(prior_rev, traffic_growth)
 
     # Otherwise, just use the same estimate as the nowcast quarter
     # (hold future constant, no long term projections)

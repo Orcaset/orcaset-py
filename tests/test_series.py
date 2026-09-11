@@ -9,8 +9,6 @@ from orcaset import (
     Context,
     CycleError,
     DepNode,
-    Maybe,
-    Na,
     Period,
     Rule,
     Series,
@@ -18,12 +16,12 @@ from orcaset import (
     exact,
     get,
     get_at,
-    isna,
     keys_until,
     last,
     map_cells,
     scan_cells,
 )
+from orcaset.maybe import Maybe, Na, isna
 
 MONTH = relativedelta(months=1)
 YEAR = relativedelta(years=1, day=31)

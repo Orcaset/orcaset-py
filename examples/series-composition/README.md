@@ -25,7 +25,7 @@ The series combinators lazily merge the source domains. Because this example is 
 The scalar helpers preserve the source domain and query behavior. For example, `ops.scale` is the arithmetic convenience for mapping a multiplication over every available value:
 
 ```py
-from orcaset import map_some
+from orcaset import maybe
 
 cogs = ops.scale("COGS", revenue, -0.5)
 
@@ -33,11 +33,11 @@ cogs = ops.scale("COGS", revenue, -0.5)
 cogs = ops.map_values(
     "COGS",
     revenue,
-    fn=map_some(lambda value: value * -0.5),
+    fn=maybe.map_some(lambda value: value * -0.5),
 )
 ```
 
-Arithmetic propagates `Na` by default. If any source answers `Na`, `add`, `mul`, `sub`, and `div` return `Na`; `neg` and `scale` use `map_some`, which leaves `Na` unchanged. The series-to-series helpers also accept an explicit `fill` value when missing answers should be substituted instead:
+Arithmetic propagates `Na` by default. If any source answers `Na`, `add`, `mul`, `sub`, and `div` return `Na`; `neg` and `scale` use `maybe.map_some`, which leaves `Na` unchanged. The series-to-series helpers also accept an explicit `fill` value when missing answers should be substituted instead:
 
 ```py
 total = ops.add("Total", actual, forecast, merge_keys=period_union, fill=0.0)

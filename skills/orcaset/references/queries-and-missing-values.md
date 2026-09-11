@@ -47,10 +47,10 @@ Apply defaults at the narrowest justified layer:
 - `exact_or(0.0)` for dated event series where no event means zero;
 - `last_or(opening)` when dates before the first observation have a defined opening value;
 - `accrue_or(yf, 0.0)` when every failed accrual answer is defined as zero;
-- `value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
-- `isna(value)` plus a descriptive error when an input is required.
+- `maybe.value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
+- `maybe.isna(value)` plus a descriptive error when an input is required.
 
-`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `add_some(())` and `multiply_some(())` return `Na` because no value seeds the fold.
+`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold.
 
 Never replace `Na` with zero just to avoid an exception, satisfy a type checker, hide a broken dependency, or make a cycle converge.
 

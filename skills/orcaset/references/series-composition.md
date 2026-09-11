@@ -44,7 +44,7 @@ def terminal_revenue(
 
         def value() -> Effect[Maybe[float]]:
             prior = yield from get_at(revenue, prior_period)
-            return multiply_some((prior, 1 + 0.02 * YF.cmonthly(*prior_period)))
+            return maybe.mul_some(prior, 1 + 0.02 * YF.cmonthly(*prior_period))
 
         return next_period, Thunk(value), next_period
 

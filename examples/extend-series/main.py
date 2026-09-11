@@ -24,7 +24,7 @@ from orcaset import (
     exact,
     fixed_width_table,
     get_at,
-    multiply_some,
+    maybe,
     period_split,
 )
 
@@ -59,7 +59,7 @@ def terminal_revenue(
     @Series.define("Terminal growth", accrue_monthly, seed=last_node.key)
     def growth(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         prior_month = yield from get_at(revenue, period)
-        value = multiply_some((prior_month, (1 + 0.02 * YF.cmonthly(*period))))
+        value = maybe.mul_some(prior_month, (1 + 0.02 * YF.cmonthly(*period)))
         return period.from_end(MONTH), value, period.from_end(MONTH)
 
     return growth

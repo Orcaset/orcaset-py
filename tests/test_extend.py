@@ -8,19 +8,16 @@ from orcaset import (
     Cells,
     Cons,
     Context,
-    Maybe,
-    Na,
     Period,
     Series,
     Thunk,
     exact,
     get,
     get_at,
-    isna,
     keys_until,
-    some,
     unfold_cells,
 )
+from orcaset.maybe import Maybe, Na, isna, some
 
 YEAR = relativedelta(years=1, day=31)
 

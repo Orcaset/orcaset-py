@@ -13,7 +13,8 @@ from model import (
 )
 from scrape import TSA_URL, tsa_passengers
 
-from orcaset import Context, Period, fixed_width_table, isna
+from orcaset import Context, Period, fixed_width_table
+from orcaset.maybe import isna
 
 OUTPUT_START = date(2025, 12, 31)
 OUTPUT_END = date(2026, 12, 31)

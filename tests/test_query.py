@@ -7,8 +7,6 @@ from orcaset import (
     YF,
     Cell,
     Context,
-    Maybe,
-    Na,
     Period,
     Series,
     Thunk,
@@ -17,10 +15,10 @@ from orcaset import (
     covered,
     exact,
     exact_or,
-    isna,
     last,
     last_or,
 )
+from orcaset.maybe import Maybe, Na, isna
 
 START = date(2026, 1, 1)
 P1 = Period(START, date(2026, 2, 1))

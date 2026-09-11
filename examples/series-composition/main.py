@@ -19,7 +19,7 @@ from orcaset import (
     accrue,
     fixed_width_table,
     get_at,
-    isna,
+    maybe,
     ops,
     period_union,
 )
@@ -36,7 +36,7 @@ def revenue(period: Period) -> tuple[Period, Thunk[float], Period]:
 
     def value():
         prior_value = yield from get_at(revenue, period.from_start(-MONTHLY))
-        return prior_value * 1.01 if not isna(prior_value) else 100.0
+        return prior_value * 1.01 if not maybe.isna(prior_value) else 100.0
 
     return period, Thunk(value), period.from_end(MONTHLY)
 

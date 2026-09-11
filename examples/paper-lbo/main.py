@@ -10,7 +10,6 @@ from orcaset import (
     Context,
     Effect,
     Group,
-    Maybe,
     Period,
     Rule,
     Series,
@@ -18,23 +17,18 @@ from orcaset import (
     Thunk,
     Total,
     accrue,
-    add_some,
     date_union,
     exact_or,
     fixed_width_table,
     get,
     get_at,
-    isna,
     last,
-    map2_some,
-    map_some,
     maybe_abs_distance,
-    multiply_some,
     ops,
     period_union,
     scan_cells,
-    value_or,
 )
+from orcaset.maybe import Maybe, isna, map2_some, map_some, mul_some, sum_some, value_or
 
 # ---- Assumptions and constants ----
 acquisition_date = date(2022, 12, 31)
@@ -63,7 +57,7 @@ def revenue(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     else:
         prior = yield from get_at(revenue, period.from_start(-year_offset))
         growth = yield from get(annual_revenue_growth)
-        value = multiply_some((prior, add_some((1, growth))))
+        value = mul_some(prior, sum_some(1, growth))
     return period, value, period.from_end(year_offset)
 
 
@@ -88,7 +82,7 @@ def interest(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | Non
         seed=0.0,
         distance=maybe_abs_distance,
     )
-    value = multiply_some((add_some((beginning, ending)), 0.5, -interest_rate))
+    value = mul_some(sum_some(beginning, ending), 0.5, -interest_rate)
     return period, value, period.from_end(year_offset)
 
 
@@ -114,7 +108,7 @@ fcf = ops.add(
 
 def draw_value() -> Effect[Maybe[float]]:
     ntm_ebitda = yield from get_at(ebitda, Period(acquisition_date, acquisition_date + year_offset))
-    return multiply_some((ntm_ebitda, purchase_multiple, ltv))
+    return mul_some(ntm_ebitda, purchase_multiple, ltv)
 
 
 draws = Series[date, Maybe[float], Maybe[float]].of(
@@ -162,7 +156,7 @@ def cumulate[V](
         def value() -> Effect[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
             flow = yield from get_at(flows, day)
-            return add_some((prior, flow))
+            return sum_some(prior, flow)
 
         return Thunk(value), day
 
@@ -204,7 +198,7 @@ def purchase_price_value() -> Effect[Maybe[float]]:
     entry_ebitda = yield from get_at(
         ebitda, Period(acquisition_date, acquisition_date + year_offset)
     )
-    return multiply_some((entry_ebitda, -purchase_multiple))
+    return mul_some(entry_ebitda, -purchase_multiple)
 
 
 purchase_price = Series[date, Maybe[float], Maybe[float]].of(
@@ -223,7 +217,7 @@ def exit_value_fn() -> Effect[Maybe[float]]:
         ),
     )
     multiple: Maybe[float] = yield from get(exit_multiple)
-    return multiply_some((exit_ebitda, multiple))
+    return mul_some(exit_ebitda, multiple)
 
 
 exit_value = Series[date, Maybe[float], Maybe[float]].of(

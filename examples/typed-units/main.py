@@ -14,7 +14,7 @@ from orcaset import (
     Period,
     Series,
     exact,
-    map2_some,
+    maybe,
     ops,
     period_union,
 )
@@ -66,7 +66,7 @@ usd_total = ops.map2(
     "USD total",
     usd_product,
     usd_services,
-    fn=map2_some(operator.add),
+    fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
 )
 
@@ -78,7 +78,7 @@ invalid_total = ops.map2(
     "invalid total",
     usd_product,
     eur_revenue,
-    fn=map2_some(operator.add),  # type: ignore
+    fn=maybe.map2_some(operator.add),  # type: ignore
     merge_keys=period_union,
 )
 

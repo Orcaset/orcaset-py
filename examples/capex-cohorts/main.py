@@ -22,8 +22,8 @@ from orcaset import (
     fixed_width_table,
     get,
     get_at,
-    isna,
     map_cells,
+    maybe,
     scan_cells,
 )
 
@@ -51,7 +51,7 @@ def build_cohort(source_key: Period) -> Cohort:
 
     def depreciation() -> Effect[float]:
         spend = yield from get_at(capex, source_key)
-        if isna(spend):
+        if maybe.isna(spend):
             raise ValueError(f"missing capex for {source_key}")
         return spend / 2
 
@@ -78,7 +78,7 @@ def sum_cohorts(cohorts: CohortRules, period: Period) -> Effect[float]:
     for cell in cohorts:
         cohort = yield from get(cell)
         value = yield from get_at(cohort, period)
-        if not isna(value):
+        if not maybe.isna(value):
             total += value
     return total
 

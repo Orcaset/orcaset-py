@@ -21,7 +21,7 @@ def cumulate[V](
             flow = yield from get_at(flows, day)
             if isna(prior):
                 return flow
-            return prior + value_or(flow, 0.0)
+            return prior + maybe.value_or(flow, 0.0)
 
         return Thunk(value), day
 

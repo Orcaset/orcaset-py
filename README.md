@@ -25,7 +25,7 @@ The block below builds a simple model with revenue, costs, and profit in ten lin
 from datetime import date
 from itertools import islice
 from dateutil.relativedelta import relativedelta
-from orcaset import YF, Period, Series, accrue, get_at, multiply_some, ops, period_union
+from orcaset import YF, Period, Series, accrue, get_at, maybe, ops, period_union
 
 initial_period = Period(date(2026, 1, 1), date(2026, 2, 1))
 
@@ -35,7 +35,7 @@ def revenue(period: Period):
         value = 100.0
     else:
         prior_value = yield from get_at(revenue, period.shift(-relativedelta(months=1)))
-        value = multiply_some((prior_value, 1.10))
+        value = maybe.mul_some(prior_value, 1.10)
     
     return period, value, period.from_end(relativedelta(months=1))
 

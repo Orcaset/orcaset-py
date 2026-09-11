@@ -16,7 +16,6 @@ from orcaset import (
     Cells,
     Cons,
     Effect,
-    Maybe,
     Period,
     Series,
     Stmt,
@@ -25,12 +24,11 @@ from orcaset import (
     accrue,
     get,
     get_at,
-    isna,
-    multiply_some,
     ops,
     period_union,
     unfold_cells,
 )
+from orcaset.maybe import Maybe, isna, mul_some
 
 # ---- Assumptions and history ----
 QUARTER = relativedelta(months=3, day=31)
@@ -88,8 +86,8 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
         prior_tsa = yield from get_at(tsa_passengers, prior_qtd)
         if prior_tsa == 0.0 or isna(prior_tsa):
             raise ValueError("prior-quarter TSA QTD is zero or missing")
-        traffic_growth = multiply_some((current_tsa, 1 / prior_tsa))
-        value = multiply_some((prior_rev, traffic_growth))
+        traffic_growth = mul_some(current_tsa, 1 / prior_tsa)
+        value = mul_some(prior_rev, traffic_growth)
     else:
         value = yield from get_at(passenger_forecast, NOWCAST_QUARTER)
 

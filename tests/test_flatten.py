@@ -12,8 +12,6 @@ from orcaset import (
     Context,
     Effect,
     Key,
-    Maybe,
-    Na,
     Period,
     QueryFn,
     Series,
@@ -25,13 +23,13 @@ from orcaset import (
     exact,
     get,
     get_at,
-    isna,
     keys_until,
     last,
     ops,
     period_split,
     unfold_cells,
 )
+from orcaset.maybe import Maybe, Na, isna
 
 MONTH = relativedelta(months=1)
 Q1 = Period(date(2025, 1, 1), date(2025, 4, 1))

@@ -11,6 +11,10 @@ change between minor releases.
 
 ### Added
 
+- `maybe.sub_some` and `maybe.div_some` for Na-propagating binary float
+  subtraction and division.
+- `NaType`, the public type of the `Na` singleton, exported from `orcaset`
+  alongside `Maybe`, `Na`, and `isna`.
 - `Context.depends_on(source, target)` and
   `Context.path_to(source, target, *, structural=False)` for asking whether
   one cell transitively demanded another, and for the shortest demand path
@@ -24,6 +28,13 @@ change between minor releases.
 
 ### Changed
 
+- Renamed `add_some` to `sum_some` and `multiply_some` to `mul_some`. Both
+  now take variadic arguments instead of a tuple.
+- Renamed `_NaType` to `NaType` so type-checker output names the miss type
+  publicly.
+- Maybe helpers other than `Maybe`, `Na`, `NaType`, and `isna` are no longer
+  re-exported from `orcaset`. Import the `maybe` module instead
+  (`from orcaset import maybe`).
 - `Group` now takes child items as variadic arguments (`Group(*items)`),
   matching `Stmt`.
 - `ops.combine` now accepts arbitrary source query-answer and mapped result
