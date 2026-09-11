@@ -154,6 +154,100 @@ def test_domain_cycle_is_terminal():
     assert ".tail@" in str(excinfo.value)
 
 
+def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
+    first = date(2024, 1, 31)
+    second = date(2024, 2, 29)
+    start = Cell("Start date", lambda: first)
+
+    def initial():
+        return (yield from get(start))
+
+    def step(day: date) -> tuple[date, float, date]:
+        return day, 1.0, day + MONTH
+
+    series = Series.unfold(
+        "Deferred seed",
+        exact,
+        seed=Thunk(initial),
+        step=step,
+    )
+
+    first_context = Context()
+    assert first_context.get_at(series, first) == 1.0
+    assert first_context.depends_on(series.cells, start)
+    assert first_context.depends_on((series, first), start)
+    head_dependencies = tuple(
+        _flatten(first_context.rule_dependencies(series.cells, structural=True))
+    )
+    assert head_dependencies[0].name == "Deferred seed.cells"
+    assert any(node.name == "Start date" for node in head_dependencies)
+
+    start.fn = lambda: second
+    second_context = Context()
+    assert second_context.get_at(series, second) == 1.0
+    assert isna(second_context.get_at(series, first))
+
+
+def test_thunk_seed_is_lazy_until_head_is_demanded():
+    def poison() -> date:
+        raise AssertionError("seed resolved")
+
+    def step(day: date) -> tuple[date, float, date]:
+        return day, 1.0, day + MONTH
+
+    series = Series.unfold(
+        "Lazy seed",
+        exact,
+        seed=Thunk(poison),
+        step=step,
+    )
+
+    with pytest.raises(AssertionError, match="seed resolved"):
+        Context().get(series.cells)
+
+
+def test_next_state_is_not_resolved_as_a_seed():
+    first = date(2024, 1, 31)
+    second = date(2024, 2, 29)
+
+    def poison() -> int:
+        raise AssertionError("next state resolved")
+
+    next_state = Thunk(poison)
+
+    def step(state: int | Thunk[int]) -> tuple[date, float, int | Thunk[int]]:
+        if state == 0:
+            return first, 1.0, next_state
+        assert state is next_state
+        return second, 2.0, 1
+
+    series = Series.unfold("Verbatim state", exact, seed=0, step=step)
+    assert Context().get_at(series, second) == 2.0
+
+
+def test_self_demanding_thunk_seed_reports_head_cycle():
+    key = date(2024, 1, 31)
+
+    def initial():
+        yield from get_at(series, key)
+        return key
+
+    def step(day: date) -> tuple[date, float, date]:
+        return day, 1.0, day + MONTH
+
+    series = Series.unfold(
+        "Seed cycle",
+        exact,
+        seed=Thunk(initial),
+        step=step,
+    )
+
+    with pytest.raises(CycleError) as excinfo:
+        Context().get_at(series, key)
+
+    assert "Seed cycle.cells" in str(excinfo.value)
+
+
 def test_thunk_and_plain_values():
     source = Cell("source", lambda: 2.0)
 
@@ -182,15 +276,45 @@ def test_thunk_and_plain_values():
             yield
         return 1.0
 
+    def bad_step(state: None) -> tuple[date, Generator[None, None, float], None]:
+        return date(2024, 1, 31), live_generator(), state
+
     bad = Series.unfold(
         "Generator value",
         exact,
         seed=None,
-        step=lambda state: (date(2024, 1, 31), live_generator(), state),
+        step=bad_step,
     )
 
     with pytest.raises(TypeError, match="Thunk"):
         Context().get_at(bad, date(2024, 1, 31))
+
+
+def test_of_accepts_rule_pairs_updated_between_contexts():
+    first = date(2024, 1, 31)
+    second = date(2024, 2, 29)
+    calls = 0
+
+    def initial_pairs() -> list[tuple[date, float]]:
+        nonlocal calls
+        calls += 1
+        return [(first, 1.0)]
+
+    pairs = Cell("Pairs", initial_pairs)
+    series = Series.of("Values", exact, pairs)
+    first_context = Context()
+
+    assert calls == 0
+    assert first_context.get_at(series, first) == 1.0
+    assert calls == 1
+    assert isna(first_context.get_at(series, second))
+    assert calls == 1
+    assert first_context.depends_on((series, first), pairs)
+
+    pairs.fn = lambda: [(first, 2.0), (second, 3.0)]
+    second_context = Context()
+    assert second_context.get_at(series, first) == 2.0
+    assert second_context.get_at(series, second) == 3.0
 
 
 def test_map_cells_preserves_keys_and_defers_source_values():
@@ -235,3 +359,22 @@ def test_scan_cells_carries_structural_state():
 
     assert ctx.get_at(scanned, d1) == 10
     assert ctx.get_at(scanned, d2) == 21
+
+
+def test_scan_cells_resolves_thunk_accumulator_seed():
+    day = date(2024, 1, 31)
+    offset = Cell("Offset", lambda: 5)
+    source = Series.of("Source", exact, [(day, 10)])
+
+    def add_offset(acc: int, _key: date, cell: Rule[int]) -> tuple[Thunk[int], int]:
+        return Thunk(lambda: (yield from get(cell)) + acc), acc
+
+    scanned = Series(
+        "Scanned",
+        scan_cells("Scanned", source.cells, seed=Thunk(lambda: get(offset)), fn=add_offset),
+        exact,
+    )
+    ctx = Context()
+
+    assert ctx.get_at(scanned, day) == 15
+    assert ctx.depends_on(scanned.cells, offset)

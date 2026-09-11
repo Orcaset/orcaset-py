@@ -46,11 +46,15 @@ gross_profit = ops.add("Gross Profit", revenue, cogs, merge_keys=period_union)
 
 def constant_series(name: str, value: float) -> Series[Period, Maybe[float], Maybe[float]]:
     """Helper function that returns a constant value at a regular interval."""
+
+    def step(period: Period) -> tuple[Period, float, Period]:
+        return period, value, period.from_end(MONTHLY)
+
     return Series.unfold(
         name,
         accrue_monthly,
         seed=next(Period.seq(date(2026, 1, 1), MONTHLY)),
-        step=lambda period: (period, value, period.from_end(MONTHLY)),
+        step=step,
     )
 
 

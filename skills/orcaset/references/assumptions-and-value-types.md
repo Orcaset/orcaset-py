@@ -17,6 +17,24 @@ def value() -> Effect[float]:
 
 Do not read a separate global float when the exported `Cell` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency must be demanded effectfully in a rule, unfold step, or thunk.
 
+An adjustable start date can drive a series' domain through a seed thunk. The
+head resolves it once per context before invoking the first step:
+
+```python
+start_date = Cell("Forecast start", lambda: date(2027, 1, 1))
+
+def initial_period() -> Effect[Period]:
+    start = yield from get(start_date)
+    return Period(start, start + YEAR)
+
+forecast = Series.unfold(
+    "Forecast",
+    query.covered,
+    seed=Thunk(initial_period),
+    step=forecast_step,
+)
+```
+
 `Cell.fn` is public and may be replaced. Resolve each scenario in a fresh context because a context intentionally memoizes one run:
 
 ```python

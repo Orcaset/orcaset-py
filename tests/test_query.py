@@ -249,11 +249,15 @@ def test_covered_propagates_na_cells():
 def test_covered_works_over_an_infinite_chain():
     from dateutil.relativedelta import relativedelta
 
+    def step(day: date) -> tuple[Period, float, date]:
+        month = relativedelta(months=1)
+        return Period(day, day + month), 1.0, day + month
+
     series = Series.unfold(
         "revenue",
         covered,
         seed=START,
-        step=lambda d: (Period(d, d + relativedelta(months=1)), 1.0, d + relativedelta(months=1)),
+        step=step,
     )
 
     ctx = Context()

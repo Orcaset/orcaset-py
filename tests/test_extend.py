@@ -60,11 +60,11 @@ def test_extend_lazy_continuation():
     def cont(last: Cons[Period, float] | None):
         assert last is not None
         calls.append(last.key)
-        return unfold_cells(
-            "Continuation",
-            seed=FY18,
-            step=lambda p: (p, float(p.end.year), p.shift(YEAR)),
-        )
+
+        def step(period: Period) -> tuple[Period, float, Period]:
+            return period, float(period.end.year), period.shift(YEAR)
+
+        return unfold_cells("Continuation", seed=FY18, step=step)
 
     series = Series.extend("Extended", exact, base=base.cells, cont=cont)
     ctx = Context()
@@ -172,10 +172,19 @@ def test_extend_continuation_reads_last_cell():
 
     def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
         assert last is not None
+        last_cell = last.cell
+
+        def step(period: Period) -> tuple[Period, Thunk[float], Period]:
+            return (
+                period,
+                Thunk(lambda: (yield from get(last_cell)) * 10.0),
+                period.shift(YEAR),
+            )
+
         return unfold_cells(
             "Continuation",
             seed=last.key.shift(YEAR),
-            step=lambda p: (p, Thunk(lambda: (yield from get(last.cell)) * 10.0), p.shift(YEAR)),
+            step=step,
         )
 
     series = Series.extend("Extended", exact, base=base.cells, cont=cont)
@@ -202,10 +211,14 @@ def test_extend_base_tail_may_depend_on_extended_series():
 
     def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
         assert last is not None
+
+        def step(period: Period) -> tuple[Period, float, Period]:
+            return period, 100.0, period.shift(YEAR)
+
         return unfold_cells(
             "Continuation",
             seed=last.key.shift(YEAR),
-            step=lambda p: (p, 100.0, p.shift(YEAR)),
+            step=step,
         )
 
     extended: Series[Period, float, Maybe[float]] = Series.extend(

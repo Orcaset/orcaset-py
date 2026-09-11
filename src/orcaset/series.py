@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Hashable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, Self
+from typing import Any, Protocol, Self, cast, overload
 
 from orcaset.rule import Cell, Effect, KeyedRule, Rule, get, get_at
 
@@ -23,11 +23,12 @@ class Key(Hashable, Protocol):
 
 
 class Thunk[V]:
-    """Nominal wrapper for a deferred cell computation.
+    """A computation the library calls when its value is needed.
 
-    In an unfold result, anything that is not a ``Thunk`` is a plain value,
-    including callables and all other objects. Wrap deferred computation in
-    ``Thunk`` explicitly. This makes the value slot unambiguous.
+    Seed thunks run when the head is demanded; value thunks run when the
+    cell is demanded. The callable may return a value or an effect, e.g.
+    ``Thunk(lambda: get(rule))``. Bare rules and callables in these slots
+    remain data; subsequent unfold states are passed through unchanged.
     """
 
     __slots__ = ("fn",)
@@ -51,6 +52,7 @@ class Cons[K: Key, V]:
 
 
 type Cells[K: Key, V] = Rule[Cons[K, V] | None]
+type Pairs[K: Key, V] = Sequence[tuple[K, V | Thunk[V]]]
 type UnfoldStep[S, K: Key, V] = Callable[
     [S],
     Effect[tuple[K, V | Thunk[V], S] | None] | tuple[K, V | Thunk[V], S] | None,
@@ -99,6 +101,17 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         return (yield from _as_effect(self._query(q, self._cells)))
 
     @classmethod
+    @overload
+    def unfold[S](
+        cls,
+        name: str,
+        query: QueryFn[K, V, W],
+        *,
+        seed: Thunk[S],
+        step: UnfoldStep[S, K, V],
+    ) -> Series[K, V, W]: ...
+    @classmethod
+    @overload
     def unfold[S](
         cls,
         name: str,
@@ -106,8 +119,20 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         *,
         seed: S,
         step: UnfoldStep[S, K, V],
+    ) -> Series[K, V, W]: ...
+    @classmethod
+    def unfold[S](
+        cls,
+        name: str,
+        query: QueryFn[K, V, W],
+        *,
+        seed: S | Thunk[S],
+        step: UnfoldStep[S, K, V],
     ) -> Series[K, V, W]:
-        """Build a series by repeatedly applying ``step`` to an evolving state."""
+        """Build a series by repeatedly applying ``step`` to an evolving state.
+
+        A ``Thunk`` seed is resolved once by the head node before the first step.
+        """
         return cls(name, unfold_cells(name, seed=seed, step=step), query)
 
     @classmethod
@@ -206,27 +231,57 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         cls,
         name: str,
         query: QueryFn[K, V, W],
-        pairs: Sequence[tuple[K, V | Thunk[V]]],
+        pairs: Pairs[K, V] | Rule[Pairs[K, V]],
     ) -> Series[K, V, W]:
-        """Build a series from a sequence of literal pairs."""
+        """Build a series from a sequence of pairs or a rule resolving one."""
 
-        def step(index: int) -> tuple[K, V | Thunk[V], int] | None:
-            if index == len(pairs):
+        def initial() -> Effect[tuple[Pairs[K, V], int]]:
+            source = pairs
+            if isinstance(source, Rule):
+                source = yield from get(source)
+            return source, 0
+
+        def step(
+            state: tuple[Pairs[K, V], int],
+        ) -> tuple[K, V | Thunk[V], tuple[Pairs[K, V], int]] | None:
+            source, index = state
+            if index == len(source):
                 return None
-            key, value = pairs[index]
-            return key, value, index + 1
+            key, value = source[index]
+            return key, value, (source, index + 1)
 
-        return cls.unfold(name, query, seed=0, step=step)
+        return cls.unfold(name, query, seed=Thunk(initial), step=step)
 
     @classmethod
+    @overload
+    def define[S](
+        cls,
+        name: str,
+        query: QueryFn[K, V, W],
+        *,
+        seed: Thunk[S],
+    ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]: ...
+    @classmethod
+    @overload
     def define[S](
         cls,
         name: str,
         query: QueryFn[K, V, W],
         *,
         seed: S,
+    ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]: ...
+    @classmethod
+    def define[S](
+        cls,
+        name: str,
+        query: QueryFn[K, V, W],
+        *,
+        seed: S | Thunk[S],
     ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]:
-        """Decorator form of ``unfold`` for self-referential series bodies."""
+        """Decorator form of ``unfold`` for self-referential series bodies.
+
+        A ``Thunk`` seed is resolved once by the head node before the first step.
+        """
 
         def decorator(step: UnfoldStep[S, K, V]) -> Series[K, V, W]:
             return cls.unfold(name, query, seed=seed, step=step)
@@ -241,7 +296,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         self,
         series_name: str,
         prev_key: K | None,
-        state: S,
+        state: S | Thunk[S],
         step: UnfoldStep[S, K, V],
     ) -> None:
         name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
@@ -252,7 +307,12 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         self._unfold_step = step
 
     def compute(self) -> Effect[Cons[K, V] | None]:
-        result = yield from _as_effect(self._unfold_step(self._state))
+        state = (
+            (yield from _resolve_seed(self._state))
+            if self._prev_key is None
+            else cast(S, self._state)
+        )
+        result = yield from _as_effect(self._unfold_step(state))
         if result is None:
             return None
         key, value, next_state = result
@@ -267,13 +327,30 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         )
 
 
+@overload
+def unfold_cells[S, K: Key, V](
+    name: str,
+    *,
+    seed: Thunk[S],
+    step: UnfoldStep[S, K, V],
+) -> Cells[K, V]: ...
+@overload
 def unfold_cells[S, K: Key, V](
     name: str,
     *,
     seed: S,
     step: UnfoldStep[S, K, V],
+) -> Cells[K, V]: ...
+def unfold_cells[S, K: Key, V](
+    name: str,
+    *,
+    seed: S | Thunk[S],
+    step: UnfoldStep[S, K, V],
 ) -> Cells[K, V]:
-    """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation."""
+    """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation.
+
+    A ``Thunk`` seed is resolved once by the head node before the first step.
+    """
     return _UnfoldRule(name, None, seed, step)
 
 
@@ -293,11 +370,27 @@ def map_cells[K: Key, A, B](
     return unfold_cells(name, seed=source, step=step)
 
 
+@overload
+def scan_cells[K: Key, A, S, B](
+    name: str,
+    source: Cells[K, A],
+    *,
+    seed: Thunk[S],
+    fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+) -> Cells[K, B]: ...
+@overload
 def scan_cells[K: Key, A, S, B](
     name: str,
     source: Cells[K, A],
     *,
     seed: S,
+    fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+) -> Cells[K, B]: ...
+def scan_cells[K: Key, A, S, B](
+    name: str,
+    source: Cells[K, A],
+    *,
+    seed: S | Thunk[S],
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
 ) -> Cells[K, B]:
     """Map cells one-for-one while carrying structural accumulator state."""
@@ -312,6 +405,12 @@ def scan_cells[K: Key, A, S, B](
         value, next_acc = fn(acc, node.key, node.cell)
         return node.key, value, (node.tail, next_acc)
 
+    if isinstance(seed, Thunk):
+
+        def head_seed() -> Effect[tuple[Cells[K, A], S]]:
+            return source, (yield from _as_effect(seed.fn()))
+
+        return unfold_cells(name, seed=Thunk[tuple[Cells[K, A], S]](head_seed), step=step)
     return unfold_cells(name, seed=(source, seed), step=step)
 
 
@@ -499,6 +598,12 @@ def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Effect[V] | V]:
             "live generator as a cell value; wrap the computation in Thunk(lambda: ...)"
         )
     return lambda value=value: value
+
+
+def _resolve_seed[S](seed: S | Thunk[S]) -> Effect[S]:
+    if isinstance(seed, Thunk):
+        return (yield from _as_effect(seed.fn()))
+    return seed
 
 
 def _as_effect[V](value: Effect[V] | V) -> Effect[V]:

@@ -11,6 +11,9 @@ change between minor releases.
 
 ### Added
 
+- `Series.unfold`, `Series.define`, `unfold_cells`, and `scan_cells` accept a
+  `Thunk` seed, resolved once by the chain's head rule. This allows a series'
+  initial state and domain to depend lazily on other rules.
 - `maybe.sub_some` and `maybe.div_some` for Na-propagating binary float
   subtraction and division.
 - `NaType`, the public type of the `Na` singleton, exported from `orcaset`
@@ -48,8 +51,9 @@ change between minor releases.
 - `ops.map2` now accepts arbitrary source query-answer and mapped result types,
   independently of the source cell types.
 - `Series.of` now requires a `Sequence` of pairs and uses it directly without
-  copying. Callers must explicitly convert generators and other iterables to
-  lists or tuples.
+  copying. It also accepts a `Rule` that resolves to a sequence, allowing the
+  pairs to change between contexts without rebuilding the series. Callers must
+  explicitly convert generators and other iterables to lists or tuples.
 - Query helpers are now exported from `orcaset.query` rather than re-exported
   individually from the package root. The package root exports the `query`
   module alongside `maybe` and `ops`.

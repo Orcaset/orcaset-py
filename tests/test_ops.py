@@ -102,7 +102,9 @@ def test_mul_splits_periods_and_queries_sources_by_piece():
 def test_query_delegates_to_sources_off_spine():
     q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
     rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
-    utilities = Series.of("Utilities", prorated, list(zip([month(1), month(2), month(3)], [310.0, 280.0, 310.0])))
+    utilities = Series.of(
+        "Utilities", prorated, list(zip([month(1), month(2), month(3)], [310.0, 280.0, 310.0]))
+    )
     total = ops.add("Total", rent, utilities, merge_keys=period_union)
     ctx = Context()
 
@@ -157,12 +159,10 @@ def test_merge_is_lazy_and_never_forces_source_cells():
         raise AssertionError("source cell was forced")
 
     def infinite(name: str, start: date) -> Series[date, float, Maybe[float]]:
-        return Series.unfold(
-            name,
-            exact,
-            seed=start,
-            step=lambda d: (d, Thunk(poison), d + MONTH),
-        )
+        def step(day: date) -> tuple[date, Thunk[float], date]:
+            return day, Thunk(poison), day + MONTH
+
+        return Series.unfold(name, exact, seed=start, step=step)
 
     a = infinite("A", date(2026, 1, 31))
     b = infinite("B", date(2026, 2, 15))
@@ -295,11 +295,14 @@ def test_map_values_is_lazy_and_never_forces_source_cells(effectful: bool):
     def poison() -> float:
         raise AssertionError("source cell was forced")
 
+    def step(day: date) -> tuple[date, Thunk[float], date]:
+        return day, Thunk(poison), day + MONTH
+
     src = Series.unfold(
         "Src",
         exact,
         seed=date(2026, 1, 31),
-        step=lambda d: (d, Thunk(poison), d + MONTH),
+        step=step,
     )
     assumption = Cell("Assumption", poison)
 

@@ -22,7 +22,7 @@ The context memoizes each rule/key and records these dependency edges. Do not ad
 
 ## Construct a series
 
-Use `Series.of` for a sequence of already-known pairs. Wrap generators and `enumerate` results in a list or tuple before passing them. The sequence is used directly, and `Thunk` values remain deferred:
+Use `Series.of` for a sequence of pairs or a `Rule` supplying one. A rule source is resolved when the head is demanded. Wrap generators and `enumerate` results in a list or tuple before passing or returning them. Individual `Thunk` values remain deferred:
 
 ```python
 history = Series.of(
@@ -35,7 +35,13 @@ history = Series.of(
 Use `Series.unfold` when the domain is lazy, infinite, stateful, or determined by other rules. Its step receives state and returns `(key, value, next_state)` or `None`; the step itself may be effectful:
 
 ```python
-@Series.define("Revenue", query.accrue(YF.cmonthly), seed=first_period)
+start_date = Cell("Forecast start", lambda: date(2027, 1, 1))
+
+def initial_period() -> Effect[Period]:
+    start = yield from get(start_date)
+    return Period(start, start + YEAR)
+
+@Series.define("Revenue", query.accrue(YF.cmonthly), seed=Thunk(initial_period))
 def revenue(period: Period) -> Effect[tuple[Period, float, Period]]:
     amount = yield from get_at(source_revenue, period)
     if isna(amount):
@@ -43,7 +49,9 @@ def revenue(period: Period) -> Effect[tuple[Period, float, Period]]:
     return period, amount * 1.05, period.from_end(YEAR)
 ```
 
-`@Series.define` is the decorator form of `Series.unfold`; use it when the step must refer to the series being defined. State is passed explicitly, so the old loop-factory closure pattern is unnecessary.
+`@Series.define` is the decorator form of `Series.unfold`; use it when the step must refer to the series being defined. A `Thunk` seed is resolved once when the head node is first demanded, so its dependencies can determine the initial state and domain. Later states returned by the step are passed through verbatim. State is passed explicitly, so the old loop-factory closure pattern is unnecessary.
+
+Bare rules and callables in seed and unfold value slots remain data. To resolve a rule as the initial state, use `seed=Thunk(lambda: get(start_date))`; the lambda returns an effect, so it does not need its own `yield from`. The same seed convention applies to `unfold_cells` and `scan_cells`.
 
 Keys must be strictly ascending. For `Period`, `a < b` means `a.end <= b.start`; overlapping periods are mutually incomparable and cannot be emitted successively. Stop a finite unfold with `None`.
 

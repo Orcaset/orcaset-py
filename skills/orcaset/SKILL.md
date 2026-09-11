@@ -11,8 +11,8 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 
 - Keep queryable outputs as `Rule`, `KeyedRule`, `Cell`, or `Series` objects. Do not replace model nodes with calculated containers or hide a private `Context` behind an export.
 - Inside a rule, unfold step, query, or thunk, retrieve dependencies only with `yield from get(...)` or `yield from get_at(...)`. Do not add a second cache or use local running values in place of graph edges.
-- Treat a series' structure and values separately. `Series.cells` is a lazy `Cells[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a `Thunk` computes the value when the node's `cell` is demanded.
-- Prefer direct unfold values; use `Thunk` only when separate value deferral is needed. See [modeling-core.md](references/modeling-core.md) for the decision criteria.
+- Treat a series' structure and values separately. `Series.cells` is a lazy `Cells[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a value `Thunk` computes when the node's `cell` is demanded, while a seed `Thunk` computes once when the head is demanded.
+- Prefer direct unfold values; use value `Thunk`s when separate value deferral is needed and seed `Thunk`s for computed initial state. See [modeling-core.md](references/modeling-core.md) for the decision criteria.
 - Emit keys in strictly ascending order. For `Period`, ordering means entirely before, so overlapping periods are not generally sortable.
 - Choose the key type, query policy, and missing-value policy explicitly. Preserve `Na` unless absence has a clear economic meaning such as zero.
 - Use `Cell` for an assumption that must vary between fresh contexts. Keep a fixed scalar plain when adjustability is not part of the model contract.
@@ -24,7 +24,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 1. Inspect the installed Orcaset version, public exports, changelog, and local conventions; the API is experimental.
 2. Define each public node's key type, cell-value type, query-answer type, domain, miss behavior, and adjustable inputs.
 3. Sketch both value dependencies and structural dependencies. Mark every upstream read that must become `get` or `get_at`.
-4. Choose `Series.of` for finite literal pairs and `Series.unfold` or `@Series.define` for lazy/stateful domains. Use `Series.flatten` to join segments while preserving their query rules, `continue_series` for a lazy next segment, or `Series.extend` for a raw-chain continuation under one query policy.
+4. Choose `Series.of` for a finite sequence of pairs or a rule supplying one, and `Series.unfold` or `@Series.define` for lazy/stateful domains. Use `Series.flatten` to join segments while preserving their query rules, `continue_series` for a lazy next segment, or `Series.extend` for a raw-chain continuation under one query policy.
 5. Compose answer-level calculations with `ops`; use `map_cells`, `scan_cells`, or `merge_cells` only for genuine chain transformations.
 6. Query every public export directly in a fresh `Context`. Exercise ordinary, missing, partial, boundary, continuation, and cyclic cases as applicable.
 7. For statement output, compose `stmt.Stmt`, `stmt.Total`, and `stmt.Group`, then render with `formatter.fixed_width_table`, `formatter.markdown_table`, or `formatter.csv_table`. Verify expected dependencies with `Context.depends_on`; use `Context.path_to` when a connecting path is needed (see [runtime-and-debugging.md](references/runtime-and-debugging.md)). Do not manually walk or print full dependency trees for verification. Run static checking, tests, and economic reconciliations.

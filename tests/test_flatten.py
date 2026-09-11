@@ -51,9 +51,10 @@ def joined(*sources: Amounts, query: AmountQuery = covered) -> Amounts:
 
 
 def monthly(name: str, start: Period, value: float) -> Series[Period, float, Maybe[float]]:
-    return Series.unfold(
-        name, accrue_monthly, seed=start, step=lambda p: (p, value, p.from_end(MONTH))
-    )
+    def step(period: Period) -> tuple[Period, float, Period]:
+        return period, value, period.from_end(MONTH)
+
+    return Series.unfold(name, accrue_monthly, seed=start, step=step)
 
 
 @pytest.mark.parametrize(
@@ -350,9 +351,11 @@ def test_base_domain_can_depend_on_the_composed_series_at_its_previous_key():
 
     def terminal(last_node: Cons[int, float] | None) -> Series[int, float, Maybe[float]]:
         assert last_node is not None
-        return Series.unfold(
-            "terminal", exact, seed=last_node.key + 1, step=lambda k: (k, 100.0, k + 1)
-        )
+
+        def terminal_step(key: int) -> tuple[int, float, int]:
+            return key, 100.0, key + 1
+
+        return Series.unfold("terminal", exact, seed=last_node.key + 1, step=terminal_step)
 
     base = Series.unfold("base", exact, seed=0, step=step)
     revenue: Series[int, Maybe[float], Maybe[float]] = Series.flatten(

@@ -30,12 +30,17 @@ YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
 by_days = query.accrue(lambda start, end: (end - start).days)
 
+
 # ---- Series definitions ----
+def capex_step(period: Period) -> tuple[Period, float, Period]:
+    return period, 100.0, period.from_end(YEAR)
+
+
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
     "capex",
     by_days,
     seed=next(Period.seq(START, YEAR)),
-    step=lambda period: (period, 100.0, period.from_end(YEAR)),
+    step=capex_step,
 )
 
 type Cohort = Series[Period, float, Maybe[float]]
