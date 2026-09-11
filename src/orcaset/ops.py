@@ -17,36 +17,36 @@ type _Source[K: Key] = Series[K, Any, Maybe[float]]
 type _Combined[K: Key] = Series[K, Maybe[float], Maybe[float]]
 
 
-def combine[K: Key](
+def combine[K: Key, W, T](
     name: str,
-    sources: Sequence[_Source[K]],
+    sources: Sequence[Series[K, Any, W]],
     *,
-    fn: Callable[[Sequence[Maybe[float]]], Maybe[float]],
+    fn: Callable[[Sequence[W]], T],
     merge_keys: KeyMerge[K],
-) -> _Combined[K]:
+) -> Series[K, T, T]:
     """Combine ``sources`` pointwise where the domain is the lazily merged union
     of source domains.
 
     Every query — on or off the spine — queries all sources at the same key,
     including sources whose head did not contribute it and sources past their
-    own domain. The answers, in source order and with any ``Na`` left in place,
-    are passed to ``fn``, which decides how misses combine (see ``filled`` for
-    the arithmetic ops' policy).
+    own domain. The answers are passed unchanged and in source order to ``fn``.
+    The function decides how to combine them (see ``filled`` for the arithmetic
+    ops' missing-value policy).
     """
     if not sources:
         raise ValueError("combine requires at least one source series")
     sources = tuple(sources)
 
-    def values_at(key: K) -> Effect[Maybe[float]]:
-        values: list[Maybe[float]] = []
+    def values_at(key: K) -> Effect[T]:
+        values: list[W] = []
         for source in sources:
             values.append((yield from get_at(source, key)))
         return fn(values)
 
-    def query(q: K, _cells: Cells[K, Maybe[float]]) -> Effect[Maybe[float]]:
+    def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
         return (yield from values_at(q))
 
-    def cell(key: K) -> Thunk[Maybe[float]]:
+    def cell(key: K) -> Thunk[T]:
         return Thunk(lambda: values_at(key))
 
     chains = [source.cells for source in sources]
