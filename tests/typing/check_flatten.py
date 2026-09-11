@@ -23,6 +23,11 @@ Q2 = Period(date(2025, 4, 1), date(2025, 7, 1))
 actuals = Series.of("actuals", covered, [(Q1, 100.0)])
 forecast = Series.of("forecast", accrue(YF.cmonthly), [(Q2, 200.0)])
 assert_type(actuals, Series[Period, float, Maybe[float]])
+assert_type(forecast, Series[Period, float, Maybe[float]])
+
+maybe_forecast: Series[Period, Maybe[float], Maybe[float]] = Series.of(
+    "maybe forecast", accrue(YF.cmonthly), [(Q2, Na)]
+)
 
 outer = Series.of("components", exact, [(0, actuals), (1, forecast)])
 flat = Series.flatten("flat", outer.cells, query=covered, split_keys=period_split)

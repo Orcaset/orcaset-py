@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from typing import cast
 
-from orcaset.maybe import Maybe, Na, isna, value_or
+from orcaset.maybe import Maybe, Na, NaType, isna, value_or
 from orcaset.period import Period
 from orcaset.rule import Effect, Rule, get
 from orcaset.series import Cells, Key, QueryFn
@@ -80,7 +81,7 @@ def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     return query
 
 
-def accrue(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
+def accrue[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
     """Build a period query that weights overlapping cells by ``yf``.
 
     An exact key hit returns the cell value unchanged. Otherwise each cell
@@ -91,7 +92,7 @@ def accrue(yf: DayCount) -> QueryFn[Period, Maybe[float], Maybe[float]]:
     ``Na`` when no cell overlaps ``q`` or when any overlapping cell is ``Na``.
     """
 
-    def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float]]:
+    def query(q: Period, cells: Cells[Period, V]) -> Effect[Maybe[float]]:
         return (yield from _accrue(q, cells, yf))
 
     return query
@@ -106,7 +107,9 @@ def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]
     return query
 
 
-def _accrue(q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount) -> Effect[Maybe[float]]:
+def _accrue[V: float | NaType](
+    q: Period, cells: Cells[Period, V], yf: DayCount
+) -> Effect[Maybe[float]]:
     total = 0.0
     hit = False
     node = yield from get(cells)
@@ -122,9 +125,10 @@ def _accrue(q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount) -> Effe
             return value
         if isna(value):
             return Na
+        amount = cast(float, value)
         overlap_start = max(k.start, q.start)
         overlap_end = min(k.end, q.end)
-        total += value * (yf(overlap_start, overlap_end) / yf(k.start, k.end))
+        total += amount * (yf(overlap_start, overlap_end) / yf(k.start, k.end))
         hit = True
         if k.end >= q.end:
             return total
