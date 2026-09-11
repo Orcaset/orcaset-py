@@ -13,20 +13,19 @@ from orcaset import (
     Maybe,
     Period,
     Series,
-    Stmt,
     Thunk,
-    Total,
-    accrue,
-    fixed_width_table,
+    formatter,
     get_at,
-    isna,
+    maybe,
     ops,
     period_union,
+    query,
+    stmt,
 )
 
 START = date(2026, 1, 1)
 MONTHLY = relativedelta(months=1)
-accrue_monthly = accrue(YF.cmonthly)
+accrue_monthly = query.accrue(YF.cmonthly)
 
 
 # ---- Model definition ----
@@ -36,7 +35,7 @@ def revenue(period: Period) -> tuple[Period, Thunk[float], Period]:
 
     def value():
         prior_value = yield from get_at(revenue, period.from_start(-MONTHLY))
-        return prior_value * 1.01 if not isna(prior_value) else 100.0
+        return prior_value * 1.01 if not maybe.isna(prior_value) else 100.0
 
     return period, Thunk(value), period.from_end(MONTHLY)
 
@@ -70,9 +69,9 @@ print(f"  COGS @ {q}: \t{ctx.get_at(cogs, q):>10.2f}")
 print(f"{'-' * 58}\nGross profit @ {q}: \t{ctx.get_at(gross_profit, q):>10.2f}")
 
 quarters = Period.list(date(2026, 1, 1), relativedelta(months=3), date(2027, 1, 1))
-quarterly_statement = Stmt(
-    Total(income, [Total(gross_profit, [revenue, cogs]), rd, sga])
+quarterly_statement = stmt.Stmt(
+    stmt.Total(income, [stmt.Total(gross_profit, [revenue, cogs]), rd, sga])
 ).values_for_periods(ctx, quarters)
 
 print("\nQuarterly statement")
-print(fixed_width_table(quarterly_statement))
+print(formatter.fixed_width_table(quarterly_statement))

@@ -9,31 +9,23 @@ from orcaset import (
     Cell,
     Context,
     Effect,
-    Group,
     Maybe,
     Period,
     Rule,
     Series,
-    Stmt,
     Thunk,
-    Total,
-    accrue,
-    add_some,
     date_union,
-    exact_or,
-    fixed_width_table,
+    formatter,
     get,
     get_at,
     isna,
-    last,
-    map2_some,
-    map_some,
+    maybe,
     maybe_abs_distance,
-    multiply_some,
     ops,
     period_union,
+    query,
     scan_cells,
-    value_or,
+    stmt,
 )
 
 # ---- Assumptions and constants ----
@@ -49,7 +41,7 @@ annual_nwc_increase = 5.0
 tax_rate = 0.4
 purchase_multiple = 5.0
 ltv = 0.6
-ACCRUE = accrue(YF.cmonthly)
+ACCRUE = query.accrue(YF.cmonthly)
 
 annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
 exit_multiple = Cell("Exit multiple", lambda: 5.0)
@@ -63,7 +55,7 @@ def revenue(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     else:
         prior = yield from get_at(revenue, period.from_start(-year_offset))
         growth = yield from get(annual_revenue_growth)
-        value = multiply_some((prior, add_some((1, growth))))
+        value = maybe.mul_some(prior, maybe.sum_some(1, growth))
     return period, value, period.from_end(year_offset)
 
 
@@ -88,7 +80,7 @@ def interest(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | Non
         seed=0.0,
         distance=maybe_abs_distance,
     )
-    value = multiply_some((add_some((beginning, ending)), 0.5, -interest_rate))
+    value = maybe.mul_some(maybe.sum_some(beginning, ending), 0.5, -interest_rate)
     return period, value, period.from_end(year_offset)
 
 
@@ -114,12 +106,12 @@ fcf = ops.add(
 
 def draw_value() -> Effect[Maybe[float]]:
     ntm_ebitda = yield from get_at(ebitda, Period(acquisition_date, acquisition_date + year_offset))
-    return multiply_some((ntm_ebitda, purchase_multiple, ltv))
+    return maybe.mul_some(ntm_ebitda, purchase_multiple, ltv)
 
 
 draws = Series[date, Maybe[float], Maybe[float]].of(
     "Draws",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(acquisition_date, Thunk(draw_value))],
 )
 
@@ -134,18 +126,18 @@ def debt_sweep(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | N
     def sweep(bal: float, cash: float) -> float:
         return -min(bal, cash)
 
-    value = map2_some(sweep)(beginning, free_cash_flow)
+    value = maybe.map2_some(sweep)(beginning, free_cash_flow)
     return period, value, period.from_end(year_offset)
 
 
 def payment(period: Period) -> Effect[float]:
-    return value_or((yield from get_at(debt_sweep, period)), 0.0)
+    return maybe.value_or((yield from get_at(debt_sweep, period)), 0.0)
 
 
 sweep_periods = list(Period.seq(acquisition_date, year_offset, acquisition_date + hold_period))
 sweep_payments = Series[date, Maybe[float], Maybe[float]].of(
     "Sweep payments",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(period.end, Thunk(lambda period=period: payment(period))) for period in sweep_periods],
 )
 
@@ -162,11 +154,11 @@ def cumulate[V](
         def value() -> Effect[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
             flow = yield from get_at(flows, day)
-            return add_some((prior, flow))
+            return maybe.sum_some(prior, flow)
 
         return Thunk(value), day
 
-    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=scan), last)
+    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=scan), query.last)
     return balance
 
 
@@ -182,12 +174,12 @@ debt_before_balloon = cumulate("Debt before balloon", pre_balloon_debt_flows)
 
 def balloon_value() -> Effect[float]:
     remaining = yield from get_at(debt_before_balloon, acquisition_date + hold_period)
-    return -value_or(remaining, 0.0)
+    return -maybe.value_or(remaining, 0.0)
 
 
 balloon_payment = Series[date, Maybe[float], Maybe[float]].of(
     "Balloon payment",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(balloon_value))],
 )
 debt_cash_flows = ops.add(
@@ -204,12 +196,12 @@ def purchase_price_value() -> Effect[Maybe[float]]:
     entry_ebitda = yield from get_at(
         ebitda, Period(acquisition_date, acquisition_date + year_offset)
     )
-    return multiply_some((entry_ebitda, -purchase_multiple))
+    return maybe.mul_some(entry_ebitda, -purchase_multiple)
 
 
 purchase_price = Series[date, Maybe[float], Maybe[float]].of(
     "Purchase price",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(acquisition_date, Thunk(purchase_price_value))],
 )
 
@@ -223,23 +215,23 @@ def exit_value_fn() -> Effect[Maybe[float]]:
         ),
     )
     multiple: Maybe[float] = yield from get(exit_multiple)
-    return multiply_some((exit_ebitda, multiple))
+    return maybe.mul_some(exit_ebitda, multiple)
 
 
 exit_value = Series[date, Maybe[float], Maybe[float]].of(
     "Exit value",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(exit_value_fn))],
 )
 
 
 def fcf_payment(period: Period) -> Effect[float]:
-    return value_or((yield from get_at(fcf, period)), 0.0)
+    return maybe.value_or((yield from get_at(fcf, period)), 0.0)
 
 
 year_end_fcf_payment = Series[date, Maybe[float], Maybe[float]].of(
     "Year end fcf payment",
-    exact_or(0.0),
+    query.exact_or(0.0),
     [(period.end, Thunk(lambda period=period: fcf_payment(period))) for period in sweep_periods],
 )
 levered_cash_flow = ops.add(
@@ -252,10 +244,10 @@ levered_cash_flow = ops.add(
     fill=0.0,
 )
 
-stmt = Stmt(
-    Group(revenue, Total(ebt, [Total(ebit, [ebitda, da]), interest]), taxes),
-    Group(Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])),
-    Group(
+statement = stmt.Stmt(
+    stmt.Group(revenue, stmt.Total(ebt, [stmt.Total(ebit, [ebitda, da]), interest]), taxes),
+    stmt.Group(stmt.Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])),
+    stmt.Group(
         draws,
         debt_sweep,
         debt_before_balloon,
@@ -263,7 +255,7 @@ stmt = Stmt(
         debt_balance,
         debt_cash_flows,
     ),
-    Total(
+    stmt.Total(
         levered_cash_flow,
         [purchase_price, exit_value, year_end_fcf_payment, debt_cash_flows],
     ),
@@ -274,7 +266,7 @@ ctx = Context()
 display_periods = Period.list(
     acquisition_date, year_offset, acquisition_date + hold_period + year_offset
 )
-print(fixed_width_table(stmt.values_for_periods(ctx, display_periods)))
+print(formatter.fixed_width_table(statement.values_for_periods(ctx, display_periods)))
 
 cf_dates = [acquisition_date, *[period.end for period in sweep_periods]]
 cashflows: list[float] = []
@@ -287,8 +279,8 @@ print(f"MOM: {cashflows[-1] / -cashflows[0]:.2f}")
 print(f"IRR: {float(npf.irr(cashflows)):.2%}")
 
 loan = ctx.get_at(debt_balance, acquisition_date)
-equity = map_some(operator.neg)(ctx.get_at(levered_cash_flow, acquisition_date))
-pp = map_some(operator.neg)(ctx.get_at(purchase_price, acquisition_date))
+equity = maybe.map_some(operator.neg)(ctx.get_at(levered_cash_flow, acquisition_date))
+pp = maybe.map_some(operator.neg)(ctx.get_at(purchase_price, acquisition_date))
 
 print()
 print(

@@ -27,7 +27,7 @@ Use `Series.of` for a sequence of already-known pairs. Wrap generators and `enum
 ```python
 history = Series.of(
     "Revenue history",
-    covered,
+    query.covered,
     [(q1, 100.0), (q2, Thunk(load_q2))],
 )
 ```
@@ -35,7 +35,7 @@ history = Series.of(
 Use `Series.unfold` when the domain is lazy, infinite, stateful, or determined by other rules. Its step receives state and returns `(key, value, next_state)` or `None`; the step itself may be effectful:
 
 ```python
-@Series.define("Revenue", accrue(YF.cmonthly), seed=first_period)
+@Series.define("Revenue", query.accrue(YF.cmonthly), seed=first_period)
 def revenue(period: Period) -> Effect[tuple[Period, float, Period]]:
     amount = yield from get_at(source_revenue, period)
     if isna(amount):

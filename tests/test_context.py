@@ -13,12 +13,12 @@ from orcaset import (
     Period,
     Series,
     abs_distance,
-    accrue,
     get,
     get_at,
-    multiply_some,
+    maybe,
     ops,
 )
+from orcaset.query import accrue
 from orcaset.rule import _UNIT
 
 MONTH = relativedelta(months=1)
@@ -40,7 +40,7 @@ def _recurrence_model():
             value = 100.0
         else:
             prior = yield from get_at(rev, period.shift(-MONTH))
-            value = multiply_some((prior, 1.10))
+            value = maybe.mul_some(prior, 1.10)
         return period, value, period.from_end(MONTH)
 
     return rev, ops.scale("Costs", rev, -0.5)

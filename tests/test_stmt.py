@@ -1,30 +1,44 @@
 from datetime import date
 
+import orcaset
 from orcaset import (
     Context,
-    DateValue,
-    Group,
-    GroupRow,
-    LineRow,
     Period,
-    PeriodValue,
     Series,
-    StatementResult,
-    Stmt,
-    Total,
-    TotalRow,
-    exact,
     ops,
     period_union,
+    stmt,
 )
+from orcaset.query import exact
 
 
-def row_values(row: LineRow | TotalRow) -> tuple[float | None, ...]:
+def row_values(row: stmt.LineRow | stmt.TotalRow) -> tuple[float | None, ...]:
     return tuple(value.value for value in row.values)
 
 
-def rows(result: StatementResult) -> tuple[GroupRow | LineRow | TotalRow, ...]:
+def rows(result: stmt.StatementResult) -> tuple[stmt.GroupRow | stmt.LineRow | stmt.TotalRow, ...]:
     return result.rows
+
+
+def test_stmt_types_are_exported_only_from_stmt_module():
+    names = {
+        "DateValue",
+        "Group",
+        "GroupRow",
+        "LineRow",
+        "PeriodValue",
+        "StatementResult",
+        "Stmt",
+        "StmtItem",
+        "StmtRow",
+        "StmtSeries",
+        "StmtValue",
+        "Total",
+        "TotalRow",
+    }
+
+    assert set(orcaset.stmt.__all__) == names
+    assert all(not hasattr(orcaset, name) for name in names)
 
 
 def test_stmt_values_uses_series_name_for_line_items():
@@ -38,7 +52,7 @@ def test_stmt_values_uses_series_name_for_line_items():
     )
 
     ctx = Context()
-    result = Stmt(revenue).values(
+    result = stmt.Stmt(revenue).values(
         ctx,
         [
             Period(date(2025, 1, 1), date(2025, 2, 1)),
@@ -53,10 +67,10 @@ def test_stmt_values_uses_series_name_for_line_items():
     )
     assert result.dates == (date(2025, 1, 1), date(2025, 2, 1), date(2025, 3, 1))
     assert len(result_rows) == 1
-    assert isinstance(result_rows[0], LineRow)
+    assert isinstance(result_rows[0], stmt.LineRow)
     assert result_rows[0].name == "Revenue"
     assert result_rows[0].series is revenue
-    assert [value.period for value in result_rows[0].values if isinstance(value, PeriodValue)] == [
+    assert [value.period for value in result_rows[0].values if isinstance(value, stmt.PeriodValue)] == [
         Period(date(2025, 1, 1), date(2025, 2, 1)),
         Period(date(2025, 2, 1), date(2025, 3, 1)),
     ]
@@ -78,7 +92,7 @@ def test_stmt_total_uses_real_series_and_nests_children():
 
     ctx = Context()
     result_rows = rows(
-        Stmt(Total(income, [revenue, costs])).values(
+        stmt.Stmt(stmt.Total(income, [revenue, costs])).values(
             ctx,
             [Period(date(2025, 1, 1), date(2025, 2, 1))],
         )
@@ -86,11 +100,11 @@ def test_stmt_total_uses_real_series_and_nests_children():
 
     assert len(result_rows) == 1
     row = result_rows[0]
-    assert isinstance(row, TotalRow)
+    assert isinstance(row, stmt.TotalRow)
     assert row.name == "Income"
     assert row.series is income
     assert len(row.children) == 2
-    assert [child.name for child in row.children if isinstance(child, LineRow)] == [
+    assert [child.name for child in row.children if isinstance(child, stmt.LineRow)] == [
         "Revenue",
         "Costs",
     ]
@@ -111,15 +125,15 @@ def test_stmt_group_wraps_rows_with_group_row():
 
     ctx = Context()
     result_rows = rows(
-        Stmt(Group(revenue, costs)).values(
+        stmt.Stmt(stmt.Group(revenue, costs)).values(
             ctx,
             [Period(date(2025, 1, 1), date(2025, 2, 1))],
         )
     )
 
     assert len(result_rows) == 1
-    assert isinstance(result_rows[0], GroupRow)
-    assert [row.name for row in result_rows[0].children if isinstance(row, LineRow)] == [
+    assert isinstance(result_rows[0], stmt.GroupRow)
+    assert [row.name for row in result_rows[0].children if isinstance(row, stmt.LineRow)] == [
         "Revenue",
         "Costs",
     ]
@@ -138,17 +152,17 @@ def test_stmt_period_query_evaluates_date_series_at_period_boundaries():
     )
 
     ctx = Context()
-    result = Stmt(cash, balance).values_for_periods(
+    result = stmt.Stmt(cash, balance).values_for_periods(
         ctx,
         [Period(date(2025, 1, 1), date(2025, 4, 1)), Period(date(2025, 4, 1), date(2025, 7, 1))],
     )
     result_rows = rows(result)
 
     assert result.dates == (date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1))
-    assert isinstance(result_rows[0], LineRow)
-    assert isinstance(result_rows[1], LineRow)
-    assert all(isinstance(value, PeriodValue) for value in result_rows[0].values)
-    assert all(isinstance(value, DateValue) for value in result_rows[1].values)
+    assert isinstance(result_rows[0], stmt.LineRow)
+    assert isinstance(result_rows[1], stmt.LineRow)
+    assert all(isinstance(value, stmt.PeriodValue) for value in result_rows[0].values)
+    assert all(isinstance(value, stmt.DateValue) for value in result_rows[1].values)
     assert row_values(result_rows[0]) == (None, None)
     assert row_values(result_rows[1]) == (10.0, 20.0, 30.0)
 
@@ -165,7 +179,7 @@ def test_stmt_date_query_evaluates_dates_and_returns_none_for_period_series():
     )
 
     ctx = Context()
-    result = Stmt(revenue, balance).values_for_dates(
+    result = stmt.Stmt(revenue, balance).values_for_dates(
         ctx,
         [date(2025, 1, 1), date(2025, 4, 1)],
     )
@@ -173,8 +187,8 @@ def test_stmt_date_query_evaluates_dates_and_returns_none_for_period_series():
 
     assert result.periods == ()
     assert result.dates == (date(2025, 1, 1), date(2025, 4, 1))
-    assert isinstance(result_rows[0], LineRow)
-    assert isinstance(result_rows[1], LineRow)
+    assert isinstance(result_rows[0], stmt.LineRow)
+    assert isinstance(result_rows[1], stmt.LineRow)
     assert row_values(result_rows[0]) == (None, None)
     assert row_values(result_rows[1]) == (100.0, 120.0)
 
@@ -188,7 +202,7 @@ def test_stmt_converts_na_answers_to_none():
 
     ctx = Context()
     result_rows = rows(
-        Stmt(revenue).values(
+        stmt.Stmt(revenue).values(
             ctx,
             [
                 Period(date(2025, 1, 1), date(2025, 2, 1)),
@@ -197,5 +211,5 @@ def test_stmt_converts_na_answers_to_none():
         )
     )
 
-    assert isinstance(result_rows[0], LineRow)
+    assert isinstance(result_rows[0], stmt.LineRow)
     assert row_values(result_rows[0]) == (100.0, None)

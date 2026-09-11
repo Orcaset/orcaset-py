@@ -9,21 +9,18 @@ from orcaset import (
     Context,
     CycleError,
     DepNode,
-    Maybe,
-    Na,
     Period,
     Rule,
     Series,
     Thunk,
-    exact,
     get,
     get_at,
-    isna,
     keys_until,
-    last,
     map_cells,
     scan_cells,
 )
+from orcaset.maybe import Maybe, Na, isna
+from orcaset.query import exact, last
 
 MONTH = relativedelta(months=1)
 YEAR = relativedelta(years=1, day=31)

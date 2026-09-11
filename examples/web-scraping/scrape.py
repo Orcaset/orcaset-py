@@ -9,14 +9,14 @@ from operator import itemgetter
 import requests
 from bs4 import BeautifulSoup
 
-from orcaset import Cell, Cons, Effect, Period, Series, accrue, get, unfold_cells
+from orcaset import Cell, Cons, Effect, Period, Series, get, query, unfold_cells
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
     "User-Agent": "orcaset-web-scraping-example/0.1 (+https://github.com/orcaset/orcaset-py)",
     "Accept": "text/html,application/xhtml+xml",
 }
-_BY_DAYS = accrue(lambda start, end: float((end - start).days))
+_BY_DAYS = query.accrue(lambda start, end: float((end - start).days))
 
 
 def fetch_html(url: str) -> str:

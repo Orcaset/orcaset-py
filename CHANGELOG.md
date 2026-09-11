@@ -11,6 +11,10 @@ change between minor releases.
 
 ### Added
 
+- `maybe.sub_some` and `maybe.div_some` for Na-propagating binary float
+  subtraction and division.
+- `NaType`, the public type of the `Na` singleton, exported from `orcaset`
+  alongside `Maybe`, `Na`, and `isna`.
 - `Context.depends_on(source, target)` and
   `Context.path_to(source, target, *, structural=False)` for asking whether
   one cell transitively demanded another, and for the shortest demand path
@@ -24,13 +28,36 @@ change between minor releases.
 
 ### Changed
 
+- Renamed `add_some` to `sum_some` and `multiply_some` to `mul_some`. Both
+  now take variadic arguments instead of a tuple.
+- Renamed `_NaType` to `NaType` so type-checker output names the miss type
+  publicly.
+- Maybe helpers other than `Maybe`, `Na`, `NaType`, and `isna` are no longer
+  re-exported from `orcaset`. Import the `maybe` module instead
+  (`from orcaset import maybe`).
 - `Group` now takes child items as variadic arguments (`Group(*items)`),
   matching `Stmt`.
+- `ops.combine` now accepts arbitrary source query-answer and mapped result
+  types, independently of the source cell types.
 - `ops.map2` now accepts arbitrary source query-answer and mapped result types,
   independently of the source cell types.
 - `Series.of` now requires a `Sequence` of pairs and uses it directly without
   copying. Callers must explicitly convert generators and other iterables to
   lists or tuples.
+- Query helpers are now exported from `orcaset.query` rather than re-exported
+  individually from the package root. The package root exports the `query`
+  module alongside `maybe` and `ops`.
+- Statement types (`Stmt`, `Group`, `Total`, `StatementResult`, and the
+  row/value types) are no longer re-exported from `orcaset`. Import the `stmt`
+  module instead (`from orcaset import stmt`). The package root exports the
+  `stmt` module alongside `maybe`, `ops`, `query`, and `formatter`.
+- Table helpers (`fixed_width_table`, `markdown_table`, `csv_table`,
+  `ValueFormatter`, `DateFormatter`) are no longer re-exported from `orcaset`.
+  The `formatters` module is renamed `formatter`; import it from the package
+  root (`from orcaset import formatter`).
+- `exact` and `last` now stop without demanding the next series tail after an
+  incomparable key. `accrue` does the same once the current cell reaches or
+  extends past the query end.
 
 ## [0.11.1] - 2026-09-09
 

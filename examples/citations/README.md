@@ -79,12 +79,12 @@ def revenue(
         value = Thunk(lambda: load_frame(CONCEPT_URL, FRAME))
     else:
         prior = yield from get_at(revenue, period.from_start(-QUARTER))
-        value = multiply_some((prior, 1.10))
+        value = maybe.mul_some(prior, 1.10)
 
     return period, value, period.from_end(QUARTER)
 ```
 
-The initial `Thunk` defers the HTTP request until Q2's value is demanded. For each forecast quarter, `get_at` requests the prior quarter inside the model's `Effect`, recording that dependency, and `multiply_some` applies 10% growth while propagating `Na` if the prior value is unavailable.
+The initial `Thunk` defers the HTTP request until Q2's value is demanded. For each forecast quarter, `get_at` requests the prior quarter inside the model's `Effect`, recording that dependency, and `maybe.mul_some` applies 10% growth while propagating `Na` if the prior value is unavailable.
 
 The series' cell values are `Maybe[float]`. A `CitedFloat` satisfies the `float` side of that type, so the cited actual and ordinary forecast values compose in the same series without discarding the actual's metadata.
 

@@ -18,20 +18,20 @@ If reporting boundaries are supplied, build periods from those exact dates. Do n
 
 | Desired behavior | Query |
 | --- | --- |
-| Exact key only; miss remains visible | `exact` |
-| Latest value at or before a key | `last` |
-| Adjacent period cells must exactly tile the query | `covered` |
-| Overlapping period cells are weighted by a day-count function | `accrue(yf)` |
-| Exact miss has a defined value | `exact_or(default)` |
-| Pre-domain as-of miss has a defined value | `last_or(default)` |
-| Accrual miss or any missing contributor has a defined value | `accrue_or(yf, fill)` |
+| Exact key only; miss remains visible | `query.exact` |
+| Latest value at or before a key | `query.last` |
+| Adjacent period cells must exactly tile the query | `query.covered` |
+| Overlapping period cells are weighted by a day-count function | `query.accrue(yf)` |
+| Exact miss has a defined value | `query.exact_or(default)` |
+| Pre-domain as-of miss has a defined value | `query.last_or(default)` |
+| Accrual miss or any missing contributor has a defined value | `query.accrue_or(yf, fill)` |
 
-`exact` and `last` work for any supported key type. `accrue`, `accrue_or`, and `covered` are for `Period` keys and float-like flows. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`.
+`query.exact` and `query.last` work for any supported key type. `query.accrue`, `query.accrue_or`, and `query.covered` are for `Period` keys and float-like flows. Import them as a namespace with `from orcaset import query`. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`.
 
 `YF.cmonthly` is appropriate for calendar-month interpolation. Use `YF.act360`, `YF.thirty360`, or a stated custom measure only when the model's convention calls for it. For actual-day weighting:
 
 ```python
-by_days = accrue(lambda start, end: (end - start).days)
+by_days = query.accrue(lambda start, end: (end - start).days)
 ```
 
 Do not aggregate ratios, rates, prices, or per-share measures as additive flows. Resolve the reporting-period numerator and denominator first, then calculate the ratio using the intended weighting convention.
@@ -44,19 +44,19 @@ Use `Na` for a missing required input, a gap in sourced history, an unsupported 
 
 Apply defaults at the narrowest justified layer:
 
-- `exact_or(0.0)` for dated event series where no event means zero;
-- `last_or(opening)` when dates before the first observation have a defined opening value;
-- `accrue_or(yf, 0.0)` when every failed accrual answer is defined as zero;
-- `value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
-- `isna(value)` plus a descriptive error when an input is required.
+- `query.exact_or(0.0)` for dated event series where no event means zero;
+- `query.last_or(opening)` when dates before the first observation have a defined opening value;
+- `query.accrue_or(yf, 0.0)` when every failed accrual answer is defined as zero;
+- `maybe.value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
+- `maybe.isna(value)` plus a descriptive error when an input is required.
 
-`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `add_some(())` and `multiply_some(())` return `Na` because no value seeds the fold.
+`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold.
 
 Never replace `Na` with zero just to avoid an exception, satisfy a type checker, hide a broken dependency, or make a cycle converge.
 
 ## Boundaries and lazy walks
 
-Query functions walk the chain only until ordering proves later nodes cannot matter. `last` retains only the latest candidate and does not force a superseded value. `accrue` and `covered` do not force cells outside the query. Preserve these properties in custom queries.
+Query functions walk the chain only until ordering proves later nodes cannot matter. `query.last` retains only the latest candidate and does not force a superseded value. `query.accrue` and `query.covered` do not force cells outside the query. Preserve these properties in custom queries.
 
 For each public series, test:
 

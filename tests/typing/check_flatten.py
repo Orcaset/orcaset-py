@@ -8,19 +8,15 @@ from orcaset import (
     Cells,
     Cons,
     Effect,
-    Maybe,
-    Na,
     Period,
     Series,
-    accrue,
     continue_series,
-    covered,
     date_split,
-    exact,
     get,
-    isna,
     period_split,
 )
+from orcaset.maybe import Maybe, Na, isna
+from orcaset.query import accrue, covered, exact
 
 Q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
 Q2 = Period(date(2025, 4, 1), date(2025, 7, 1))

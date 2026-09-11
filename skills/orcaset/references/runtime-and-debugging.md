@@ -17,7 +17,7 @@ One context represents one run. It memoizes every resolved rule/key and keeps th
 
 Keep evaluation and reporting downstream from model definition. Materialize only the requested keys into a table, JSON object, or display structure; formatted output is not a model export. Do not evaluate unbounded series.
 
-For a structured income or cash-flow view, wrap the already-defined series in `Stmt`, `Total`, and `Group`, then call `values_for_periods` or `values_for_dates` and pass the `StatementResult` to `fixed_width_table`, `markdown_table`, or `csv_table`.
+For a structured income or cash-flow view, wrap the already-defined series in `stmt.Stmt`, `stmt.Total`, and `stmt.Group`, then call `values_for_periods` or `values_for_dates` and pass the `stmt.StatementResult` to `formatter.fixed_width_table`, `formatter.markdown_table`, or `formatter.csv_table`.
 
 ## Inspect a domain without forcing values
 

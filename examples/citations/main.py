@@ -15,14 +15,13 @@ from orcaset import (
     YF,
     Context,
     Effect,
-    Maybe,
     Period,
     Series,
     Thunk,
-    accrue,
     get_at,
-    multiply_some,
+    query,
 )
+from orcaset.maybe import Maybe, mul_some
 
 # ---- Assumptions ----
 CONCEPT_URL = (
@@ -80,7 +79,7 @@ def load_frame(url: str, frame: str) -> CitedFloat:
 
 
 # ---- Model definition ----
-@Series.define("SpaceX revenue", accrue(YF.cmonthly), seed=Q2_2026)
+@Series.define("SpaceX revenue", query.accrue(YF.cmonthly), seed=Q2_2026)
 def revenue(
     period: Period,
 ) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:
@@ -88,7 +87,7 @@ def revenue(
         value = Thunk(lambda: load_frame(CONCEPT_URL, FRAME))
     else:
         prior = yield from get_at(revenue, period.from_start(-QUARTER))
-        value = multiply_some((prior, 1.10))
+        value = mul_some(prior, 1.10)
 
     return period, value, period.from_end(QUARTER)
 

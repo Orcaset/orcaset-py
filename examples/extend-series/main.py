@@ -17,15 +17,13 @@ from orcaset import (
     Na,
     Period,
     Series,
-    Stmt,
-    accrue,
     continue_series,
-    covered,
-    exact,
-    fixed_width_table,
+    formatter,
     get_at,
-    multiply_some,
+    maybe,
     period_split,
+    query,
+    stmt,
 )
 
 # ---- Inputs and assumptions ----
@@ -35,14 +33,14 @@ OCT = Q3.from_end(MONTH)
 NOV = OCT.from_end(MONTH)
 DEC = NOV.from_end(MONTH)
 JAN = DEC.from_end(MONTH)
-accrue_monthly = accrue(YF.cmonthly)
+accrue_monthly = query.accrue(YF.cmonthly)
 
 historical = [(Q3, 300.0)]
 projected = [(Q3, 0.0), (OCT, 110.0), (NOV, Na), (DEC, 121.0)]
 
 
 # ---- Series definitions ----
-actuals = Series.of("Actuals", covered, historical)  # `covered` query function
+actuals = Series.of("Actuals", query.covered, historical)  # `covered` query function
 projections = Series.of("Projections", accrue_monthly, projected)  # `accrue_monthly` query function
 
 
@@ -59,7 +57,7 @@ def terminal_revenue(
     @Series.define("Terminal growth", accrue_monthly, seed=last_node.key)
     def growth(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         prior_month = yield from get_at(revenue, period)
-        value = multiply_some((prior_month, (1 + 0.02 * YF.cmonthly(*period))))
+        value = maybe.mul_some(prior_month, (1 + 0.02 * YF.cmonthly(*period)))
         return period.from_end(MONTH), value, period.from_end(MONTH)
 
     return growth
@@ -69,26 +67,26 @@ def terminal_revenue(
 type Segment = Series[Period, Any, Maybe[float]]
 
 components: Series[int, Segment, Maybe[Segment]] = Series.of(
-    "Revenue components", exact, [(0, actuals), (1, projections)]
+    "Revenue components", query.exact, [(0, actuals), (1, projections)]
 )
 base: Series[Period, Maybe[float], Maybe[float]] = Series.flatten(
     "Actuals and projections",
     components.cells,
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 
 revenue = Series.flatten(
     "Revenue",
     continue_series("Revenue components", base, terminal_revenue),
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 
 
 # ---- Output ----
 ctx = Context()
-print(fixed_width_table(Stmt(revenue).values_for_periods(ctx, [Q3, OCT, NOV, DEC, JAN])))
+print(formatter.fixed_width_table(stmt.Stmt(revenue).values_for_periods(ctx, [Q3, OCT, NOV, DEC, JAN])))
 
 partial_actual = Period(date(2025, 8, 31), Q3.end)
 bad_crossing = Period(date(2025, 8, 31), NOV.end)

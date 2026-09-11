@@ -21,11 +21,11 @@ def cumulate[V](
             flow = yield from get_at(flows, day)
             if isna(prior):
                 return flow
-            return prior + value_or(flow, 0.0)
+            return prior + maybe.value_or(flow, 0.0)
 
         return Thunk(value), day
 
-    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=step), last)
+    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=step), query.last)
     return balance
 ```
 
@@ -39,7 +39,7 @@ Interest and operating cash flow earned over an interval remain `Period`-keyed. 
 
 Do not combine date and period series directly. For a finite period schedule, a dated adapter can use `Series.of` with `(period.end, Thunk(...))` pairs. For a lazy schedule, prefer an effectful unfold step that queries the original flow at that period and returns its value with the ending-date key.
 
-Balances that carry between events use `last`; event flows where no event means zero normally use `exact_or(0.0)`. The public balance on a settlement date should be post-settlement. If a circular formula needs a pre-settlement balance, model a clearly named helper and then add the settlement event into the public balance on the same date.
+Balances that carry between events use `query.last`; event flows where no event means zero normally use `query.exact_or(0.0)`. The public balance on a settlement date should be post-settlement. If a circular formula needs a pre-settlement balance, model a clearly named helper and then add the settlement event into the public balance on the same date.
 
 ## Genuine simultaneous dependencies
 

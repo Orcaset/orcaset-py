@@ -15,7 +15,7 @@ usd_total = ops.map2(
     "USD total",
     usd_product,  # USD
     usd_services,  # USD
-    fn=map2_some(operator.add),
+    fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
 )
 ```
@@ -29,14 +29,14 @@ invalid_total = ops.map2(
     "invalid total",
     usd_product,  # USD
     eur_revenue,  # EUR
-    fn=map2_some(operator.add),  # static type error here
+    fn=maybe.map2_some(operator.add),  # static type error here
     merge_keys=period_union,
 )
 ```
 In this example, `pyrefly` will raise an error at the `operator.add` location noting that it USD and EUR are incompatible operands.
 
 ```txt
-ERROR Overload type was not compatible with solved type variables: A = USD, B = EUR, C = _NaType
+ERROR Overload type was not compatible with solved type variables: A = USD, B = EUR, C = NaType
 ```
 
 Orcaset recommends using `pyrefly` for type checking since it has the best type checking coverage and is fast. Other type checkers may not be able to consistently infer the type error. Even if the static type error is not found though, it will fail at runtime.

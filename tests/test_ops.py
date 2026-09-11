@@ -9,22 +9,18 @@ from orcaset import (
     Cells,
     Context,
     Effect,
-    Maybe,
-    Na,
     Period,
     Series,
     Thunk,
     date_union,
-    exact,
     get,
-    isna,
     keys_until,
-    last,
-    map2_some,
     merge_cells,
     ops,
     period_union,
 )
+from orcaset.maybe import Maybe, Na, isna, map2_some
+from orcaset.query import exact, last
 
 MONTH = relativedelta(months=1)
 

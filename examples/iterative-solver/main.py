@@ -13,12 +13,10 @@ from orcaset import (
     Maybe,
     Period,
     Series,
-    accrue_or,
-    add_some,
     get_at,
-    isna,
-    last,
+    maybe,
     maybe_abs_distance,
+    query,
 )
 
 # ---- Assumptions ----
@@ -31,7 +29,7 @@ OPENING_DEBT = 100.0
 seed_date: date | None = None
 
 
-@Series.define("Debt", last, seed=seed_date)
+@Series.define("Debt", query.last, seed=seed_date)
 def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     if prior_date is None:
         return START_DATE, OPENING_DEBT, START_DATE
@@ -40,10 +38,10 @@ def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     begin = yield from get_at(debt, prior_date)
     interest_amt = yield from get_at(interest, Period(prior_date, current_date))
 
-    return current_date, add_some((begin, interest_amt)), current_date
+    return current_date, maybe.sum_some(begin, interest_amt), current_date
 
 
-@Series.define("Interest", accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
+@Series.define("Interest", query.accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
 def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     begin = yield from get_at(debt, period.start)
 
@@ -52,10 +50,10 @@ def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     # and a way to check for convergence.
     end = yield from get_at(debt, period.end, seed=0.0, distance=maybe_abs_distance)
 
-    if isna(begin):
+    if maybe.isna(begin):
         avg_balance = 0.0
     else:
-        avg_balance = begin if isna(end) else (begin + end) * 0.5
+        avg_balance = begin if maybe.isna(end) else (begin + end) * 0.5
 
     return period, avg_balance * MONTHLY_RATE, period.from_end(MONTH)
 
@@ -64,8 +62,8 @@ def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
 if __name__ == "__main__":
     from itertools import islice
 
-    from orcaset import Context, Stmt, fixed_width_table
+    from orcaset import Context, formatter, stmt
 
     ctx = Context()
     periods = list(islice(Period.seq(START_DATE, MONTH), 4))
-    print(fixed_width_table(Stmt(debt, interest).values_for_periods(ctx, periods)))
+    print(formatter.fixed_width_table(stmt.Stmt(debt, interest).values_for_periods(ctx, periods)))

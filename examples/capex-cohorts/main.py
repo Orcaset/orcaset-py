@@ -14,23 +14,21 @@ from orcaset import (
     Period,
     Rule,
     Series,
-    Stmt,
     Thunk,
-    Total,
-    accrue,
-    exact,
-    fixed_width_table,
+    formatter,
     get,
     get_at,
-    isna,
     map_cells,
+    maybe,
+    query,
     scan_cells,
+    stmt,
 )
 
 # ---- Inputs and assumptions ----
 YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
-by_days = accrue(lambda start, end: (end - start).days)
+by_days = query.accrue(lambda start, end: (end - start).days)
 
 # ---- Series definitions ----
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
@@ -51,7 +49,7 @@ def build_cohort(source_key: Period) -> Cohort:
 
     def depreciation() -> Effect[float]:
         spend = yield from get_at(capex, source_key)
-        if isna(spend):
+        if maybe.isna(spend):
             raise ValueError(f"missing capex for {source_key}")
         return spend / 2
 
@@ -69,7 +67,7 @@ cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
         capex.cells,
         lambda source_key, _cell: build_cohort(source_key),
     ),
-    exact,
+    query.exact,
 )
 
 
@@ -78,7 +76,7 @@ def sum_cohorts(cohorts: CohortRules, period: Period) -> Effect[float]:
     for cell in cohorts:
         cohort = yield from get(cell)
         value = yield from get_at(cohort, period)
-        if not isna(value):
+        if not maybe.isna(value):
             total += value
     return total
 
@@ -119,12 +117,12 @@ partial = Period(date(2025, 12, 31), date(2027, 6, 30))
 cohorts: list[Cohort] = []
 for spend_key in years[:3]:
     schedule = ctx.get_at(cohort_schedules, spend_key)
-    if isna(schedule):
+    if maybe.isna(schedule):
         raise RuntimeError(f"missing cohort for {spend_key}")
     cohorts.append(schedule)
 
-statement = Stmt(capex, Total(total_depreciation, cohorts))
-print(fixed_width_table(statement.values_for_periods(ctx, years)))
+statement = stmt.Stmt(capex, stmt.Total(total_depreciation, cohorts))
+print(formatter.fixed_width_table(statement.values_for_periods(ctx, years)))
 print(f"\nCapex @ partial {partial}: {ctx.get_at(capex, partial)}")
 print(f"Total dep @ partial {partial}: {ctx.get_at(total_depreciation, partial)}")
 print(f"First cohort @ partial {partial}: {ctx.get_at(cohorts[0], partial)}")

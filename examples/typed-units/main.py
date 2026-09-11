@@ -13,10 +13,10 @@ from orcaset import (
     Context,
     Period,
     Series,
-    exact,
-    map2_some,
+    maybe,
     ops,
     period_union,
+    query,
 )
 
 MODEL_START = date(2025, 12, 31)
@@ -50,13 +50,13 @@ class EUR:
 
 # ---- Define constant value series ----
 usd_product = Series.of(
-    "USD product revenue", exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(100.0)]))
+    "USD product revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(100.0)]))
 )
 usd_services = Series.of(
-    "USD services revenue", exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(25.0)]))
+    "USD services revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(25.0)]))
 )
 eur_revenue = Series.of(
-    "EUR revenue", exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [EUR(80.0)]))
+    "EUR revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [EUR(80.0)]))
 )
 
 # ---- Demonstrate type-aware composition ----
@@ -66,7 +66,7 @@ usd_total = ops.map2(
     "USD total",
     usd_product,
     usd_services,
-    fn=map2_some(operator.add),
+    fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
 )
 
@@ -78,7 +78,7 @@ invalid_total = ops.map2(
     "invalid total",
     usd_product,
     eur_revenue,
-    fn=map2_some(operator.add),  # type: ignore
+    fn=maybe.map2_some(operator.add),  # type: ignore
     merge_keys=period_union,
 )
 

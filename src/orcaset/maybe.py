@@ -6,13 +6,13 @@ from typing import ClassVar, TypeIs, final
 
 
 @final
-class _NaType:
+class NaType:
     """Type of the `Na` singleton; do not instantiate directly."""
 
     __slots__: tuple[()] = ()
-    _instance: ClassVar[_NaType | None] = None
+    _instance: ClassVar[NaType | None] = None
 
-    def __new__(cls) -> _NaType:
+    def __new__(cls) -> NaType:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -27,13 +27,13 @@ class _NaType:
         return "Na"  # pickle/copy by module reference, preserving identity
 
 
-Na: _NaType = _NaType()
+Na: NaType = NaType()
 """Singleton 'no value'. Misses are values, never exceptions."""
 
-type Maybe[V] = V | _NaType
+type Maybe[V] = V | NaType
 
 
-def isna[V](value: Maybe[V]) -> TypeIs[_NaType]:
+def isna[V](value: Maybe[V]) -> TypeIs[NaType]:
     """True if `value` is `Na`; narrows `Maybe[V]` to `V` when false."""
     return value is Na
 
@@ -46,7 +46,7 @@ def some[V](value: V) -> Maybe[V]:
 def value_or[V](value: Maybe[V], default: V) -> V:
     """Return `value` if not `Na`, otherwise `default`."""
     match value:
-        case _NaType():
+        case NaType():
             return default
         case _:
             return value
@@ -94,19 +94,37 @@ def combine_some[V](
     return result
 
 
-def add_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:
-    """Add float values, propagating ``Na``; an empty tuple returns ``Na``."""
+def sum_some(*values: Maybe[float]) -> Maybe[float]:
+    """Add float values, propagating ``Na``; no arguments returns ``Na``."""
     return combine_some(values, _add_floats)
 
 
-def multiply_some(values: tuple[Maybe[float], ...]) -> Maybe[float]:
-    """Multiply float values, propagating ``Na``; an empty tuple returns ``Na``."""
-    return combine_some(values, _multiply_floats)
+def mul_some(*values: Maybe[float]) -> Maybe[float]:
+    """Multiply float values, propagating ``Na``; no arguments returns ``Na``."""
+    return combine_some(values, _mul_floats)
+
+
+def sub_some(left: Maybe[float], right: Maybe[float]) -> Maybe[float]:
+    """Subtract floats, propagating ``Na`` if either side is ``Na``."""
+    return map2_some(_sub_floats)(left, right)
+
+
+def div_some(left: Maybe[float], right: Maybe[float]) -> Maybe[float]:
+    """Divide floats, propagating ``Na`` if either side is ``Na``."""
+    return map2_some(_div_floats)(left, right)
 
 
 def _add_floats(left: float, right: float) -> float:
     return left + right
 
 
-def _multiply_floats(left: float, right: float) -> float:
+def _mul_floats(left: float, right: float) -> float:
     return left * right
+
+
+def _sub_floats(left: float, right: float) -> float:
+    return left - right
+
+
+def _div_floats(left: float, right: float) -> float:
+    return left / right

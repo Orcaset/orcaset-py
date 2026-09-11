@@ -13,7 +13,8 @@ from model import (
 )
 from scrape import TSA_URL, tsa_passengers
 
-from orcaset import Context, Period, fixed_width_table, isna
+from orcaset import Context, Period, formatter
+from orcaset.maybe import isna
 
 OUTPUT_START = date(2025, 12, 31)
 OUTPUT_END = date(2026, 12, 31)
@@ -51,7 +52,7 @@ def main() -> None:
 
     quarters = Period.list(OUTPUT_START, QUARTER, OUTPUT_END)
     result = operating_revenue_stmt.values_for_periods(ctx, quarters)
-    table = fixed_width_table(
+    table = formatter.fixed_width_table(
         result,
         date_formatter=quarter_label,
         value_formatter=lambda value: "" if value is None else f"{value:,.0f}",
