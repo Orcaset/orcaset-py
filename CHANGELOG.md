@@ -44,6 +44,12 @@ change between minor releases.
 - `Series.of` now requires a `Sequence` of pairs and uses it directly without
   copying. Callers must explicitly convert generators and other iterables to
   lists or tuples.
+- Query helpers are now exported from `orcaset.query` rather than re-exported
+  individually from the package root. The package root exports the `query`
+  module alongside `maybe` and `ops`.
+- `exact` and `last` now stop without demanding the next series tail after an
+  incomparable key. `accrue` does the same once the current cell reaches or
+  extends past the query end.
 
 ## [0.11.1] - 2026-09-09
 

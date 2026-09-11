@@ -11,13 +11,13 @@ from orcaset import (
     Period,
     Series,
     Thunk,
-    exact,
     get,
     get_at,
     keys_until,
     unfold_cells,
 )
 from orcaset.maybe import Maybe, Na, isna, some
+from orcaset.query import exact
 
 YEAR = relativedelta(years=1, day=31)
 

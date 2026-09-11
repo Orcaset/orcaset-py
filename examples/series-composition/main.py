@@ -16,17 +16,17 @@ from orcaset import (
     Stmt,
     Thunk,
     Total,
-    accrue,
     fixed_width_table,
     get_at,
     maybe,
     ops,
     period_union,
+    query,
 )
 
 START = date(2026, 1, 1)
 MONTHLY = relativedelta(months=1)
-accrue_monthly = accrue(YF.cmonthly)
+accrue_monthly = query.accrue(YF.cmonthly)
 
 
 # ---- Model definition ----

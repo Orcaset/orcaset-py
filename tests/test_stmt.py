@@ -13,10 +13,10 @@ from orcaset import (
     Stmt,
     Total,
     TotalRow,
-    exact,
     ops,
     period_union,
 )
+from orcaset.query import exact
 
 
 def row_values(row: LineRow | TotalRow) -> tuple[float | None, ...]:

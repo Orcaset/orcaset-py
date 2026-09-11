@@ -17,20 +17,19 @@ from orcaset import (
     Stmt,
     Thunk,
     Total,
-    accrue,
-    exact,
     fixed_width_table,
     get,
     get_at,
     map_cells,
     maybe,
+    query,
     scan_cells,
 )
 
 # ---- Inputs and assumptions ----
 YEAR = relativedelta(years=1)
 START = date(2025, 12, 31)
-by_days = accrue(lambda start, end: (end - start).days)
+by_days = query.accrue(lambda start, end: (end - start).days)
 
 # ---- Series definitions ----
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
@@ -69,7 +68,7 @@ cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
         capex.cells,
         lambda source_key, _cell: build_cohort(source_key),
     ),
-    exact,
+    query.exact,
 )
 
 
@@ -119,7 +118,7 @@ partial = Period(date(2025, 12, 31), date(2027, 6, 30))
 cohorts: list[Cohort] = []
 for spend_key in years[:3]:
     schedule = ctx.get_at(cohort_schedules, spend_key)
-    if isna(schedule):
+    if maybe.isna(schedule):
         raise RuntimeError(f"missing cohort for {spend_key}")
     cohorts.append(schedule)
 

@@ -13,11 +13,10 @@ from orcaset import (
     Maybe,
     Period,
     Series,
-    accrue_or,
     get_at,
-    last,
     maybe,
     maybe_abs_distance,
+    query,
 )
 
 # ---- Assumptions ----
@@ -30,7 +29,7 @@ OPENING_DEBT = 100.0
 seed_date: date | None = None
 
 
-@Series.define("Debt", last, seed=seed_date)
+@Series.define("Debt", query.last, seed=seed_date)
 def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     if prior_date is None:
         return START_DATE, OPENING_DEBT, START_DATE
@@ -42,7 +41,7 @@ def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     return current_date, maybe.sum_some(begin, interest_amt), current_date
 
 
-@Series.define("Interest", accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
+@Series.define("Interest", query.accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
 def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     begin = yield from get_at(debt, period.start)
 

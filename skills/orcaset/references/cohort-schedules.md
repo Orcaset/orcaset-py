@@ -29,7 +29,7 @@ def build_cohort(source_key: Period) -> Cohort:
 
     return Series.of(
         f"Depreciation@{source_key.end}",
-        exact,
+        query.exact,
         [(period, Thunk(allocation)) for period in periods],
     )
 
@@ -40,7 +40,7 @@ cohorts: Series[Period, Cohort, Maybe[Cohort]] = Series(
         capex.cells,
         lambda source_key, _source_cell: build_cohort(source_key),
     ),
-    exact,
+    query.exact,
 )
 ```
 
@@ -67,7 +67,7 @@ def sum_cohorts(period: Period) -> Effect[float]:
 
 Create aggregate cells on the reporting spine with `map_cells`, returning a `Thunk(lambda: sum_cohorts(period))`. If the aggregate must be queryable before the first source cohort, choose a reporting chain that includes those keys; mapping only the cohort chain cannot advertise an earlier domain.
 
-Returning `0.0` for no active cohorts is normally correct. An individual child should usually use `exact` and return `Na` outside its active schedule. Use an accrual query on the aggregate only when partial or combined reporting periods should interpolate its cells.
+Returning `0.0` for no active cohorts is normally correct. An individual child should usually use `query.exact` and return `Na` outside its active schedule. Use an accrual query on the aggregate only when partial or combined reporting periods should interpolate its cells.
 
 ## Validation
 

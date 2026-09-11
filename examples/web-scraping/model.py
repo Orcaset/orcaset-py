@@ -21,18 +21,18 @@ from orcaset import (
     Stmt,
     Thunk,
     Total,
-    accrue,
     get,
     get_at,
     ops,
     period_union,
+    query,
     unfold_cells,
 )
 from orcaset.maybe import Maybe, isna, mul_some
 
 # ---- Assumptions and history ----
 QUARTER = relativedelta(months=3, day=31)
-ACCRUE = accrue(YF.cmonthly)
+ACCRUE = query.accrue(YF.cmonthly)
 CSV_PATH = Path(__file__).resolve().parent / "data" / "luv_operating_revenue.csv"
 COLUMNS = ("passenger_revenue", "freight", "other")
 

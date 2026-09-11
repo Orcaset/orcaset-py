@@ -13,15 +13,14 @@ from orcaset import (
     Series,
     Thunk,
     date_union,
-    exact,
     get,
     keys_until,
-    last,
     merge_cells,
     ops,
     period_union,
 )
 from orcaset.maybe import Maybe, Na, isna, map2_some
+from orcaset.query import exact, last
 
 MONTH = relativedelta(months=1)
 

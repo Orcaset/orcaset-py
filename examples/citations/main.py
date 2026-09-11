@@ -18,8 +18,8 @@ from orcaset import (
     Period,
     Series,
     Thunk,
-    accrue,
     get_at,
+    query,
 )
 from orcaset.maybe import Maybe, mul_some
 
@@ -79,7 +79,7 @@ def load_frame(url: str, frame: str) -> CitedFloat:
 
 
 # ---- Model definition ----
-@Series.define("SpaceX revenue", accrue(YF.cmonthly), seed=Q2_2026)
+@Series.define("SpaceX revenue", query.accrue(YF.cmonthly), seed=Q2_2026)
 def revenue(
     period: Period,
 ) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:

@@ -13,12 +13,12 @@ from orcaset import (
     Period,
     Series,
     abs_distance,
-    accrue,
     get,
     get_at,
     maybe,
     ops,
 )
+from orcaset.query import accrue
 from orcaset.rule import _UNIT
 
 MONTH = relativedelta(months=1)

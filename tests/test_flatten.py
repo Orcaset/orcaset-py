@@ -16,20 +16,17 @@ from orcaset import (
     QueryFn,
     Series,
     Thunk,
-    accrue,
     continue_series,
-    covered,
     date_split,
-    exact,
     get,
     get_at,
     keys_until,
-    last,
     ops,
     period_split,
     unfold_cells,
 )
 from orcaset.maybe import Maybe, Na, isna
+from orcaset.query import accrue, covered, exact, last
 
 MONTH = relativedelta(months=1)
 Q1 = Period(date(2025, 1, 1), date(2025, 4, 1))

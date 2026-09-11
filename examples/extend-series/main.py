@@ -18,14 +18,12 @@ from orcaset import (
     Period,
     Series,
     Stmt,
-    accrue,
     continue_series,
-    covered,
-    exact,
     fixed_width_table,
     get_at,
     maybe,
     period_split,
+    query,
 )
 
 # ---- Inputs and assumptions ----
@@ -35,14 +33,14 @@ OCT = Q3.from_end(MONTH)
 NOV = OCT.from_end(MONTH)
 DEC = NOV.from_end(MONTH)
 JAN = DEC.from_end(MONTH)
-accrue_monthly = accrue(YF.cmonthly)
+accrue_monthly = query.accrue(YF.cmonthly)
 
 historical = [(Q3, 300.0)]
 projected = [(Q3, 0.0), (OCT, 110.0), (NOV, Na), (DEC, 121.0)]
 
 
 # ---- Series definitions ----
-actuals = Series.of("Actuals", covered, historical)  # `covered` query function
+actuals = Series.of("Actuals", query.covered, historical)  # `covered` query function
 projections = Series.of("Projections", accrue_monthly, projected)  # `accrue_monthly` query function
 
 
@@ -69,19 +67,19 @@ def terminal_revenue(
 type Segment = Series[Period, Any, Maybe[float]]
 
 components: Series[int, Segment, Maybe[Segment]] = Series.of(
-    "Revenue components", exact, [(0, actuals), (1, projections)]
+    "Revenue components", query.exact, [(0, actuals), (1, projections)]
 )
 base: Series[Period, Maybe[float], Maybe[float]] = Series.flatten(
     "Actuals and projections",
     components.cells,
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 
 revenue = Series.flatten(
     "Revenue",
     continue_series("Revenue components", base, terminal_revenue),
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 

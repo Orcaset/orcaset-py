@@ -3,7 +3,8 @@
 from datetime import date
 from typing import assert_type
 
-from orcaset import YF, Cell, Context, DepNode, Period, Series, accrue, ops
+from orcaset import YF, Cell, Context, DepNode, Period, Series, ops
+from orcaset.query import accrue
 
 JAN = Period(date(2026, 1, 1), date(2026, 2, 1))
 revenue = Series.of("Revenue", accrue(YF.cmonthly), [(JAN, 100.0)])

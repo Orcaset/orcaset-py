@@ -3,6 +3,7 @@
 
 from datetime import date
 
+import orcaset
 from orcaset import (
     YF,
     Cell,
@@ -10,15 +11,9 @@ from orcaset import (
     Period,
     Series,
     Thunk,
-    accrue,
-    accrue_or,
-    covered,
-    exact,
-    exact_or,
-    last,
-    last_or,
 )
 from orcaset.maybe import Maybe, Na, isna
+from orcaset.query import accrue, accrue_or, covered, exact, exact_or, last, last_or
 
 START = date(2026, 1, 1)
 P1 = Period(START, date(2026, 2, 1))
@@ -27,12 +22,40 @@ P3 = Period(date(2026, 3, 1), date(2026, 4, 1))
 Q1 = Period(START, date(2026, 4, 1))
 
 
+def test_query_helpers_are_exported_only_from_query_module():
+    helpers = {
+        "DayCount",
+        "accrue",
+        "accrue_or",
+        "covered",
+        "exact",
+        "exact_or",
+        "last",
+        "last_or",
+    }
+
+    assert set(orcaset.query.__all__) == helpers
+    assert all(not hasattr(orcaset, helper) for helper in helpers)
+
+
 def test_exact_returns_na_on_miss():
     series = Series.of("values", exact, [(P1, 10.0)])
 
     ctx = Context()
     assert ctx.get_at(series, P1) == 10.0
     assert ctx.get_at(series, P2) is Na
+
+
+def test_exact_does_not_force_tail_after_incomparable_key():
+    def step(period: Period) -> tuple[Period, float, Period]:
+        if period == P2:
+            raise AssertionError("tail after an incomparable key was forced")
+        return P1, 10.0, P2
+
+    series = Series.unfold("values", exact, seed=P1, step=step)
+    query_period = Period(date(2026, 1, 15), date(2026, 2, 15))
+
+    assert Context().get_at(series, query_period) is Na
 
 
 def test_last_returns_latest_at_or_before_query():
@@ -50,6 +73,18 @@ def test_last_returns_na_before_first_observation():
     series = Series.of("balance", last, [(date(2026, 2, 1), 110.0)])
 
     assert Context().get_at(series, date(2026, 1, 1)) is Na
+
+
+def test_last_does_not_force_tail_after_incomparable_key():
+    def step(period: Period) -> tuple[Period, float, Period]:
+        if period == P2:
+            raise AssertionError("tail after an incomparable key was forced")
+        return P1, 10.0, P2
+
+    series = Series.unfold("balance", last, seed=P1, step=step)
+    query_period = Period(date(2026, 1, 15), date(2026, 2, 15))
+
+    assert Context().get_at(series, query_period) is Na
 
 
 def test_exact_or_and_last_or_replace_misses():
@@ -149,6 +184,39 @@ def test_accrue_never_forces_cells_outside_query():
     )
 
     assert Context().get_at(series, Period(P2.start, date(2026, 2, 15))) == 20.0 * 14 / 28
+
+
+def test_accrue_does_not_force_tail_when_cell_ends_with_query():
+    def step(period: Period) -> tuple[Period, float, Period]:
+        if period == P3:
+            raise AssertionError("tail after the query was forced")
+        return period, 10.0, P2 if period == P1 else P3
+
+    series = Series.unfold(
+        "revenue",
+        accrue(YF.cmonthly),
+        seed=P1,
+        step=step,
+    )
+
+    assert Context().get_at(series, Period(P1.start, P2.end)) == 20.0
+
+
+def test_accrue_does_not_force_tail_when_cell_extends_past_query():
+    def step(period: Period) -> tuple[Period, float, Period]:
+        if period == P3:
+            raise AssertionError("tail after the query was forced")
+        return period, 10.0, P2 if period == P1 else P3
+
+    series = Series.unfold(
+        "revenue",
+        accrue(lambda start, end: (end - start).days),
+        seed=P1,
+        step=step,
+    )
+
+    query_end = date(2026, 2, 15)
+    assert Context().get_at(series, Period(P1.start, query_end)) == 15.0
 
 
 def test_covered_sums_adjacent_cells():

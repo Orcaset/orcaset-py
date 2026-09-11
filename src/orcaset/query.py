@@ -13,6 +13,17 @@ from orcaset.period import Period
 from orcaset.rule import Effect, Rule, get
 from orcaset.series import Cells, Key, QueryFn
 
+__all__ = [
+    "DayCount",
+    "accrue",
+    "accrue_or",
+    "covered",
+    "exact",
+    "exact_or",
+    "last",
+    "last_or",
+]
+
 type DayCount = Callable[[date, date], float]
 """Maps an ordered date pair to a length (year fraction, days, …)."""
 
@@ -28,7 +39,7 @@ def exact[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
         elif node.key == q:
             return (yield from get(node.cell))
         else:
-            node = yield from get(node.tail)
+            return Na
     return Na
 
 
@@ -45,7 +56,7 @@ def last[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
         elif q < node.key:
             break
         else:
-            node = yield from get(node.tail)
+            break
     if pending is None:
         return Na
     return (yield from get(pending))
@@ -115,6 +126,8 @@ def _accrue(q: Period, cells: Cells[Period, Maybe[float]], yf: DayCount) -> Effe
         overlap_end = min(k.end, q.end)
         total += value * (yf(overlap_start, overlap_end) / yf(k.start, k.end))
         hit = True
+        if k.end >= q.end:
+            return total
         node = yield from get(node.tail)
     return total if hit else Na
 

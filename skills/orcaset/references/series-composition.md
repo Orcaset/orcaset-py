@@ -10,18 +10,18 @@
 ## Join component series
 
 ```python
-components = Series.of("Revenue components", exact, [(0, actuals), (1, projections)])
+components = Series.of("Revenue components", query.exact, [(0, actuals), (1, projections)])
 base = Series.flatten(
     "Actuals and projections",
     components.cells,
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 ```
 
 Outer integer keys specify component order, not dates or domain bounds. Components share key and query-answer types, but their raw cell-value types may differ. Flattened cells store component query answers: components answering `Maybe[float]` produce a `Series[Period, Maybe[float], Maybe[float]]`. Prefer inferred component types rather than adding `Any` annotations to model code.
 
-A query within one component delegates to that series unchanged. A crossing query is split at component seams, and the outer `query` folds the component answers. `covered` sums period answers and propagates `Na`; it does not impose its interpolation policy inside a component. Use `exact` to reject crossing queries. Use `period_split` for period keys and `date_split` for date keys.
+A query within one component delegates to that series unchanged. A crossing query is split at component seams, and the outer query folds the component answers. `query.covered` sums period answers and propagates `Na`; it does not impose its interpolation policy inside a component. Use `query.exact` to reject crossing queries. Use `period_split` for period keys and `date_split` for date keys.
 
 Earlier components own their domain through their last key. Later overlapping keys are clipped at the seam, and their values query the original component on the clipped key. Empty or fully clipped components are skipped. A gap after a seam belongs to the next component; its query policy determines the answer. The first and last nonempty components also answer queries outside the combined spine. Flattening does not itself fill gaps or replace missing values.
 
@@ -29,7 +29,7 @@ Earlier components own their domain through their last key. Later overlapping ke
 
 `continue_series(name, base, cont)` returns two components: `base` and a lazy `cont(last_node)`. The callback receives the last raw base `Cons`, or `None` for an empty base, and returns a `Series`. Its construction is memoized per context. For a flattened base, its raw cells already hold query answers.
 
-This pattern starts terminal growth after the last projected month, with `MONTH` preserving month-end boundaries and `accrue_monthly = accrue(YF.cmonthly)`:
+This pattern starts terminal growth after the last projected month, with `MONTH` preserving month-end boundaries and `accrue_monthly = query.accrue(YF.cmonthly)`:
 
 ```python
 def terminal_revenue(
@@ -54,7 +54,7 @@ def terminal_revenue(
 revenue = Series.flatten(
     "Revenue",
     continue_series("Revenue components", base, terminal_revenue),
-    query=covered,
+    query=query.covered,
     split_keys=period_split,
 )
 ```
@@ -68,7 +68,7 @@ Flatten walks the base before requesting the next component. An infinite base ne
 ```python
 combined = Series.extend(
     "Revenue",
-    covered,
+    query.covered,
     base=history.cells,
     cont=forecast_cells,
 )

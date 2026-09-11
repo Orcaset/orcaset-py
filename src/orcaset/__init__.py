@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-from orcaset import maybe, ops
+from orcaset import maybe, ops, query
 from orcaset.context import Context, ConvergenceError, CycleError, DepNode, KeyedRuleRef
 from orcaset.formatters import (
     DateFormatter,
@@ -12,16 +12,6 @@ from orcaset.formatters import (
 )
 from orcaset.maybe import Maybe, Na, NaType, isna
 from orcaset.period import Period, date_split, date_union, period_split, period_union
-from orcaset.query import (
-    DayCount,
-    accrue,
-    accrue_or,
-    covered,
-    exact,
-    exact_or,
-    last,
-    last_or,
-)
 from orcaset.rule import (
     Cell,
     Demand,
@@ -82,7 +72,6 @@ __all__ = [
     "CycleError",
     "DateFormatter",
     "DateValue",
-    "DayCount",
     "Demand",
     "DepNode",
     "Effect",
@@ -116,23 +105,16 @@ __all__ = [
     "UnfoldStep",
     "ValueFormatter",
     "abs_distance",
-    "accrue",
-    "accrue_or",
     "continue_series",
-    "covered",
     "csv_table",
     "date_split",
     "date_union",
-    "exact",
-    "exact_or",
     "extend_cells",
     "fixed_width_table",
     "get",
     "get_at",
     "isna",
     "keys_until",
-    "last",
-    "last_or",
     "map_cells",
     "markdown_table",
     "maybe",
@@ -141,6 +123,7 @@ __all__ = [
     "ops",
     "period_split",
     "period_union",
+    "query",
     "scan_cells",
     "unfold_cells",
 ]

@@ -12,10 +12,10 @@ from orcaset import (
     StatementResult,
     TotalRow,
     csv_table,
-    exact,
     fixed_width_table,
     markdown_table,
 )
+from orcaset.query import exact
 
 P1 = Period(date(2026, 1, 1), date(2026, 4, 1))
 P2 = Period(date(2026, 4, 1), date(2026, 7, 1))
