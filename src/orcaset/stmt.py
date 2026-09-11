@@ -84,7 +84,7 @@ class Total:
 class Group:
     items: tuple[StmtItem, ...]
 
-    def __init__(self, items: Sequence[StmtItem]) -> None:
+    def __init__(self, *items: StmtItem) -> None:
         self.items = tuple(items)
 
 

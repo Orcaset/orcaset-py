@@ -253,17 +253,15 @@ levered_cash_flow = ops.add(
 )
 
 stmt = Stmt(
-    Group([revenue, Total(ebt, [Total(ebit, [ebitda, da]), interest]), taxes]),
-    Group([Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])]),
+    Group(revenue, Total(ebt, [Total(ebit, [ebitda, da]), interest]), taxes),
+    Group(Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])),
     Group(
-        [
-            draws,
-            debt_sweep,
-            debt_before_balloon,
-            balloon_payment,
-            debt_balance,
-            debt_cash_flows,
-        ]
+        draws,
+        debt_sweep,
+        debt_before_balloon,
+        balloon_payment,
+        debt_balance,
+        debt_cash_flows,
     ),
     Total(
         levered_cash_flow,
