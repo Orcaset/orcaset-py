@@ -10,6 +10,7 @@ from orcaset import (
     Context,
     Effect,
     Period,
+    Rule,
     Series,
     Thunk,
     date_union,
@@ -19,7 +20,7 @@ from orcaset import (
     ops,
     period_union,
 )
-from orcaset.maybe import Maybe, Na, isna, map2_some
+from orcaset.maybe import Maybe, Na, isna, map2_some, sum_some
 from orcaset.query import exact, last
 
 MONTH = relativedelta(months=1)
@@ -228,6 +229,23 @@ def test_combine_hands_na_to_fn_unchanged():
     assert seen == [[10.0, Na]]
 
 
+def test_combine_accepts_effectful_fn():
+    d = date(2026, 1, 31)
+    left = Series.of("Left", exact, [(d, 10.0)])
+    right = Series.of("Right", exact, [(d, 20.0)])
+    offset = Cell("Offset", lambda: 5.0)
+
+    def fn(values: Sequence[Maybe[float]]) -> Effect[float]:
+        resolved = yield from get(offset)
+        return sum(value for value in values if not isna(value)) + resolved
+
+    combined = ops.combine("Combined", (left, right), fn=fn, merge_keys=date_union)
+    ctx = Context()
+
+    assert ctx.get_at(combined, d) == 35.0
+    assert ctx.depends_on((combined, d), offset)
+
+
 def test_filled_lifts_float_fold():
     assert isna(ops.filled(sum)([1.0, Na]))
     assert ops.filled(sum, 0.0)([1.0, Na]) == 1.0
@@ -272,7 +290,8 @@ def test_map_values_keeps_spine_and_maps_queries():
     assert ctx.get_at(doubled, month(1)) == 2 * 9_000.0 * 31 / 90
 
 
-def test_map_values_is_lazy_and_never_forces_source_cells():
+@pytest.mark.parametrize("effectful", [False, True])
+def test_map_values_is_lazy_and_never_forces_source_cells(effectful: bool):
     def poison() -> float:
         raise AssertionError("source cell was forced")
 
@@ -282,10 +301,37 @@ def test_map_values_is_lazy_and_never_forces_source_cells():
         seed=date(2026, 1, 31),
         step=lambda d: (d, Thunk(poison), d + MONTH),
     )
-    mapped = ops.map_values("Mapped", src, fn=lambda v: v)
+    assumption = Cell("Assumption", poison)
+
+    def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
+        return sum_some(value, (yield from get(assumption)))
+
+    mapped = ops.map_values("Mapped", src, fn=apply if effectful else lambda v: v)
 
     keys = Context().get(Cell("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
     assert keys == [date(2026, 1, 31), date(2026, 2, 28)]
+
+
+def test_map_values_effect_maps_query_answers_and_stored_cells():
+    q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
+    rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
+    offset = Cell("Offset", lambda: 10.0)
+
+    def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
+        return sum_some(value, (yield from get(offset)))
+
+    mapped = ops.map_values("Adjusted", rent, fn=apply)
+    ctx = Context()
+    # Apply the offset once to each query answer, including off-spine queries.
+    assert ctx.get_at(mapped, q1) == 9_010.0
+    assert ctx.get_at(mapped, month(1)) == 9_000.0 * 31 / 90 + 10.0
+    assert ctx.depends_on((mapped, month(1)), offset)
+
+    node = ctx.get(mapped.cells)
+    assert node is not None
+    assert node.key == q1
+    assert ctx.get(node.cell) == 9_010.0
+    assert ctx.depends_on(node.cell, offset)
 
 
 def test_map2_maps_generic_values_over_merged_domain():
@@ -304,6 +350,25 @@ def test_map2_maps_generic_values_over_merged_domain():
     assert ctx.get_at(formatted, d1) == "revenue: 10"
     assert isna(ctx.get_at(formatted, d2))
     assert ctx.get(Cell("keys", lambda: keys_until(formatted.cells, d2))) == [d1, d2]
+
+
+def test_map2_accepts_effectful_fn():
+    d = date(2026, 1, 31)
+    left = Series.of("Left", exact, [(d, 10.0)])
+    right = Series.of("Right", exact, [(d, 20.0)])
+    factor = Cell("Factor", lambda: 2.0)
+
+    def fn(left_value: Maybe[float], right_value: Maybe[float]) -> Effect[float]:
+        resolved = yield from get(factor)
+        assert not isna(left_value)
+        assert not isna(right_value)
+        return (left_value + right_value) * resolved
+
+    mapped = ops.map2("Mapped", left, right, fn=fn, merge_keys=date_union)
+    ctx = Context()
+
+    assert ctx.get_at(mapped, d) == 60.0
+    assert ctx.depends_on((mapped, d), factor)
 
 
 def test_neg():
@@ -341,6 +406,50 @@ def test_scale():
 
     assert ctx.get_at(ops.scale("Scaled", source, 2.0), d1) == 20.0
     assert isna(ctx.get_at(ops.scale("Missing", source, 2.0), d2))
+
+
+def test_scale_cell_factor_is_lazy_memoized_and_updated_between_contexts():
+    d1, d2, d3 = date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)
+    source = Series.of("Source", exact, [(d1, 10.0), (d2, 20.0)])
+    calls = 0
+
+    def compute_factor() -> float:
+        nonlocal calls
+        calls += 1
+        return 2.0
+
+    factor = Cell("Factor", compute_factor)
+    scaled = ops.scale("Scaled", source, factor)
+    ctx = Context()
+    assert calls == 0
+    assert ctx.get(Cell("keys", lambda: keys_until(scaled.cells, d3))) == [d1, d2]
+    assert calls == 0
+    assert ctx.get_at(scaled, d1) == 20.0
+    assert ctx.get_at(scaled, d2) == 40.0
+    assert isna(ctx.get_at(scaled, d3))
+    assert calls == 1
+    assert ctx.depends_on((scaled, d1), factor)
+
+    factor.fn = lambda: 3.0
+    assert ctx.get_at(scaled, d1) == 20.0
+    assert Context().get_at(scaled, d1) == 30.0
+
+
+def test_scale_accepts_computed_rule_factor():
+    d = date(2026, 1, 31)
+    source = Series.of("Source", exact, [(d, 10.0)])
+    assumption = Cell("Assumption", lambda: 2.0)
+
+    class Factor(Rule[float]):
+        def compute(self) -> Effect[float]:
+            return (yield from get(assumption)) + 1.0
+
+    factor = Factor("Factor")
+    scaled = ops.scale("Scaled", source, factor)
+    ctx = Context()
+    assert ctx.get_at(scaled, d) == 30.0
+    assert ctx.depends_on((scaled, d), factor)
+    assert ctx.depends_on((scaled, d), assumption)
 
 
 def test_merge_cells_standalone_plain_values():

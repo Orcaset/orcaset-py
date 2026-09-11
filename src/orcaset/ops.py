@@ -6,22 +6,34 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
-from orcaset.maybe import Maybe, Na, isna, map_some
-from orcaset.rule import Effect, get, get_at
-from orcaset.series import Cells, Key, KeyMerge, Series, Thunk, merge_cells, unfold_cells
+from orcaset.maybe import Maybe, Na, isna, map_some, mul_some
+from orcaset.rule import Effect, Rule, get, get_at
+from orcaset.series import (
+    Cells,
+    Key,
+    KeyMerge,
+    Series,
+    Thunk,
+    merge_cells,
+    unfold_cells,
+)
 
-type _Source[K: Key] = Series[K, Any, Maybe[float]]
-type _Combined[K: Key] = Series[K, Maybe[float], Maybe[float]]
+
+def _as_effect[V](value: Effect[V] | V) -> Effect[V]:
+    """Resolve either an effectful or plain callback result."""
+    if isinstance(value, Generator):
+        return (yield from value)
+    return value
 
 
 def combine[K: Key, W, T](
     name: str,
     sources: Sequence[Series[K, Any, W]],
     *,
-    fn: Callable[[Sequence[W]], T],
+    fn: Callable[[Sequence[W]], Effect[T] | T],
     merge_keys: KeyMerge[K],
 ) -> Series[K, T, T]:
     """Combine ``sources`` pointwise where the domain is the lazily merged union
@@ -32,6 +44,9 @@ def combine[K: Key, W, T](
     own domain. The answers are passed unchanged and in source order to ``fn``.
     The function decides how to combine them (see ``filled`` for the arithmetic
     ops' missing-value policy).
+
+    ``fn`` may return a plain value or an effect that demands other rules.
+    Returned generators are interpreted as computations, not data.
     """
     if not sources:
         raise ValueError("combine requires at least one source series")
@@ -41,7 +56,7 @@ def combine[K: Key, W, T](
         values: list[W] = []
         for source in sources:
             values.append((yield from get_at(source, key)))
-        return fn(values)
+        return (yield from _as_effect(fn(values)))
 
     def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
         return (yield from values_at(q))
@@ -57,18 +72,21 @@ def map_values[K: Key, W, T](
     name: str,
     source: Series[K, Any, W],
     *,
-    fn: Callable[[W], T],
+    fn: Callable[[W], Effect[T] | T],
 ) -> Series[K, T, T]:
     """Map ``fn`` over the query answers of ``source``.
 
     The result keeps the source's spine keys. Every query — on or off the
     spine — queries ``source`` at the same key and maps its answer, so cells
     and queries both honor the source's own query semantics.
+
+    ``fn`` may return a plain value or an effect that demands other rules.
+    Returned generators are interpreted as computations, not data.
     """
 
     def value_at(key: K) -> Effect[T]:
         value = yield from get_at(source, key)
-        return fn(value)
+        return (yield from _as_effect(fn(value)))
 
     def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
         return (yield from value_at(q))
@@ -87,15 +105,19 @@ def map2[K: Key, L, R, T](
     left: Series[K, Any, L],
     right: Series[K, Any, R],
     *,
-    fn: Callable[[L, R], T],
+    fn: Callable[[L, R], Effect[T] | T],
     merge_keys: KeyMerge[K],
 ) -> Series[K, T, T]:
-    """Map ``fn`` over two series' query answers across their merged domain."""
+    """Map ``fn`` over two series' query answers across their merged domain.
+
+    ``fn`` may return a plain value or an effect that demands other rules.
+    Returned generators are interpreted as computations, not data.
+    """
 
     def value_at(key: K) -> Effect[T]:
         left_value = yield from get_at(left, key)
         right_value = yield from get_at(right, key)
-        return fn(left_value, right_value)
+        return (yield from _as_effect(fn(left_value, right_value)))
 
     def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
         return (yield from value_at(q))
@@ -133,10 +155,10 @@ def filled(
 def add[K: Key](
     name: str,
     /,
-    *sources: _Source[K],
+    *sources: Series[K, Any, Maybe[float]],
     merge_keys: KeyMerge[K],
     fill: Maybe[float] = Na,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """Sum of ``sources`` over their merged domain.
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
@@ -147,10 +169,10 @@ def add[K: Key](
 def mul[K: Key](
     name: str,
     /,
-    *sources: _Source[K],
+    *sources: Series[K, Any, Maybe[float]],
     merge_keys: KeyMerge[K],
     fill: Maybe[float] = Na,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """Product of ``sources`` over their merged domain.
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
@@ -160,32 +182,39 @@ def mul[K: Key](
 
 def neg[K: Key](
     name: str,
-    source: _Source[K],
+    source: Series[K, Any, Maybe[float]],
     /,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """``-source`` over the source's own domain. ``Na`` propagates."""
     return map_values(name, source, fn=map_some(lambda value: -value))
 
 
 def scale[K: Key](
     name: str,
-    source: _Source[K],
-    factor: float,
+    source: Series[K, Any, Maybe[float]],
+    factor: float | Rule[float],
     /,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """``source * factor`` over the source's own domain. ``Na`` propagates."""
-    return map_values(name, source, fn=map_some(lambda value: value * factor))
+
+    if not isinstance(factor, Rule):
+        return map_values(name, source, fn=map_some(lambda value: value * factor))
+
+    def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
+        return mul_some(value, (yield from get(factor)))
+
+    return map_values(name, source, fn=apply)
 
 
 def sub[K: Key](
     name: str,
-    left: _Source[K],
-    right: _Source[K],
+    left: Series[K, Any, Maybe[float]],
+    right: Series[K, Any, Maybe[float]],
     /,
     *,
     merge_keys: KeyMerge[K],
     fill: Maybe[float] = Na,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """``left - right`` over the merged domain.
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.
@@ -202,13 +231,13 @@ def sub[K: Key](
 
 def div[K: Key](
     name: str,
-    left: _Source[K],
-    right: _Source[K],
+    left: Series[K, Any, Maybe[float]],
+    right: Series[K, Any, Maybe[float]],
     /,
     *,
     merge_keys: KeyMerge[K],
     fill: Maybe[float] = Na,
-) -> _Combined[K]:
+) -> Series[K, Maybe[float], Maybe[float]]:
     """``left / right`` over the merged domain.
 
     ``Na`` propagates unless ``fill`` is a non-``Na`` value.

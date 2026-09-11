@@ -28,6 +28,12 @@ change between minor releases.
 
 ### Changed
 
+- `ops.combine`, `ops.map2`, and `ops.map_values` now accept effectful callbacks
+  that demand other rules with `get` / `get_at`. Returned generators are
+  interpreted as computations.
+- `ops.scale` now accepts a `Rule[float]` (including `Cell[float]`) as its
+  factor, resolved lazily in the run's context. Changes to the factor are
+  visible in a new `Context` without rebuilding the derived series.
 - Renamed `add_some` to `sum_some` and `multiply_some` to `mul_some`. Both
   now take variadic arguments instead of a tuple.
 - Renamed `_NaType` to `NaType` so type-checker output names the miss type
