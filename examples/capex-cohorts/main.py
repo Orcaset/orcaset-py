@@ -14,16 +14,15 @@ from orcaset import (
     Period,
     Rule,
     Series,
-    Stmt,
     Thunk,
-    Total,
-    fixed_width_table,
+    formatter,
     get,
     get_at,
     map_cells,
     maybe,
     query,
     scan_cells,
+    stmt,
 )
 
 # ---- Inputs and assumptions ----
@@ -122,8 +121,8 @@ for spend_key in years[:3]:
         raise RuntimeError(f"missing cohort for {spend_key}")
     cohorts.append(schedule)
 
-statement = Stmt(capex, Total(total_depreciation, cohorts))
-print(fixed_width_table(statement.values_for_periods(ctx, years)))
+statement = stmt.Stmt(capex, stmt.Total(total_depreciation, cohorts))
+print(formatter.fixed_width_table(statement.values_for_periods(ctx, years)))
 print(f"\nCapex @ partial {partial}: {ctx.get_at(capex, partial)}")
 print(f"Total dep @ partial {partial}: {ctx.get_at(total_depreciation, partial)}")
 print(f"First cohort @ partial {partial}: {ctx.get_at(cohorts[0], partial)}")

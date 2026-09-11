@@ -13,15 +13,14 @@ from orcaset import (
     Maybe,
     Period,
     Series,
-    Stmt,
     Thunk,
-    Total,
-    fixed_width_table,
+    formatter,
     get_at,
     maybe,
     ops,
     period_union,
     query,
+    stmt,
 )
 
 START = date(2026, 1, 1)
@@ -70,9 +69,9 @@ print(f"  COGS @ {q}: \t{ctx.get_at(cogs, q):>10.2f}")
 print(f"{'-' * 58}\nGross profit @ {q}: \t{ctx.get_at(gross_profit, q):>10.2f}")
 
 quarters = Period.list(date(2026, 1, 1), relativedelta(months=3), date(2027, 1, 1))
-quarterly_statement = Stmt(
-    Total(income, [Total(gross_profit, [revenue, cogs]), rd, sga])
+quarterly_statement = stmt.Stmt(
+    stmt.Total(income, [stmt.Total(gross_profit, [revenue, cogs]), rd, sga])
 ).values_for_periods(ctx, quarters)
 
 print("\nQuarterly statement")
-print(fixed_width_table(quarterly_statement))
+print(formatter.fixed_width_table(quarterly_statement))

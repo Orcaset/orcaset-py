@@ -27,7 +27,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 4. Choose `Series.of` for finite literal pairs and `Series.unfold` or `@Series.define` for lazy/stateful domains. Use `Series.flatten` to join segments while preserving their query rules, `continue_series` for a lazy next segment, or `Series.extend` for a raw-chain continuation under one query policy.
 5. Compose answer-level calculations with `ops`; use `map_cells`, `scan_cells`, or `merge_cells` only for genuine chain transformations.
 6. Query every public export directly in a fresh `Context`. Exercise ordinary, missing, partial, boundary, continuation, and cyclic cases as applicable.
-7. For statement output, compose `Stmt`, `Total`, and `Group`, then render with `fixed_width_table`, `markdown_table`, or `csv_table`. Verify expected dependencies with `Context.depends_on`; use `Context.path_to` when a connecting path is needed (see [runtime-and-debugging.md](references/runtime-and-debugging.md)). Do not manually walk or print full dependency trees for verification. Run static checking, tests, and economic reconciliations.
+7. For statement output, compose `stmt.Stmt`, `stmt.Total`, and `stmt.Group`, then render with `formatter.fixed_width_table`, `formatter.markdown_table`, or `formatter.csv_table`. Verify expected dependencies with `Context.depends_on`; use `Context.path_to` when a connecting path is needed (see [runtime-and-debugging.md](references/runtime-and-debugging.md)). Do not manually walk or print full dependency trees for verification. Run static checking, tests, and economic reconciliations.
 
 ## References
 

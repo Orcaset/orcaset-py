@@ -17,13 +17,13 @@ from orcaset import (
     Na,
     Period,
     Series,
-    Stmt,
     continue_series,
-    fixed_width_table,
+    formatter,
     get_at,
     maybe,
     period_split,
     query,
+    stmt,
 )
 
 # ---- Inputs and assumptions ----
@@ -86,7 +86,7 @@ revenue = Series.flatten(
 
 # ---- Output ----
 ctx = Context()
-print(fixed_width_table(Stmt(revenue).values_for_periods(ctx, [Q3, OCT, NOV, DEC, JAN])))
+print(formatter.fixed_width_table(stmt.Stmt(revenue).values_for_periods(ctx, [Q3, OCT, NOV, DEC, JAN])))
 
 partial_actual = Period(date(2025, 8, 31), Q3.end)
 bad_crossing = Period(date(2025, 8, 31), NOV.end)

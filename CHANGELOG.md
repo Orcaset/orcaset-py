@@ -47,6 +47,14 @@ change between minor releases.
 - Query helpers are now exported from `orcaset.query` rather than re-exported
   individually from the package root. The package root exports the `query`
   module alongside `maybe` and `ops`.
+- Statement types (`Stmt`, `Group`, `Total`, `StatementResult`, and the
+  row/value types) are no longer re-exported from `orcaset`. Import the `stmt`
+  module instead (`from orcaset import stmt`). The package root exports the
+  `stmt` module alongside `maybe`, `ops`, `query`, and `formatter`.
+- Table helpers (`fixed_width_table`, `markdown_table`, `csv_table`,
+  `ValueFormatter`, `DateFormatter`) are no longer re-exported from `orcaset`.
+  The `formatters` module is renamed `formatter`; import it from the package
+  root (`from orcaset import formatter`).
 - `exact` and `last` now stop without demanding the next series tail after an
   incomparable key. `accrue` does the same once the current cell reaches or
   extends past the query end.

@@ -23,7 +23,7 @@ Keep assumptions and timeline definitions low in the import graph. Domain module
 
 Prefer exports from `orcaset.__all__`; do not depend on underscored internals or on legacy names that remain importable only as implementation residue. The API is experimental, so inspect the installed version and changelog before using remembered constructors. The unfold core uses generic `Series` rather than specialized `PeriodSeries`/`DateSeries`, and it does not provide the old `Replayable`, `CellStream`, or value-level `scan` APIs.
 
-Use `Stmt`, `Total`, and `Group` to evaluate named lines into a `StatementResult`, then `fixed_width_table`, `markdown_table`, or `csv_table` to render it. Those adapters are reporting surfaces, not model nodes: keep the underlying series as the public graph exports.
+Use `stmt.Stmt`, `stmt.Total`, and `stmt.Group` to evaluate named lines into a `stmt.StatementResult`, then `formatter.fixed_width_table`, `formatter.markdown_table`, or `formatter.csv_table` to render it. Those adapters are reporting surfaces, not model nodes: keep the underlying series as the public graph exports.
 
 ## Static quality
 

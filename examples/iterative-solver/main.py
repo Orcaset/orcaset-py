@@ -62,8 +62,8 @@ def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
 if __name__ == "__main__":
     from itertools import islice
 
-    from orcaset import Context, Stmt, fixed_width_table
+    from orcaset import Context, formatter, stmt
 
     ctx = Context()
     periods = list(islice(Period.seq(START_DATE, MONTH), 4))
-    print(fixed_width_table(Stmt(debt, interest).values_for_periods(ctx, periods)))
+    print(formatter.fixed_width_table(stmt.Stmt(debt, interest).values_for_periods(ctx, periods)))

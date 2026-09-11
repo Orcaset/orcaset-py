@@ -18,14 +18,13 @@ from orcaset import (
     Effect,
     Period,
     Series,
-    Stmt,
     Thunk,
-    Total,
     get,
     get_at,
     ops,
     period_union,
     query,
+    stmt,
     unfold_cells,
 )
 from orcaset.maybe import Maybe, isna, mul_some
@@ -120,7 +119,7 @@ total_operating_revenue = ops.add(
 )
 
 # ---- Statement definition ----
-operating_revenue_stmt = Stmt(
+operating_revenue_stmt = stmt.Stmt(
     tsa_passengers,
-    Total(total_operating_revenue, [passenger, freight, other]),
+    stmt.Total(total_operating_revenue, [passenger, freight, other]),
 )

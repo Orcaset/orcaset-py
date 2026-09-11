@@ -57,7 +57,9 @@ Model values are queried and resolved in a `Context` that holds the state for a 
 Orcaset also ships a `Stmt` class which can be used to build structured statements formatted into CSV, markdown, fixed-width, or other custom formats.
 
 ```py
-from orcaset import Context, Stmt, Total, fixed_width_table
+from orcaset import Context
+from orcaset.stmt import Stmt, Total
+from orcaset.formatter import fixed_width_table
 
 ctx = Context()
 periods = list(islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4))

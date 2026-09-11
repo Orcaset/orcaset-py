@@ -9,16 +9,13 @@ from orcaset import (
     Cell,
     Context,
     Effect,
-    Group,
     Maybe,
     Period,
     Rule,
     Series,
-    Stmt,
     Thunk,
-    Total,
     date_union,
-    fixed_width_table,
+    formatter,
     get,
     get_at,
     isna,
@@ -28,6 +25,7 @@ from orcaset import (
     period_union,
     query,
     scan_cells,
+    stmt,
 )
 
 # ---- Assumptions and constants ----
@@ -246,10 +244,10 @@ levered_cash_flow = ops.add(
     fill=0.0,
 )
 
-stmt = Stmt(
-    Group(revenue, Total(ebt, [Total(ebit, [ebitda, da]), interest]), taxes),
-    Group(Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])),
-    Group(
+statement = stmt.Stmt(
+    stmt.Group(revenue, stmt.Total(ebt, [stmt.Total(ebit, [ebitda, da]), interest]), taxes),
+    stmt.Group(stmt.Total(fcf, [ebitda, taxes, interest, capex, change_in_nwc])),
+    stmt.Group(
         draws,
         debt_sweep,
         debt_before_balloon,
@@ -257,7 +255,7 @@ stmt = Stmt(
         debt_balance,
         debt_cash_flows,
     ),
-    Total(
+    stmt.Total(
         levered_cash_flow,
         [purchase_price, exit_value, year_end_fcf_payment, debt_cash_flows],
     ),
@@ -268,7 +266,7 @@ ctx = Context()
 display_periods = Period.list(
     acquisition_date, year_offset, acquisition_date + hold_period + year_offset
 )
-print(fixed_width_table(stmt.values_for_periods(ctx, display_periods)))
+print(formatter.fixed_width_table(statement.values_for_periods(ctx, display_periods)))
 
 cf_dates = [acquisition_date, *[period.end for period in sweep_periods]]
 cashflows: list[float] = []

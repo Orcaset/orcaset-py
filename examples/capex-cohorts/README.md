@@ -101,11 +101,11 @@ The total inherits the annual capex keys and uses `by_days` for partial-period q
 
 ## Querying the model
 
-`Stmt` displays capex alongside the cohort breakdown. `Total` groups the displayed cohorts under the computed total; it does not calculate the sum itself.
+`stmt.Stmt` displays capex alongside the cohort breakdown. `stmt.Total` groups the displayed cohorts under the computed total; it does not calculate the sum itself.
 
 ```py
-statement = Stmt(capex, Total(total_depreciation, cohorts))
-print(fixed_width_table(statement.values_for_periods(ctx, years)))
+statement = stmt.Stmt(capex, stmt.Total(total_depreciation, cohorts))
+print(formatter.fixed_width_table(statement.values_for_periods(ctx, years)))
 ```
 Both the individual schedules and total depreciation support partial-period queries. The script queries through June 30, 2027, when only the first cohort has started depreciating, so its contribution equals the total.
 
