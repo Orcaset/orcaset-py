@@ -111,7 +111,7 @@ def test_stmt_group_wraps_rows_with_group_row():
 
     ctx = Context()
     result_rows = rows(
-        Stmt(Group([revenue, costs])).values(
+        Stmt(Group(revenue, costs)).values(
             ctx,
             [Period(date(2025, 1, 1), date(2025, 2, 1))],
         )

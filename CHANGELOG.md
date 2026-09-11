@@ -24,6 +24,8 @@ change between minor releases.
 
 ### Changed
 
+- `Group` now takes child items as variadic arguments (`Group(*items)`),
+  matching `Stmt`.
 - `ops.map2` now accepts arbitrary source query-answer and mapped result types,
   independently of the source cell types.
 - `Series.of` now requires a `Sequence` of pairs and uses it directly without
