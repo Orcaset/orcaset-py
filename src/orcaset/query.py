@@ -9,7 +9,8 @@ from collections.abc import Callable
 from datetime import date
 from typing import cast
 
-from orcaset.maybe import Maybe, Na, NaType, isna, value_or
+from orcaset import maybe
+from orcaset.maybe import Maybe, Na, NaType, isna
 from orcaset.period import Period
 from orcaset.rule import Effect, Rule, get
 from orcaset.series import Cells, Key, QueryFn
@@ -68,7 +69,7 @@ def exact_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     """Build an exact-match query that returns ``default`` on a miss."""
 
     def query(q: K, cells: Cells[K, V]) -> Effect[V]:
-        return value_or((yield from exact(q, cells)), default)
+        return maybe.value_or((yield from exact(q, cells)), default)
 
     return query
 
@@ -77,7 +78,7 @@ def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     """Build a latest-value query that returns ``default`` before the first cell."""
 
     def query(q: K, cells: Cells[K, V]) -> Effect[V]:
-        return value_or((yield from last(q, cells)), default)
+        return maybe.value_or((yield from last(q, cells)), default)
 
     return query
 
@@ -103,7 +104,7 @@ def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]
     """Build an accrual query that replaces an ``Na`` answer with ``fill``."""
 
     def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[float]:
-        return value_or((yield from _accrue(q, cells, yf)), fill)
+        return maybe.value_or((yield from _accrue(q, cells, yf)), fill)
 
     return query
 

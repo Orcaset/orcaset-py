@@ -9,7 +9,8 @@ import math
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
-from orcaset.maybe import Maybe, Na, isna, map_some, mul_some
+from orcaset import maybe
+from orcaset.maybe import Maybe, Na, isna
 from orcaset.rule import Effect, Rule, get, get_at
 from orcaset.series import (
     Cells,
@@ -186,7 +187,7 @@ def neg[K: Key](
     /,
 ) -> Series[K, Maybe[float], Maybe[float]]:
     """``-source`` over the source's own domain. ``Na`` propagates."""
-    return map_values(name, source, fn=map_some(lambda value: -value))
+    return map_values(name, source, fn=maybe.map_some(lambda value: -value))
 
 
 def scale[K: Key](
@@ -198,10 +199,10 @@ def scale[K: Key](
     """``source * factor`` over the source's own domain. ``Na`` propagates."""
 
     if not isinstance(factor, Rule):
-        return map_values(name, source, fn=map_some(lambda value: value * factor))
+        return map_values(name, source, fn=maybe.map_some(lambda value: value * factor))
 
     def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
-        return mul_some(value, (yield from get(factor)))
+        return maybe.mul_some(value, (yield from get(factor)))
 
     return map_values(name, source, fn=apply)
 
