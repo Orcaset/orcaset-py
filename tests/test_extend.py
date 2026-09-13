@@ -4,7 +4,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cells,
+    Chain,
     Cons,
     Context,
     Fn,
@@ -170,9 +170,9 @@ def test_extend_continuation_reads_last_cell():
 
     base = Series.of("Base", exact, [(FY17, observed(FY17, 2.0)), (FY18, observed(FY18, 3.0))])
 
-    def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
+    def cont(last: Cons[Period, float] | None) -> Chain[Period, float]:
         assert last is not None
-        last_cell = last.cell
+        last_cell = last.value
 
         def step(period: Period) -> tuple[Period, Thunk[float], Period]:
             return (
@@ -209,7 +209,7 @@ def test_extend_base_tail_may_depend_on_extended_series():
 
     actuals = unfold_cells("Actuals", seed=(FY17, None), step=actuals_step)
 
-    def cont(last: Cons[Period, float] | None) -> Cells[Period, float]:
+    def cont(last: Cons[Period, float] | None) -> Chain[Period, float]:
         assert last is not None
 
         def step(period: Period) -> tuple[Period, float, Period]:

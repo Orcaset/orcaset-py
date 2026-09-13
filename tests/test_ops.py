@@ -5,7 +5,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cells,
+    Chain,
     Context,
     Effect,
     Fn,
@@ -27,27 +27,27 @@ from orcaset.query import exact, last
 MONTH = relativedelta(months=1)
 
 
-def covering(q: Period, cells: Cells[Period, float]) -> Effect[Maybe[float]]:
+def covering(q: Period, cells: Chain[Period, float]) -> Effect[Maybe[float]]:
     """Test ``QueryFn``: value of the cell whose period contains ``q``."""
     node = yield from get(cells)
     while node is not None:
         if node.key < q:
             node = yield from get(node.tail)
         elif node.key.start <= q.start and q.end <= node.key.end:
-            return (yield from get(node.cell))
+            return (yield from get(node.value))
         else:
             return Na
     return Na
 
 
-def prorated(q: Period, cells: Cells[Period, float]) -> Effect[Maybe[float]]:
+def prorated(q: Period, cells: Chain[Period, float]) -> Effect[Maybe[float]]:
     """Test ``QueryFn``: day-count share of the covering cell's value."""
     node = yield from get(cells)
     while node is not None:
         if node.key < q:
             node = yield from get(node.tail)
         elif node.key.start <= q.start and q.end <= node.key.end:
-            value = yield from get(node.cell)
+            value = yield from get(node.value)
             return value * (q.end - q.start).days / (node.key.end - node.key.start).days
         else:
             return Na
@@ -334,8 +334,8 @@ def test_map_values_effect_maps_query_answers_and_stored_cells():
     node = ctx.get(mapped.cells)
     assert node is not None
     assert node.key == q1
-    assert ctx.get(node.cell) == 9_010.0
-    assert ctx.depends_on(node.cell, offset)
+    assert ctx.get(node.value) == 9_010.0
+    assert ctx.depends_on(node.value, offset)
 
 
 def test_map2_maps_generic_values_over_merged_domain():
@@ -398,7 +398,7 @@ def test_neg_cells_answer_from_spine():
     def first_cell_value() -> Effect[Maybe[float]]:
         node = yield from get(negated.cells)
         assert node is not None
-        return (yield from get(node.cell))
+        return (yield from get(node.value))
 
     assert ctx.get(Fn("first", first_cell_value)) == -10.0
 

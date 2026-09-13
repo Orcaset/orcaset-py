@@ -74,7 +74,7 @@ combined = Series.extend(
 )
 ```
 
-`forecast_cells(last)` receives the last base `Cons`, or `None`, and returns `Cells` with the same key and raw value types. Use `last.key` to start the continuation and `yield from get(last.cell)` in the unfold step to read its value; defer that read in a `Thunk` only if separate value resolution is needed. A fixed continuation is `cont=lambda _: then.cells`.
+`forecast_cells(last)` receives the last base `Cons`, or `None`, and returns `Chain` with the same key and raw value types. Use `last.key` to start the continuation and `yield from get(last.value)` in the unfold step to read its value; defer that read in a `Thunk` only if separate value resolution is needed. A fixed continuation is `cont=lambda _: then.cells`.
 
 The callback runs only when the base chain is exhausted. Keys must remain strictly ascending across the seam; an overlapping continuation raises `ValueError`. Unlike `flatten`, `extend` does not clip overlap or retain the source series' query functions. `extend_cells` exposes the same operation as a raw chain.
 

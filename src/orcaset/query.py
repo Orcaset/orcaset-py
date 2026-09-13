@@ -13,7 +13,7 @@ from orcaset import maybe
 from orcaset.maybe import Maybe, Na, NaType, isna
 from orcaset.period import Period
 from orcaset.rule import Effect, Rule, get
-from orcaset.series import Cells, Key, QueryFn
+from orcaset.series import Chain, Key, QueryFn
 
 __all__ = [
     "DayCount",
@@ -31,7 +31,7 @@ type DayCount = Callable[[date, date], float]
 """Maps an ordered date pair to a length (year fraction, days, …)."""
 
 
-def exact[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
+def exact[K: Key, V](q: K, cells: Chain[K, V]) -> Effect[Maybe[V]]:
     """Return the cell exactly at ``q``, or ``Na`` if it is absent."""
     node = yield from get(cells)
     while node is not None:
@@ -40,22 +40,22 @@ def exact[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
         elif q < node.key:
             return Na
         elif node.key == q:
-            return (yield from get(node.cell))
+            return (yield from get(node.value))
         else:
             return Na
     return Na
 
 
-def last[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
+def last[K: Key, V](q: K, cells: Chain[K, V]) -> Effect[Maybe[V]]:
     """Return the latest strictly prior or exactly matching cell, or ``Na``."""
     pending: Rule[V] | None = None
     node = yield from get(cells)
     while node is not None:
         if node.key < q:
-            pending = node.cell
+            pending = node.value
             node = yield from get(node.tail)
         elif node.key == q:
-            return (yield from get(node.cell))
+            return (yield from get(node.value))
         elif q < node.key:
             break
         else:
@@ -68,7 +68,7 @@ def last[K: Key, V](q: K, cells: Cells[K, V]) -> Effect[Maybe[V]]:
 def exact_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     """Build an exact-match query that returns ``default`` on a miss."""
 
-    def query(q: K, cells: Cells[K, V]) -> Effect[V]:
+    def query(q: K, cells: Chain[K, V]) -> Effect[V]:
         return maybe.value_or((yield from exact(q, cells)), default)
 
     return query
@@ -77,7 +77,7 @@ def exact_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
 def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
     """Build a latest-value query that returns ``default`` before the first cell."""
 
-    def query(q: K, cells: Cells[K, V]) -> Effect[V]:
+    def query(q: K, cells: Chain[K, V]) -> Effect[V]:
         return maybe.value_or((yield from last(q, cells)), default)
 
     return query
@@ -94,7 +94,7 @@ def accrue[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
     ``Na`` when no cell overlaps ``q`` or when any overlapping cell is ``Na``.
     """
 
-    def query(q: Period, cells: Cells[Period, V]) -> Effect[Maybe[float]]:
+    def query(q: Period, cells: Chain[Period, V]) -> Effect[Maybe[float]]:
         return (yield from _accrue(q, cells, yf))
 
     return query
@@ -103,7 +103,7 @@ def accrue[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
 def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
     """Build an accrual query that replaces an ``Na`` answer with ``fill``."""
 
-    def query(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[float]:
+    def query(q: Period, cells: Chain[Period, Maybe[float]]) -> Effect[float]:
         return maybe.value_or((yield from _accrue(q, cells, yf)), fill)
 
     return query
@@ -117,7 +117,7 @@ def average[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]
     ``Na``.
     """
 
-    def query(q: Period, cells: Cells[Period, V]) -> Effect[Maybe[float]]:
+    def query(q: Period, cells: Chain[Period, V]) -> Effect[Maybe[float]]:
         weighted_total = 0.0
         total_weight = 0.0
         node = yield from get(cells)
@@ -128,7 +128,7 @@ def average[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]
                 continue
             if q < k:
                 break
-            value = yield from get(node.cell)
+            value = yield from get(node.value)
             if isna(value):
                 return Na
             overlap_start = max(k.start, q.start)
@@ -145,7 +145,7 @@ def average[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]
 
 
 def _accrue[V: float | NaType](
-    q: Period, cells: Cells[Period, V], yf: DayCount
+    q: Period, cells: Chain[Period, V], yf: DayCount
 ) -> Effect[Maybe[float]]:
     total = 0.0
     hit = False
@@ -157,7 +157,7 @@ def _accrue[V: float | NaType](
             continue
         if q < k:
             break
-        value = yield from get(node.cell)
+        value = yield from get(node.value)
         if k == q:
             return value
         if isna(value):
@@ -173,7 +173,7 @@ def _accrue[V: float | NaType](
     return total if hit else Na
 
 
-def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float]]:
+def covered(q: Period, cells: Chain[Period, Maybe[float]]) -> Effect[Maybe[float]]:
     """Sum one or more cells that exactly tile ``q`` or return ``Na`` on any gap or partial overlap.
 
     Unlike ``exact``, a query that is the union of adjacent cells is answered.
@@ -191,7 +191,7 @@ def covered(q: Period, cells: Cells[Period, Maybe[float]]) -> Effect[Maybe[float
             break
         if k.start != expected_start or k.end > q.end:
             return Na
-        value = yield from get(node.cell)
+        value = yield from get(node.value)
         if isna(value):
             return Na
         total += value

@@ -11,7 +11,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 
 - Keep queryable outputs as `Rule`, `KeyedRule`, `Fn`, `Val`, or `Series` objects. Do not replace model nodes with calculated containers or hide a private `Context` behind an export.
 - Inside a rule, unfold step, query, or thunk, retrieve dependencies only with `yield from get(...)` or `yield from get_at(...)`. Do not add a second cache or use local running values in place of graph edges.
-- Treat a series' structure and values separately. `Series.cells` is a lazy `Cells[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a value `Thunk` computes when the node's `cell` is demanded, while a seed `Thunk` computes once when the head is demanded.
+- Treat a series' structure and values separately. `Series.cells` is a lazy `Chain[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a value `Thunk` computes when the node's `value` is demanded, while a seed `Thunk` computes once when the head is demanded.
 - Prefer direct unfold values; use value `Thunk`s when separate value deferral is needed and seed `Thunk`s for computed initial state. See [modeling-core.md](references/modeling-core.md) for the decision criteria.
 - Emit keys in strictly ascending order. For `Period`, ordering means entirely before, so overlapping periods are not generally sortable.
 - Choose the key type, query policy, and missing-value policy explicitly. Preserve `Na` unless absence has a clear economic meaning such as zero.

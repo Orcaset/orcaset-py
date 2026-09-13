@@ -12,7 +12,7 @@ from scrape import tsa_last_date, tsa_passengers
 
 from orcaset import (
     YF,
-    Cells,
+    Chain,
     Cons,
     Effect,
     Fn,
@@ -98,13 +98,13 @@ passenger = Series.extend(
 )
 
 
-def constant_forecast(last: Cons[Period, float] | None) -> Cells[Period, float]:
+def constant_forecast(last: Cons[Period, float] | None) -> Chain[Period, float]:
     if last is None:
         raise ValueError("missing revenue history")
     return unfold_cells(
         "Held forecast",
         seed=last.key.from_end(QUARTER),
-        step=lambda period: (period, Thunk(lambda: get(last.cell)), period.from_end(QUARTER)),
+        step=lambda period: (period, Thunk(lambda: get(last.value)), period.from_end(QUARTER)),
     )
 
 

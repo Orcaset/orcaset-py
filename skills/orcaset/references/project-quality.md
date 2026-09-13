@@ -37,7 +37,7 @@ A clean result obtained through a workaround is not a clean model. Do not use:
 - unknown values flowing through formulas;
 - broad unions that hide incompatible keys or answers.
 
-Fix generic parameters, query signatures, `Maybe` narrowing, unfold state, and dependency structure at their source. `isna` narrows a `Maybe[V]`; prefer it to a cast. Give reusable helpers complete `Series[K, V, W]`, `Cells[K, V]`, `Effect[V]`, `Thunk[V]`, and callable annotations.
+Fix generic parameters, query signatures, `Maybe` narrowing, unfold state, and dependency structure at their source. `isna` narrows a `Maybe[V]`; prefer it to a cast. Give reusable helpers complete `Series[K, V, W]`, `Chain[K, V]`, `Effect[V]`, `Thunk[V]`, and callable annotations.
 
 ## Completion checks
 

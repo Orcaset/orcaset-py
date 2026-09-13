@@ -538,7 +538,7 @@ class Context:
         node = self._compute_cache.get((rule.cells.id, _UNIT))
         while isinstance(node, Cons):
             if node.key == key:
-                return (node.cell.id, _UNIT)
+                return (node.value.id, _UNIT)
             try:
                 before = node.key < key
             except TypeError:

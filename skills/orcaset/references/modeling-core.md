@@ -8,7 +8,7 @@ An Orcaset model consists of named `Rule` and `KeyedRule` nodes. `Fn` wraps a ze
 - `V` is the stored cell-value type;
 - `W` is the query-answer type.
 
-A series holds `Cells[K, V]`, a rule resolving either `Cons(key, cell, tail)` or `None`. Both `cell` and `tail` are rules. A context can therefore discover only as much of a domain as a query needs, without forcing unrelated values.
+A series holds `Chain[K, V]`, a rule resolving either `Cons(key, value, tail)` or `None`. Both `value` and `tail` are rules. A context can therefore discover only as much of a domain as a query needs, without forcing unrelated values.
 
 Keep public model outputs as Orcaset nodes. Do not export a calculated list, dictionary, dataframe, or helper that evaluates through a hidden context. Inside model computation, every upstream read is an effect:
 

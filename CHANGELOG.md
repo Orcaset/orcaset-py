@@ -35,6 +35,8 @@ change between minor releases.
 
 ### Changed
 
+- Rename `Cells` to `Chain` and `Cons.cell` to `Cons.value`.
+
 - `accrue` now accepts series whose cell values are typed as either `float` or
   `Maybe[float]`.
 - `ops.combine`, `ops.map2`, and `ops.map_values` now accept effectful callbacks

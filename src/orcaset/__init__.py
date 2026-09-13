@@ -21,7 +21,7 @@ from orcaset.rule import (
     maybe_abs_distance,
 )
 from orcaset.series import (
-    Cells,
+    Chain,
     Cons,
     Continuation,
     Key,
@@ -43,7 +43,7 @@ from orcaset.yf import YF
 
 __all__ = [
     "YF",
-    "Cells",
+    "Chain",
     "Cons",
     "Context",
     "Continuation",

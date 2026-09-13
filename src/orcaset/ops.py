@@ -13,7 +13,7 @@ from orcaset import maybe
 from orcaset.maybe import Maybe, Na, isna
 from orcaset.rule import Effect, Rule, get, get_at
 from orcaset.series import (
-    Cells,
+    Chain,
     Key,
     KeyMerge,
     Series,
@@ -59,7 +59,7 @@ def combine[K: Key, W, T](
             values.append((yield from get_at(source, key)))
         return (yield from _as_effect(fn(values)))
 
-    def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
+    def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
         return (yield from values_at(q))
 
     def cell(key: K) -> Thunk[T]:
@@ -89,10 +89,10 @@ def map_values[K: Key, W, T](
         value = yield from get_at(source, key)
         return (yield from _as_effect(fn(value)))
 
-    def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
+    def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
         return (yield from value_at(q))
 
-    def step(cells: Cells[K, Any]) -> Effect[tuple[K, Thunk[T], Cells[K, Any]] | None]:
+    def step(cells: Chain[K, Any]) -> Effect[tuple[K, Thunk[T], Chain[K, Any]] | None]:
         node = yield from get(cells)
         if node is None:
             return None
@@ -120,7 +120,7 @@ def map2[K: Key, L, R, T](
         right_value = yield from get_at(right, key)
         return (yield from _as_effect(fn(left_value, right_value)))
 
-    def query(q: K, _cells: Cells[K, T]) -> Effect[T]:
+    def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
         return (yield from value_at(q))
 
     def cell(key: K) -> Thunk[T]:

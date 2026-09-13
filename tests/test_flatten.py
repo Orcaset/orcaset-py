@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Cells,
+    Chain,
     Cons,
     Context,
     Effect,
@@ -43,7 +43,7 @@ type Amounts = Series[Period, Any, Maybe[float]]
 type AmountQuery = QueryFn[Period, Maybe[float], Maybe[float]]
 
 
-def components[K: Key, W](*sources: Series[K, Any, W]) -> Cells[int, Series[K, Any, W]]:
+def components[K: Key, W](*sources: Series[K, Any, W]) -> Chain[int, Series[K, Any, W]]:
     return Series.of("components", exact, list(enumerate(sources))).cells
 
 
@@ -89,7 +89,7 @@ def test_components_keep_their_own_queries():
 
 
 def test_single_component_delegates_on_and_off_spine_without_outer_fold():
-    def poison_query(q: Period, cells: Cells[Period, Maybe[float]]) -> Maybe[float]:
+    def poison_query(q: Period, cells: Chain[Period, Maybe[float]]) -> Maybe[float]:
         raise AssertionError("outer fold is only for crossing or empty queries")
 
     source = Series.of("source", accrue_monthly, [(Q3, 300.0)])
@@ -126,7 +126,7 @@ def test_straddling_continuation_is_clipped_and_queried_on_the_remainder():
     assert node is not None
     clipped = ctx.get(node.tail)
     assert clipped is not None and clipped.key == q4
-    assert ctx.get(clipped.cell) == ctx.get_at(revenue, q4) == 300.0
+    assert ctx.get(clipped.value) == ctx.get_at(revenue, q4) == 300.0
 
 
 def test_clipping_does_not_interpolate_a_component_that_forbids_it():
@@ -161,7 +161,7 @@ def test_empty_and_fully_clipped_components_do_not_create_seams():
     assert ctx.get_at(revenue, Period(Q1.start, Q2.end)) == 3.0
     assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, Q3))) == [Q1, Q2]
     assert isna(ctx.get_at(joined(empty, empty), Q1))
-    outer: Cells[int, Amounts] = components()
+    outer: Chain[int, Amounts] = components()
     assert isna(
         ctx.get_at(Series.flatten("empty", outer, query=covered, split_keys=period_split), Q1)
     )
@@ -296,7 +296,7 @@ def test_finite_base_builds_terminal_growth_once_per_context_from_last_raw_node(
         def forecast(p: Period) -> tuple[Period, Thunk[Maybe[float]], Period]:
             def value() -> Effect[Maybe[float]]:
                 prior = (
-                    (yield from get(last_node.cell))
+                    (yield from get(last_node.value))
                     if p == first
                     else (yield from get_at(forecast, p.from_start(-MONTH)))
                 )
@@ -370,7 +370,7 @@ def test_base_domain_can_depend_on_the_composed_series_at_its_previous_key():
 
 
 def test_raw_cell_types_can_differ_without_changing_answer_type():
-    def text_amount(q: Period, cells: Cells[Period, str]) -> Effect[Maybe[float]]:
+    def text_amount(q: Period, cells: Chain[Period, str]) -> Effect[Maybe[float]]:
         value = yield from exact(q, cells)
         return Na if isna(value) else float(value)
 
@@ -380,11 +380,11 @@ def test_raw_cell_types_can_differ_without_changing_answer_type():
 
 
 def test_non_numeric_answers_use_an_explicit_crossing_fold():
-    def concatenate(q: Period, cells: Cells[Period, Maybe[str]]) -> Effect[Maybe[str]]:
+    def concatenate(q: Period, cells: Chain[Period, Maybe[str]]) -> Effect[Maybe[str]]:
         values: list[str] = []
         node = yield from get(cells)
         while node is not None:
-            value = yield from get(node.cell)
+            value = yield from get(node.value)
             if isna(value):
                 return Na
             values.append(value)

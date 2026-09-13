@@ -5,7 +5,7 @@ from typing import Any, assert_type
 
 from orcaset import (
     YF,
-    Cells,
+    Chain,
     Cons,
     Effect,
     Period,
@@ -32,10 +32,10 @@ maybe_forecast: Series[Period, Maybe[float], Maybe[float]] = Series.of(
 outer = Series.of("components", exact, [(0, actuals), (1, forecast)])
 flat = Series.flatten("flat", outer.cells, query=covered, split_keys=period_split)
 assert_type(flat, Series[Period, Maybe[float], Maybe[float]])
-assert_type(flat.cells, Cells[Period, Maybe[float]])
+assert_type(flat.cells, Chain[Period, Maybe[float]])
 
 
-def from_text(q: Period, cells: Cells[Period, str]) -> Effect[Maybe[float]]:
+def from_text(q: Period, cells: Chain[Period, str]) -> Effect[Maybe[float]]:
     answer = yield from exact(q, cells)
     return Na if isna(answer) else float(answer)
 
@@ -48,7 +48,7 @@ def continuation(last: Cons[Period, float] | None) -> Series[Period, str, Maybe[
 
 
 chain = continue_series("components", actuals, continuation)
-assert_type(chain, Cells[int, Series[Period, Any, Maybe[float]]])
+assert_type(chain, Chain[int, Series[Period, Any, Maybe[float]]])
 mixed = Series.flatten("mixed", chain, query=covered, split_keys=period_split)
 assert_type(mixed, Series[Period, Maybe[float], Maybe[float]])
 
@@ -83,11 +83,11 @@ period_outer = Series.of("bad outer", exact, [(Q1, actuals)])
 Series.flatten("bad outer", period_outer.cells, query=covered, split_keys=period_split)  # pyrefly: ignore[bad-argument-type]
 
 
-def plain_sum(q: Period, cells: Cells[Period, float]) -> Effect[float]:
+def plain_sum(q: Period, cells: Chain[Period, float]) -> Effect[float]:
     result = 0.0
     node = yield from get(cells)
     while node is not None:
-        result += yield from get(node.cell)
+        result += yield from get(node.value)
         node = yield from get(node.tail)
     return result
 

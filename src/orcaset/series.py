@@ -47,11 +47,11 @@ class Cons[K: Key, V]:
     """
 
     key: K
-    cell: Rule[V]
+    value: Rule[V]
     tail: Rule[Cons[K, V] | None]
 
 
-type Cells[K: Key, V] = Rule[Cons[K, V] | None]
+type Chain[K: Key, V] = Rule[Cons[K, V] | None]
 type Pairs[K: Key, V] = Sequence[tuple[K, V | Thunk[V]]]
 type UnfoldStep[S, K: Key, V] = Callable[
     [S],
@@ -59,10 +59,10 @@ type UnfoldStep[S, K: Key, V] = Callable[
 ]
 """Produce a cell and next state from an unfold state, or end the chain."""
 
-type QueryFn[K: Key, V, W] = Callable[[K, Cells[K, V]], Effect[W] | W]
+type QueryFn[K: Key, V, W] = Callable[[K, Chain[K, V]], Effect[W] | W]
 """Fold a query over a cell chain, with optional early termination."""
 
-type Continuation[K: Key, V] = Callable[[Cons[K, V] | None], Cells[K, V]]
+type Continuation[K: Key, V] = Callable[[Cons[K, V] | None], Chain[K, V]]
 """Build the chain that follows a base chain, given the base's last node
 (``None`` when the base is empty)."""
 
@@ -87,13 +87,13 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     value type and ``W`` the query answer type.
     """
 
-    def __init__(self, name: str, cells: Cells[K, V], query: QueryFn[K, V, W]) -> None:
+    def __init__(self, name: str, cells: Chain[K, V], query: QueryFn[K, V, W]) -> None:
         super().__init__(name)
         self._cells = cells
         self._query = query
 
     @property
-    def cells(self) -> Cells[K, V]:
+    def cells(self) -> Chain[K, V]:
         """The rule resolving the first node of this series."""
         return self._cells
 
@@ -141,7 +141,7 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         name: str,
         query: QueryFn[K, V, W],
         *,
-        base: Cells[K, V],
+        base: Chain[K, V],
         cont: Continuation[K, V],
     ) -> Series[K, V, W]:
         """Build a series that continues ``base`` lazily at its frontier."""
@@ -151,7 +151,7 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     def flatten(
         cls,
         name: str,
-        components: Cells[int, Series[K, Any, W]],
+        components: Chain[int, Series[K, Any, W]],
         *,
         query: QueryFn[K, W, W],
         split_keys: KeySplit[K],
@@ -187,41 +187,41 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
 
         def answer(key: K, owner: Rule[_Component[K, W]]) -> Effect[W]:
             component = yield from get(owner)
-            source = yield from get(component.cell)
+            source = yield from get(component.value)
             return (yield from get_at(source, key))
 
         def value(key: K, owner: Rule[_Component[K, W]]) -> Thunk[W]:
             return Thunk(lambda: answer(key, owner))
 
         def part(
-            state: tuple[K | None, Cells[K, _Component[K, W]]],
-        ) -> Effect[tuple[K, Thunk[W], tuple[K | None, Cells[K, _Component[K, W]]]] | None]:
+            state: tuple[K | None, Chain[K, _Component[K, W]]],
+        ) -> Effect[tuple[K, Thunk[W], tuple[K | None, Chain[K, _Component[K, W]]]] | None]:
             remaining, cursor = state
             if remaining is None:
                 return None
             node = yield from get(cursor)
             if node is None:
                 return None
-            owner = yield from get(node.cell)
+            owner = yield from get(node.value)
             while True:
                 inside, after = split_keys(remaining, node.key)
                 if after is None:
                     # Do not peek into the tail at an interior query endpoint.
-                    return remaining, value(remaining, node.cell), (None, node.tail)
+                    return remaining, value(remaining, node.value), (None, node.tail)
                 following = yield from get(node.tail)
                 if following is None:
                     # The final component retains its own beyond-spine policy.
-                    return remaining, value(remaining, node.cell), (None, node.tail)
-                next_owner = yield from get(following.cell)
+                    return remaining, value(remaining, node.value), (None, node.tail)
+                next_owner = yield from get(following.value)
                 if next_owner is not owner and inside is not None:
-                    return inside, value(inside, node.cell), (after, node.tail)
+                    return inside, value(inside, node.value), (after, node.tail)
                 node, owner = following, next_owner
 
-        def compute(q: K, _cells: Cells[K, W]) -> Effect[W]:
+        def compute(q: K, _cells: Chain[K, W]) -> Effect[W]:
             parts = unfold_cells(f"{name}.parts@{q}", seed=(q, owners), step=part)
             head = yield from get(parts)
             if head is not None and head.key == q:
-                return (yield from get(head.cell))
+                return (yield from get(head.value))
             return (yield from _as_effect(query(q, parts)))
 
         return cls(name, map_cells(name, owners, value), compute)
@@ -333,20 +333,20 @@ def unfold_cells[S, K: Key, V](
     *,
     seed: Thunk[S],
     step: UnfoldStep[S, K, V],
-) -> Cells[K, V]: ...
+) -> Chain[K, V]: ...
 @overload
 def unfold_cells[S, K: Key, V](
     name: str,
     *,
     seed: S,
     step: UnfoldStep[S, K, V],
-) -> Cells[K, V]: ...
+) -> Chain[K, V]: ...
 def unfold_cells[S, K: Key, V](
     name: str,
     *,
     seed: S | Thunk[S],
     step: UnfoldStep[S, K, V],
-) -> Cells[K, V]:
+) -> Chain[K, V]:
     """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation.
 
     A ``Thunk`` seed is resolved once by the head node before the first step.
@@ -356,16 +356,16 @@ def unfold_cells[S, K: Key, V](
 
 def map_cells[K: Key, A, B](
     name: str,
-    source: Cells[K, A],
+    source: Chain[K, A],
     fn: Callable[[K, Rule[A]], B | Thunk[B]],
-) -> Cells[K, B]:
+) -> Chain[K, B]:
     """Map cells one-for-one without forcing their values."""
 
-    def step(cells: Cells[K, A]) -> Effect[tuple[K, B | Thunk[B], Cells[K, A]] | None]:
+    def step(cells: Chain[K, A]) -> Effect[tuple[K, B | Thunk[B], Chain[K, A]] | None]:
         node = yield from get(cells)
         if node is None:
             return None
-        return node.key, fn(node.key, node.cell), node.tail
+        return node.key, fn(node.key, node.value), node.tail
 
     return unfold_cells(name, seed=source, step=step)
 
@@ -373,52 +373,52 @@ def map_cells[K: Key, A, B](
 @overload
 def scan_cells[K: Key, A, S, B](
     name: str,
-    source: Cells[K, A],
+    source: Chain[K, A],
     *,
     seed: Thunk[S],
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
-) -> Cells[K, B]: ...
+) -> Chain[K, B]: ...
 @overload
 def scan_cells[K: Key, A, S, B](
     name: str,
-    source: Cells[K, A],
+    source: Chain[K, A],
     *,
     seed: S,
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
-) -> Cells[K, B]: ...
+) -> Chain[K, B]: ...
 def scan_cells[K: Key, A, S, B](
     name: str,
-    source: Cells[K, A],
+    source: Chain[K, A],
     *,
     seed: S | Thunk[S],
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
-) -> Cells[K, B]:
+) -> Chain[K, B]:
     """Map cells one-for-one while carrying structural accumulator state."""
 
     def step(
-        state: tuple[Cells[K, A], S],
-    ) -> Effect[tuple[K, B | Thunk[B], tuple[Cells[K, A], S]] | None]:
+        state: tuple[Chain[K, A], S],
+    ) -> Effect[tuple[K, B | Thunk[B], tuple[Chain[K, A], S]] | None]:
         cells, acc = state
         node = yield from get(cells)
         if node is None:
             return None
-        value, next_acc = fn(acc, node.key, node.cell)
+        value, next_acc = fn(acc, node.key, node.value)
         return node.key, value, (node.tail, next_acc)
 
     if isinstance(seed, Thunk):
 
-        def head_seed() -> Effect[tuple[Cells[K, A], S]]:
+        def head_seed() -> Effect[tuple[Chain[K, A], S]]:
             return source, (yield from _as_effect(seed.fn()))
 
-        return unfold_cells(name, seed=Thunk[tuple[Cells[K, A], S]](head_seed), step=step)
+        return unfold_cells(name, seed=Thunk[tuple[Chain[K, A], S]](head_seed), step=step)
     return unfold_cells(name, seed=(source, seed), step=step)
 
 
 def extend_cells[K: Key, V](
     name: str,
-    base: Cells[K, V],
+    base: Chain[K, V],
     cont: Continuation[K, V],
-) -> Cells[K, V]:
+) -> Chain[K, V]:
     """Continue ``base`` lazily with a chain built from its last node.
 
     Every base tail is wrapped by a rule that carries the node just emitted.
@@ -434,11 +434,11 @@ def extend_cells[K: Key, V](
     without forcing any cell.
     """
 
-    def wrap(prev: Cons[K, V] | None, tail: Cells[K, V]) -> Cells[K, V]:
+    def wrap(prev: Cons[K, V] | None, tail: Chain[K, V]) -> Chain[K, V]:
         def compute() -> Effect[Cons[K, V] | None]:
             node = yield from get(tail)
             if node is not None:
-                return Cons(node.key, node.cell, wrap(node, node.tail))
+                return Cons(node.key, node.value, wrap(node, node.tail))
             node = yield from get(cont(prev))
             if node is not None and prev is not None and not prev.key < node.key:
                 raise ValueError(
@@ -456,7 +456,7 @@ def continue_series[K: Key, V, W](
     name: str,
     base: Series[K, V, W],
     cont: Callable[[Cons[K, V] | None], Series[K, Any, W]],
-) -> Cells[int, Series[K, Any, W]]:
+) -> Chain[int, Series[K, Any, W]]:
     """Build ``[base, lazy cont(last)]`` for ``Series.flatten``.
 
     ``cont`` receives the last raw base node, or ``None`` if empty. Its
@@ -486,15 +486,15 @@ def continue_series[K: Key, V, W](
 
 type _Component[K: Key, W] = Cons[int, Series[K, Any, W]]
 type _FlattenState[K: Key, W] = tuple[
-    Cells[int, Series[K, Any, W]], _Component[K, W] | None, Cells[K, Any] | None, K | None
+    Chain[int, Series[K, Any, W]], _Component[K, W] | None, Chain[K, Any] | None, K | None
 ]
 
 
 def _flatten_owners[K: Key, W](
     name: str,
-    components: Cells[int, Series[K, Any, W]],
+    components: Chain[int, Series[K, Any, W]],
     split_keys: KeySplit[K],
-) -> Cells[K, _Component[K, W]]:
+) -> Chain[K, _Component[K, W]]:
     """A shared flatmap walk: each emitted key retains its outer owner node.
 
     Owner identity marks a seam, including when a source object is reused.
@@ -511,7 +511,7 @@ def _flatten_owners[K: Key, W](
                 owner = yield from get(outer)
                 if owner is None:
                     return None
-                source = yield from get(owner.cell)
+                source = yield from get(owner.value)
                 inner = source.cells
             assert inner is not None
             node = yield from get(inner)
@@ -526,17 +526,17 @@ def _flatten_owners[K: Key, W](
     return unfold_cells(f"{name}.owners", seed=(components, None, None, None), step=step)
 
 
-type _Frontier[K: Key] = tuple[K | None, Cells[K, Any] | None]
+type _Frontier[K: Key] = tuple[K | None, Chain[K, Any] | None]
 """One merge operand: pending head not yet emitted past, and the rest of its
 chain. ``(None, tail)`` needs a refill; ``(None, None)`` is exhausted."""
 
 
 def merge_cells[K: Key, V](
     name: str,
-    chains: Sequence[Cells[K, Any]],
+    chains: Sequence[Chain[K, Any]],
     merge: KeyMerge[K],
     cell: Callable[[K], V | Thunk[V]],
-) -> Cells[K, V]:
+) -> Chain[K, V]:
     """Merge ascending chains into one chain whose keys re-tile their union.
 
     The merged domain is produced lazily with one pending head of lookahead
@@ -619,7 +619,7 @@ def _as_effect[V](value: Effect[V] | V) -> Effect[V]:
     return completed()
 
 
-def keys_until[K: Key, V](cells: Cells[K, V], stop: K) -> Effect[list[K]]:
+def keys_until[K: Key, V](cells: Chain[K, V], stop: K) -> Effect[list[K]]:
     """Collect keys through ``stop`` without forcing cells or a past frontier."""
     keys: list[K] = []
     node = yield from get(cells)

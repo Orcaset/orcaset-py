@@ -28,7 +28,7 @@ probe = Fn("Revenue keys", lambda: keys_until(revenue.cells, stop))
 keys = ctx.get(probe)
 ```
 
-For custom inspection, start with `node = yield from get(series.cells)` and advance with `yield from get(node.tail)`. Demand `node.cell` only when the value is actually needed. With direct unfold values, a key walk also computes those values; this is expected. Investigate a missing `Thunk` only when traversal must precede value resolution or the model requires key-only walks to avoid computation or I/O.
+For custom inspection, start with `node = yield from get(series.cells)` and advance with `yield from get(node.tail)`. Demand `node.value` only when the value is actually needed. With direct unfold values, a key walk also computes those values; this is expected. Investigate a missing `Thunk` only when traversal must precede value resolution or the model requires key-only walks to avoid computation or I/O.
 
 ## Verify dependencies with targeted queries
 

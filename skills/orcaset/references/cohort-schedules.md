@@ -57,7 +57,7 @@ def sum_cohorts(period: Period) -> Effect[float]:
     while node is not None:
         if period < node.key:
             break
-        cohort = yield from get(node.cell)
+        cohort = yield from get(node.value)
         amount = yield from get_at(cohort, period)
         if not isna(amount):
             total += amount
