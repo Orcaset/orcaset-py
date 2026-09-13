@@ -11,7 +11,7 @@ The TSA publishes daily checkpoint volume at [https://www.tsa.gov/travel/passeng
 In `scrape.py`, `checkpoint_step` is a lazy cell fetches data from `tsa.gov`, parses it, and builds a `Cons[Period, float]` over the daily checkpoint volume when forced. `tsa_passengers` wraps the checkpoint data into a `Series` that can be queried.
 
 ```py
-@Cell.define("Fetch and parse TSA checkpoints")
+@Fn.define("Fetch and parse TSA checkpoints")
 def checkpoint_step() -> Effect[Cons[Period, float] | None]:
     """Fetch the current-year page only when the series' first node is demanded."""
     html = fetch_html(TSA_URL)

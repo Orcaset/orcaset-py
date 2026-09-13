@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import assert_type
 
-from orcaset import Cell, Effect, Rule, Series, date_union, get, ops
+from orcaset import Effect, Rule, Series, Val, date_union, get, ops
 from orcaset.maybe import Maybe
 from orcaset.query import exact
 
@@ -40,7 +40,7 @@ combined_many = ops.combine(
 )
 assert_type(combined_many, Series[date, str, str])
 
-prefix = Cell("prefix", lambda: "value")
+prefix = Val("prefix", "value")
 
 
 def format_values_effect(left_value: Maybe[int], right_value: Maybe[str]) -> Effect[str]:
@@ -82,7 +82,7 @@ assert_type(mapped, Series[date, str, str])
 plain_mapped = ops.map_values("plain mapped", left, fn=str)
 assert_type(plain_mapped, Series[date, str, str])
 
-factor = Cell("factor", lambda: 2.0)
+factor = Val("factor", 2.0)
 rule_factor: Rule[float] = factor
 numeric: Series[date, float, Maybe[float]] = Series.of("numeric", exact, [(D, 1.0)])
 assert_type(ops.scale("literal", numeric, 2.0), Series[date, Maybe[float], Maybe[float]])

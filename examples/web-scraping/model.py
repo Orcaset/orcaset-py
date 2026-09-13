@@ -12,10 +12,10 @@ from scrape import tsa_last_date, tsa_passengers
 
 from orcaset import (
     YF,
-    Cell,
     Cells,
     Cons,
     Effect,
+    Fn,
     Period,
     Series,
     Thunk,
@@ -51,7 +51,7 @@ NOWCAST_QUARTER = HISTORY[-1][0].from_end(QUARTER)
 
 
 # ---- Model definitions ----
-@Cell.define("TSA nowcast windows")
+@Fn.define("TSA nowcast windows")
 def nowcast_windows() -> Effect[tuple[Period, Period]]:
     last_observation = yield from get(tsa_last_date)
     current = NOWCAST_QUARTER

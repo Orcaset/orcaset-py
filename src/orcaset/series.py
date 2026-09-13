@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator, Hashable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, Self, cast, overload
 
-from orcaset.rule import Cell, Effect, KeyedRule, Rule, get, get_at
+from orcaset.rule import Effect, Fn, KeyedRule, Rule, get, get_at
 
 
 class Key(Hashable, Protocol):
@@ -322,7 +322,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
             )
         return Cons(
             key,
-            Cell(f"{self._series_name}@{key}", _cell_fn(value), structural=True),
+            Fn(f"{self._series_name}@{key}", _cell_fn(value), structural=True),
             _UnfoldRule(self._series_name, key, next_state, self._unfold_step),
         )
 
@@ -447,7 +447,7 @@ def extend_cells[K: Key, V](
             return node
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
-        return Cell(label, compute, structural=True)
+        return Fn(label, compute, structural=True)
 
     return wrap(None, base)
 

@@ -5,14 +5,15 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cell,
     Context,
     CycleError,
     DepNode,
+    Fn,
     Period,
     Rule,
     Series,
     Thunk,
+    Val,
     get,
     get_at,
     keys_until,
@@ -119,8 +120,8 @@ def test_keys_until():
     market_rent = _market_rent_series()
     ctx = Context()
 
-    keys = ctx.get(Cell("probe", lambda: keys_until(market_rent.cells, FY19)))
-    poison_keys = ctx.get(Cell("poison probe", lambda: keys_until(poison_step.cells, FY19)))
+    keys = ctx.get(Fn("probe", lambda: keys_until(market_rent.cells, FY19)))
+    poison_keys = ctx.get(Fn("poison probe", lambda: keys_until(poison_step.cells, FY19)))
 
     assert keys == [FY17, FY18, FY19]
     assert poison_keys == [FY17, FY18, FY19]
@@ -157,7 +158,7 @@ def test_domain_cycle_is_terminal():
 def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
     first = date(2024, 1, 31)
     second = date(2024, 2, 29)
-    start = Cell("Start date", lambda: first)
+    start = Val("Start date", first)
 
     def initial():
         return (yield from get(start))
@@ -182,7 +183,7 @@ def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
     assert head_dependencies[0].name == "Deferred seed.cells"
     assert any(node.name == "Start date" for node in head_dependencies)
 
-    start.fn = lambda: second
+    start.value = second
     second_context = Context()
     assert second_context.get_at(series, second) == 1.0
     assert isna(second_context.get_at(series, first))
@@ -249,7 +250,7 @@ def test_self_demanding_thunk_seed_reports_head_cycle():
 
 
 def test_thunk_and_plain_values():
-    source = Cell("source", lambda: 2.0)
+    source = Val("source", 2.0)
 
     def deferred():
         value = yield from get(source)
@@ -300,7 +301,7 @@ def test_of_accepts_rule_pairs_updated_between_contexts():
         calls += 1
         return [(first, 1.0)]
 
-    pairs = Cell("Pairs", initial_pairs)
+    pairs = Fn("Pairs", initial_pairs)
     series = Series.of("Values", exact, pairs)
     first_context = Context()
 
@@ -311,7 +312,7 @@ def test_of_accepts_rule_pairs_updated_between_contexts():
     assert calls == 1
     assert first_context.depends_on((series, first), pairs)
 
-    pairs.fn = lambda: [(first, 2.0), (second, 3.0)]
+    pairs._fn = lambda: [(first, 2.0), (second, 3.0)]
     second_context = Context()
     assert second_context.get_at(series, first) == 2.0
     assert second_context.get_at(series, second) == 3.0
@@ -335,7 +336,7 @@ def test_map_cells_preserves_keys_and_defers_source_values():
     mapped = Series("Mapped", map_cells("Mapped", source.cells, double), exact)
     ctx = Context()
 
-    assert ctx.get(Cell("keys", lambda: keys_until(mapped.cells, MODEL_START))) == [MODEL_START]
+    assert ctx.get(Fn("keys", lambda: keys_until(mapped.cells, MODEL_START))) == [MODEL_START]
     assert forced == []
     assert ctx.get_at(mapped, MODEL_START) == 4.0
 
@@ -363,7 +364,7 @@ def test_scan_cells_carries_structural_state():
 
 def test_scan_cells_resolves_thunk_accumulator_seed():
     day = date(2024, 1, 31)
-    offset = Cell("Offset", lambda: 5)
+    offset = Val("Offset", 5)
     source = Series.of("Source", exact, [(day, 10)])
 
     def add_offset(acc: int, _key: date, cell: Rule[int]) -> tuple[Thunk[int], int]:

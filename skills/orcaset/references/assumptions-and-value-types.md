@@ -2,10 +2,10 @@
 
 ## Adjustable assumptions
 
-Use `Cell` when a scalar must change between model runs without rebuilding the graph: a sensitivity axis, scenario input, user-entered value, or explicitly adjustable opening balance. A value fixed by the specification may remain a plain constant.
+Use `Val` when a scalar must change between model runs without rebuilding the graph: a sensitivity axis, scenario input, user-entered value, or explicitly adjustable opening balance. A value fixed by the specification may remain a plain constant.
 
 ```python
-growth = Cell("Revenue growth", lambda: 0.08)
+growth = Val("Revenue growth", 0.08)
 
 def value() -> Effect[float]:
     prior = yield from get_at(revenue, prior_period)
@@ -15,13 +15,13 @@ def value() -> Effect[float]:
     return prior * (1.0 + rate)
 ```
 
-Do not read a separate global float when the exported `Cell` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency must be demanded effectfully in a rule, unfold step, or thunk.
+Do not read a separate global float when the exported `Val` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency must be demanded effectfully in a rule, unfold step, or thunk.
 
 An adjustable start date can drive a series' domain through a seed thunk. The
 head resolves it once per context before invoking the first step:
 
 ```python
-start_date = Cell("Forecast start", lambda: date(2027, 1, 1))
+start_date = Val("Forecast start", date(2027, 1, 1))
 
 def initial_period() -> Effect[Period]:
     start = yield from get(start_date)
@@ -35,15 +35,15 @@ forecast = Series.unfold(
 )
 ```
 
-`Cell.fn` is public and may be replaced. Resolve each scenario in a fresh context because a context intentionally memoizes one run:
+`Val.value` is public and may be replaced. Resolve each scenario in a fresh context because a context intentionally memoizes one run:
 
 ```python
-growth.fn = lambda: scenario_growth
+growth.value = scenario_growth
 scenario = Context()
 answer = scenario.get_at(target, key)
 ```
 
-Use `KeyedCell` for a one-off keyed function that does not need a series domain. Subclass `Rule` or `KeyedRule` only when computation needs additional state or behavior beyond the public function wrappers.
+Use `Fn` for a one-off unkeyed body that computes rather than holds a value, `KeyedFn` for a one-off keyed function that does not need a series domain, and `KeyedVal` for a `Mapping` of plain keyed values. Subclass `Rule` or `KeyedRule` only when computation needs additional state or behavior beyond these wrappers.
 
 ## Values with units
 

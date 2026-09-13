@@ -31,7 +31,7 @@ def cumulate[V](
 
 This remains lazy, memoized, traceable, and compatible with demand cycles. Do not carry a resolved balance in `scan_cells`' accumulator; that would make values depend on structural traversal rather than graph demands.
 
-Choose one sign convention and retain it on exported movements. A draw is normally positive and repayment negative. Combine all dated movements with `ops.add(..., merge_keys=date_union, fill=0.0)`, then roll that single flow series into the balance. Include an explicit opening event or incorporate an opening `Cell` at the first key when the opening amount must be adjustable.
+Choose one sign convention and retain it on exported movements. A draw is normally positive and repayment negative. Combine all dated movements with `ops.add(..., merge_keys=date_union, fill=0.0)`, then roll that single flow series into the balance. Include an explicit opening event or incorporate an opening `Val` at the first key when the opening amount must be adjustable.
 
 ## Keep timing explicit
 

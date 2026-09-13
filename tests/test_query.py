@@ -6,8 +6,8 @@ from datetime import date
 import orcaset
 from orcaset import (
     YF,
-    Cell,
     Context,
+    Fn,
     Period,
     Series,
     Thunk,
@@ -294,4 +294,4 @@ def test_covered_works_over_an_infinite_chain():
 
     ctx = Context()
     assert ctx.get_at(series, Q1) == 3.0
-    assert ctx.get(Cell("probe", lambda: covered(P2, series.cells))) == 1.0
+    assert ctx.get(Fn("probe", lambda: covered(P2, series.cells))) == 1.0

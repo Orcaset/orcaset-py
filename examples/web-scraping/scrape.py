@@ -9,7 +9,7 @@ from operator import itemgetter
 import requests
 from bs4 import BeautifulSoup
 
-from orcaset import Cell, Cons, Effect, Period, Series, get, query, unfold_cells
+from orcaset import Cons, Effect, Fn, Period, Series, get, query, unfold_cells
 
 TSA_URL = "https://www.tsa.gov/travel/passenger-volumes"
 _HEADERS = {
@@ -48,7 +48,7 @@ def parse_checkpoint_rows(html: str, url: str) -> list[tuple[date, float]]:
     return parsed
 
 
-@Cell.define("Fetch and parse TSA checkpoints")
+@Fn.define("Fetch and parse TSA checkpoints")
 def checkpoint_step() -> Effect[Cons[Period, float] | None]:
     """Fetch the current-year page only when the series' first node is demanded."""
     html = fetch_html(TSA_URL)
@@ -68,7 +68,7 @@ def checkpoint_step() -> Effect[Cons[Period, float] | None]:
 tsa_passengers = Series("TSA checkpoint passengers", checkpoint_step, _BY_DAYS)
 
 
-@Cell.define("TSA checkpoint last date")
+@Fn.define("TSA checkpoint last date")
 def tsa_last_date() -> Effect[date]:
     node = yield from get(tsa_passengers.cells)
     if node is None:

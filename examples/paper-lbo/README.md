@@ -2,29 +2,29 @@
 
 This example builds a simple paper LBO case. It creates a linked three-statement model to highlight two `orcaset` model patterns.
 
-1. Sensitivity analysis using `Cell` rules to hold assumptions that might change.
+1. Sensitivity analysis using `Val` rules to hold assumptions that might change.
 2. Circular value references resolved using iterative calculations for the debt draws.
 
 ## Sensitivity analysis
 
 The script prints IRR sensitivity to exit multiple and revenue growth rate.
 
-Rather than defining the exit multiple and revenue growth rate assumptions as bare floats, the model wraps them in `Cell`s. The `Cell` type is a simple class that lifts a zero-argument function into an unkeyed rule that the effect handlers can evaluate. It is approximately:
+Rather than defining the exit multiple and revenue growth rate assumptions as bare floats, the model wraps them in `Val`s. The `Val` type is a simple class that lifts a plain value into an unkeyed rule that the effect handlers can evaluate. It is approximately:
 
 ```py
-class Cell:
-    def __init__(self, fn):
-        self.fn = fn
+class Val:
+    def __init__(self, value):
+        self.value = value
 
     def compute(self):
-        return self.fn()
+        return self.value
 ```
 
-When the value from the cell is needed, the inner function is invoked and the value is stored in the context. The cell *object* doesn't change, only its value. This gives the rest of the model a stable object to reference while the underlying value updates.
+When the value from the rule is needed, it is returned and stored in the context. The rule *object* doesn't change, only its value. This gives the rest of the model a stable object to reference while the underlying value updates.
 
 ```py
-annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
-exit_multiple = Cell("Exit multiple", lambda: 5.0)
+annual_revenue_growth = Val("Revenue growth rate", 0.1)
+exit_multiple = Val("Exit multiple", 5.0)
 ```
 
 Evaluating the sensitivity is simply a matter of (nested) iterations over the assumption values, resolving the output in a *fresh* context each time.
@@ -37,11 +37,11 @@ exit_multiples = (3.0, 4.0, 5.0, 6.0, 7.0)
 table: list[list[str]] = []  # table to collect nested list of results
 
 for multiple in exit_multiples:  # iterate over multiples
-    exit_multiple.fn = lambda multiple=multiple: multiple
+    exit_multiple.value = multiple
     row = [f"{multiple:.1f}x".rjust(6)]
 
     for growth in growth_rates:  # iterate over growth rates
-        annual_revenue_growth.fn = lambda growth=growth: growth
+        annual_revenue_growth.value = growth
         scenario = Context()
 
         scenario_cashflows: list[float] = []  # collect cash flows for IRR calc

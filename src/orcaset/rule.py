@@ -4,18 +4,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator, Hashable
+from collections.abc import Callable, Generator, Hashable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast, overload
 
 from orcaset.ids import next_id
 from orcaset.maybe import Maybe, isna
 
-# Sentinel cache key for unkeyed ``Cell`` demands. Not a valid user key space.
 _UNIT: Hashable = object()
-
-# Distinguishes "seed/distance omitted" from a legitimate ``seed=None``.
-_MISSING: Any = object()
+_NO_SEED_DISTANCE: Any = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +116,8 @@ def get_at[K: Hashable, V](
     rule: KeyedRule[K, V],
     key: K,
     *,
-    seed: V | Any = _MISSING,
-    distance: Callable[[V, V], float] | Any = _MISSING,
+    seed: V | Any = _NO_SEED_DISTANCE,
+    distance: Callable[[V, V], float] | Any = _NO_SEED_DISTANCE,
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Effect[V]:
@@ -158,8 +155,8 @@ def get[V](
 def get[V](
     rule: Rule[V],
     *,
-    seed: V | Any = _MISSING,
-    distance: Callable[[V, V], float] | Any = _MISSING,
+    seed: V | Any = _NO_SEED_DISTANCE,
+    distance: Callable[[V, V], float] | Any = _NO_SEED_DISTANCE,
     tol: float | None = None,
     max_iter: int | None = None,
 ) -> Effect[V]:
@@ -183,19 +180,15 @@ def _iterate[V](
     tol: float | None,
     max_iter: int | None,
 ) -> Iterate[V] | None:
-    if seed is _MISSING and distance is _MISSING:
+    if seed is _NO_SEED_DISTANCE and distance is _NO_SEED_DISTANCE:
         return None
-    if seed is _MISSING or distance is _MISSING:
+    if seed is _NO_SEED_DISTANCE or distance is _NO_SEED_DISTANCE:
         raise TypeError("seed and distance must be provided together")
     return Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
 
 
 class Rule[V](_Identity, ABC):
-    """A single memoized computation (no key).
-
-    Subclass to override ``compute``. For a one-off body, use ``Cell`` or
-    ``@Cell.define`` instead.
-    """
+    """A single memoized computation (no key)."""
 
     @abstractmethod
     def compute(self) -> Effect[V] | V:
@@ -216,11 +209,7 @@ class Rule[V](_Identity, ABC):
 
 
 class KeyedRule[K: Hashable, V](_Identity, ABC):
-    """A keyed family of memoized computations.
-
-    Subclass to override ``compute`` (as ``Series`` does). For a one-off
-    body, use ``KeyedCell`` or ``@KeyedCell.define`` instead.
-    """
+    """A keyed family of memoized computations."""
 
     @abstractmethod
     def compute(self, key: K, /) -> Effect[V] | V:
@@ -233,12 +222,10 @@ class KeyedRule[K: Hashable, V](_Identity, ABC):
         ...
 
 
-class Cell[V](Rule[V]):
-    """Unkeyed rule whose ``compute`` delegates to a zero-arg ``fn``.
+class Fn[V](Rule[V]):
+    """Unkeyed rule whose ``compute`` delegates to a zero-arg function.
 
-    ``fn`` is public and may be replaced; a new ``Context`` is required for a
-    later ``get`` to see the change. Subclass ``Rule`` when ``compute``
-    needs extra state or methods.
+    Use to lift a zero-arg function to a rule, which may yield demands for other rules.
     """
 
     def __init__(
@@ -249,52 +236,76 @@ class Cell[V](Rule[V]):
         structural: bool = False,
     ) -> None:
         super().__init__(name, structural=structural)
-        self.fn = fn
+        self._fn = fn
 
     def compute(self) -> Effect[V] | V:
-        return self.fn()
+        return self._fn()
 
     @classmethod
-    def define[V2](cls, name: str) -> Callable[[Callable[[], Effect[V2] | V2]], Cell[V2]]:
-        """Decorator: build a ``Cell`` from a zero-arg compute function.
+    def define[V2](cls, name: str) -> Callable[[Callable[[], Effect[V2] | V2]], Fn[V2]]:
+        """Decorator: build an ``Fn`` from a zero-arg compute function.
 
-        The decorated function becomes the cell, so its body can close over
-        that name — including ``get`` of itself for a demand cycle.
+        The decorated function becomes the rule.
         """
 
-        def decorator(fn: Callable[[], Effect[V2] | V2]) -> Cell[V2]:
+        def decorator(fn: Callable[[], Effect[V2] | V2]) -> Fn[V2]:
             return cls(name, fn)
 
         return decorator
 
 
-class KeyedCell[K: Hashable, V](KeyedRule[K, V]):
-    """Keyed rule whose ``compute`` delegates to a one-arg ``fn``.
+class KeyedFn[K: Hashable, V](KeyedRule[K, V]):
+    """Keyed rule whose ``compute`` delegates to a one-arg function.
 
-    ``fn`` is public and may be replaced; a new ``Context`` is required for a
-    later ``get_at`` to see the change. Subclass ``KeyedRule`` when
-    ``compute`` needs extra state or methods.
+    Use to lift a one-arg function to a keyed rule, which may yield demands for other rules.
     """
 
     def __init__(self, name: str, fn: Callable[[K], Effect[V] | V]) -> None:
         super().__init__(name)
-        self.fn = fn
+        self._fn = fn
 
     def compute(self, key: K, /) -> Effect[V] | V:
-        return self.fn(key)
+        return self._fn(key)
 
     @classmethod
     def define[K2: Hashable, V2](
         cls,
         name: str,
-    ) -> Callable[[Callable[[K2], Effect[V2] | V2]], KeyedCell[K2, V2]]:
-        """Decorator: build a ``KeyedCell`` from a keyed compute function.
+    ) -> Callable[[Callable[[K2], Effect[V2] | V2]], KeyedFn[K2, V2]]:
+        """Decorator: build a ``KeyedFn`` from a keyed compute function.
 
-        The decorated function becomes the cell, so its body can close over
-        that name.
+        The decorated function becomes the rule.
         """
 
-        def decorator(fn: Callable[[K2], Effect[V2] | V2]) -> KeyedCell[K2, V2]:
+        def decorator(fn: Callable[[K2], Effect[V2] | V2]) -> KeyedFn[K2, V2]:
             return cls(name, fn)
 
         return decorator
+
+
+class Val[V](Rule[V]):
+    """Unkeyed rule holding a plain value.
+
+    Use to lift a plain value to a rule.
+    """
+
+    def __init__(self, name: str, value: V) -> None:
+        super().__init__(name)
+        self.value = value
+
+    def compute(self) -> Effect[V]:
+        return self.value  # type: ignore[return-value]
+
+
+class KeyedVal[K: Hashable, V](KeyedRule[K, V]):
+    """Keyed rule backed by a ``Mapping`` of plain values.
+
+    Use to lift a ``Mapping`` of plain values to a keyed rule. A missing key raises ``KeyError``.
+    """
+
+    def __init__(self, name: str, values: Mapping[K, V]) -> None:
+        super().__init__(name)
+        self.values = values
+
+    def compute(self, key: K, /) -> Effect[V]:
+        return self.values[key]  # type: ignore[return-value]

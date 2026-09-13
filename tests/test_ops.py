@@ -5,14 +5,15 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cell,
     Cells,
     Context,
     Effect,
+    Fn,
     Period,
     Rule,
     Series,
     Thunk,
+    Val,
     date_union,
     get,
     keys_until,
@@ -64,7 +65,7 @@ def test_add_dates_sums_and_propagates_na():
     total = ops.add("Total", a, b, merge_keys=date_union)
     ctx = Context()
 
-    assert ctx.get(Cell("keys", lambda: keys_until(total.cells, d3))) == [d1, d2, d3]
+    assert ctx.get(Fn("keys", lambda: keys_until(total.cells, d3))) == [d1, d2, d3]
     assert ctx.get_at(total, d2) == 12.0
     # Union domain: keys where a source answers Na (exact miss) are Na.
     assert isna(ctx.get_at(total, d1))
@@ -90,7 +91,7 @@ def test_mul_splits_periods_and_queries_sources_by_piece():
     ctx = Context()
 
     rest_of_year = Period(date(2026, 4, 1), date(2027, 1, 1))
-    keys = ctx.get(Cell("keys", lambda: keys_until(revenue.cells, rest_of_year)))
+    keys = ctx.get(Fn("keys", lambda: keys_until(revenue.cells, rest_of_year)))
     assert keys == [*months, rest_of_year]
     assert ctx.get_at(revenue, months[0]) == 1000.0
     assert ctx.get_at(revenue, months[1]) == 2000.0
@@ -150,7 +151,7 @@ def test_nary_piece_truncated_by_later_operand():
     c = Series.of("C", exact, [(p(2, 6), 1.0)])
     total = ops.add("Total", a, b, c, merge_keys=period_union)
 
-    keys = Context().get(Cell("keys", lambda: keys_until(total.cells, p(6, 7))))
+    keys = Context().get(Fn("keys", lambda: keys_until(total.cells, p(6, 7))))
     assert keys == [p(1, 2), p(2, 3), p(3, 5), p(5, 6), p(6, 7)]
 
 
@@ -168,7 +169,7 @@ def test_merge_is_lazy_and_never_forces_source_cells():
     b = infinite("B", date(2026, 2, 15))
     total = ops.add("Total", a, b, merge_keys=date_union)
 
-    keys = Context().get(Cell("keys", lambda: keys_until(total.cells, date(2026, 3, 1))))
+    keys = Context().get(Fn("keys", lambda: keys_until(total.cells, date(2026, 3, 1))))
     assert keys == [date(2026, 1, 31), date(2026, 2, 15), date(2026, 2, 28)]
 
 
@@ -233,7 +234,7 @@ def test_combine_accepts_effectful_fn():
     d = date(2026, 1, 31)
     left = Series.of("Left", exact, [(d, 10.0)])
     right = Series.of("Right", exact, [(d, 20.0)])
-    offset = Cell("Offset", lambda: 5.0)
+    offset = Val("Offset", 5.0)
 
     def fn(values: Sequence[Maybe[float]]) -> Effect[float]:
         resolved = yield from get(offset)
@@ -274,7 +275,7 @@ def test_buggy_key_merge_raises():
     # Queries delegate to sources and never touch the merged chain, so the
     # refold check surfaces on a chain walk.
     with pytest.raises(ValueError, match="refold"):
-        Context().get(Cell("keys", lambda: keys_until(total.cells, d2)))
+        Context().get(Fn("keys", lambda: keys_until(total.cells, d2)))
 
 
 def test_map_values_keeps_spine_and_maps_queries():
@@ -283,7 +284,7 @@ def test_map_values_keeps_spine_and_maps_queries():
     doubled = ops.map_values("Doubled", rent, fn=lambda v: Na if isna(v) else v * 2)
     ctx = Context()
 
-    keys = ctx.get(Cell("keys", lambda: keys_until(doubled.cells, q1)))
+    keys = ctx.get(Fn("keys", lambda: keys_until(doubled.cells, q1)))
     assert keys == [q1]
     assert ctx.get_at(doubled, q1) == 18_000.0
     # Off-spine queries delegate to the source's own query semantics.
@@ -304,21 +305,21 @@ def test_map_values_is_lazy_and_never_forces_source_cells(effectful: bool):
         seed=date(2026, 1, 31),
         step=step,
     )
-    assumption = Cell("Assumption", poison)
+    assumption = Fn("Assumption", poison)
 
     def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
         return sum_some(value, (yield from get(assumption)))
 
     mapped = ops.map_values("Mapped", src, fn=apply if effectful else lambda v: v)
 
-    keys = Context().get(Cell("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
+    keys = Context().get(Fn("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
     assert keys == [date(2026, 1, 31), date(2026, 2, 28)]
 
 
 def test_map_values_effect_maps_query_answers_and_stored_cells():
     q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
     rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
-    offset = Cell("Offset", lambda: 10.0)
+    offset = Val("Offset", 10.0)
 
     def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
         return sum_some(value, (yield from get(offset)))
@@ -352,14 +353,14 @@ def test_map2_maps_generic_values_over_merged_domain():
 
     assert ctx.get_at(formatted, d1) == "revenue: 10"
     assert isna(ctx.get_at(formatted, d2))
-    assert ctx.get(Cell("keys", lambda: keys_until(formatted.cells, d2))) == [d1, d2]
+    assert ctx.get(Fn("keys", lambda: keys_until(formatted.cells, d2))) == [d1, d2]
 
 
 def test_map2_accepts_effectful_fn():
     d = date(2026, 1, 31)
     left = Series.of("Left", exact, [(d, 10.0)])
     right = Series.of("Right", exact, [(d, 20.0)])
-    factor = Cell("Factor", lambda: 2.0)
+    factor = Val("Factor", 2.0)
 
     def fn(left_value: Maybe[float], right_value: Maybe[float]) -> Effect[float]:
         resolved = yield from get(factor)
@@ -391,7 +392,7 @@ def test_neg_cells_answer_from_spine():
     negated = ops.neg("Neg", a)
     ctx = Context()
 
-    keys = ctx.get(Cell("keys", lambda: keys_until(negated.cells, d)))
+    keys = ctx.get(Fn("keys", lambda: keys_until(negated.cells, d)))
     assert keys == [d]
 
     def first_cell_value() -> Effect[Maybe[float]]:
@@ -399,7 +400,7 @@ def test_neg_cells_answer_from_spine():
         assert node is not None
         return (yield from get(node.cell))
 
-    assert ctx.get(Cell("first", first_cell_value)) == -10.0
+    assert ctx.get(Fn("first", first_cell_value)) == -10.0
 
 
 def test_scale():
@@ -421,11 +422,11 @@ def test_scale_cell_factor_is_lazy_memoized_and_updated_between_contexts():
         calls += 1
         return 2.0
 
-    factor = Cell("Factor", compute_factor)
+    factor = Fn("Factor", compute_factor)
     scaled = ops.scale("Scaled", source, factor)
     ctx = Context()
     assert calls == 0
-    assert ctx.get(Cell("keys", lambda: keys_until(scaled.cells, d3))) == [d1, d2]
+    assert ctx.get(Fn("keys", lambda: keys_until(scaled.cells, d3))) == [d1, d2]
     assert calls == 0
     assert ctx.get_at(scaled, d1) == 20.0
     assert ctx.get_at(scaled, d2) == 40.0
@@ -433,7 +434,7 @@ def test_scale_cell_factor_is_lazy_memoized_and_updated_between_contexts():
     assert calls == 1
     assert ctx.depends_on((scaled, d1), factor)
 
-    factor.fn = lambda: 3.0
+    factor._fn = lambda: 3.0
     assert ctx.get_at(scaled, d1) == 20.0
     assert Context().get_at(scaled, d1) == 30.0
 
@@ -441,7 +442,7 @@ def test_scale_cell_factor_is_lazy_memoized_and_updated_between_contexts():
 def test_scale_accepts_computed_rule_factor():
     d = date(2026, 1, 31)
     source = Series.of("Source", exact, [(d, 10.0)])
-    assumption = Cell("Assumption", lambda: 2.0)
+    assumption = Val("Assumption", 2.0)
 
     class Factor(Rule[float]):
         def compute(self) -> Effect[float]:

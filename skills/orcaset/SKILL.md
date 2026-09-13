@@ -1,6 +1,6 @@
 ---
 name: orcaset
-description: "Build, extend, inspect, debug, and validate typed financial models with Orcaset's lazy Series, Rule, Cell, and effectful cell-chain APIs. Use for Orcaset model graphs, unfold/extend/flatten/merge operations, period or date queries, historical/forecast schedules, rollforwards, cohorts, circular calculations, scenarios, dependency tracing, or materializing Orcaset values. Do not use for ordinary Python calculations that do not need an Orcaset dependency graph."
+description: "Build, extend, inspect, debug, and validate typed financial models with Orcaset's lazy Series, Rule, Fn, and effectful cell-chain APIs. Use for Orcaset model graphs, unfold/extend/flatten/merge operations, period or date queries, historical/forecast schedules, rollforwards, cohorts, circular calculations, scenarios, dependency tracing, or materializing Orcaset values. Do not use for ordinary Python calculations that do not need an Orcaset dependency graph."
 ---
 
 # Orcaset
@@ -9,13 +9,13 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 
 ## Invariants
 
-- Keep queryable outputs as `Rule`, `KeyedRule`, `Cell`, or `Series` objects. Do not replace model nodes with calculated containers or hide a private `Context` behind an export.
+- Keep queryable outputs as `Rule`, `KeyedRule`, `Fn`, `Val`, or `Series` objects. Do not replace model nodes with calculated containers or hide a private `Context` behind an export.
 - Inside a rule, unfold step, query, or thunk, retrieve dependencies only with `yield from get(...)` or `yield from get_at(...)`. Do not add a second cache or use local running values in place of graph edges.
 - Treat a series' structure and values separately. `Series.cells` is a lazy `Cells[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a value `Thunk` computes when the node's `cell` is demanded, while a seed `Thunk` computes once when the head is demanded.
 - Prefer direct unfold values; use value `Thunk`s when separate value deferral is needed and seed `Thunk`s for computed initial state. See [modeling-core.md](references/modeling-core.md) for the decision criteria.
 - Emit keys in strictly ascending order. For `Period`, ordering means entirely before, so overlapping periods are not generally sortable.
 - Choose the key type, query policy, and missing-value policy explicitly. Preserve `Na` unless absence has a clear economic meaning such as zero.
-- Use `Cell` for an assumption that must vary between fresh contexts. Keep a fixed scalar plain when adjustability is not part of the model contract.
+- Use `Val` for an assumption that must vary between fresh contexts; its `value` is public and replaceable. Use `Fn` or `KeyedFn` for a one-off computed body. Keep a fixed scalar plain when adjustability is not part of the model contract.
 - Build same-key derived values with `ops.map_values`, `ops.map2`, or the arithmetic operations. Transform chains directly only when the result needs structural state, a new domain, a continuation, or nested series.
 - Use Python 3.14+ and PEP 695 syntax. Finished code must pass the configured type checker without `Any`, casts, ignores, or suppression workarounds.
 

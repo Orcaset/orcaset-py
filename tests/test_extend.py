@@ -4,10 +4,10 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
-    Cell,
     Cells,
     Cons,
     Context,
+    Fn,
     Period,
     Series,
     Thunk,
@@ -45,7 +45,7 @@ def test_extend_two_literal_series():
         3.0,
         4.0,
     ]
-    assert ctx.get(Cell("keys", lambda: keys_until(series.cells, FY20))) == [
+    assert ctx.get(Fn("keys", lambda: keys_until(series.cells, FY20))) == [
         FY17,
         FY18,
         FY19,

@@ -20,6 +20,8 @@ change between minor releases.
   subtraction and division.
 - `NaType`, the public type of the `Na` singleton, exported from `orcaset`
   alongside `Maybe`, `Na`, and `isna`.
+- `Val(name, value)` and `KeyedVal(name, values)` rules holding plain values,
+  with public inspectable `value` / `values` attributes.
 - `Context.depends_on(source, target)` and
   `Context.path_to(source, target, *, structural=False)` for asking whether
   one cell transitively demanded another, and for the shortest demand path
@@ -38,9 +40,11 @@ change between minor releases.
 - `ops.combine`, `ops.map2`, and `ops.map_values` now accept effectful callbacks
   that demand other rules with `get` / `get_at`. Returned generators are
   interpreted as computations.
-- `ops.scale` now accepts a `Rule[float]` (including `Cell[float]`) as its
+- `ops.scale` now accepts a `Rule[float]` (including `Val[float]`) as its
   factor, resolved lazily in the run's context. Changes to the factor are
   visible in a new `Context` without rebuilding the derived series.
+- Renamed `Cell` to `Fn` and `KeyedCell` to `KeyedFn`. The wrapped function
+  is now private (`_fn`); use `Val` / `KeyedVal` for replaceable inputs.
 - Renamed `add_some` to `sum_some` and `multiply_some` to `mul_some`. Both
   now take variadic arguments instead of a tuple.
 - Renamed `_NaType` to `NaType` so type-checker output names the miss type

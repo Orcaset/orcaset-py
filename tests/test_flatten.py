@@ -6,16 +6,17 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Cell,
     Cells,
     Cons,
     Context,
     Effect,
+    Fn,
     Key,
     Period,
     QueryFn,
     Series,
     Thunk,
+    Val,
     continue_series,
     date_split,
     get,
@@ -120,7 +121,7 @@ def test_straddling_continuation_is_clipped_and_queried_on_the_remainder():
     ctx = Context()
     assert ctx.get_at(revenue, Period(OCT.start, NOV.end)) == 200.0
     assert ctx.get_at(revenue, Period(Q3.start, NOV.end)) == 563.0
-    assert ctx.get(Cell("keys", lambda: keys_until(revenue.cells, q4))) == [Q3, q4]
+    assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, q4))) == [Q3, q4]
     node = ctx.get(revenue.cells)
     assert node is not None
     clipped = ctx.get(node.tail)
@@ -147,7 +148,7 @@ def test_flatten_composes_as_either_a_base_or_a_continuation():
         assert ctx.get_at(revenue, Period(Q1.start, Q3.end)) == 6.0
         assert ctx.get_at(revenue, Period(Q2.start, Q3.end)) == 5.0
         assert isna(ctx.get_at(revenue, Period(date(2025, 2, 1), Q3.end)))
-        assert ctx.get(Cell("keys", lambda s=revenue: keys_until(s.cells, Q3))) == [Q1, Q2, Q3]
+        assert ctx.get(Fn("keys", lambda s=revenue: keys_until(s.cells, Q3))) == [Q1, Q2, Q3]
 
 
 def test_empty_and_fully_clipped_components_do_not_create_seams():
@@ -158,7 +159,7 @@ def test_empty_and_fully_clipped_components_do_not_create_seams():
     revenue = joined(empty, a, empty, clipped, b, empty)
     ctx = Context()
     assert ctx.get_at(revenue, Period(Q1.start, Q2.end)) == 3.0
-    assert ctx.get(Cell("keys", lambda: keys_until(revenue.cells, Q3))) == [Q1, Q2]
+    assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, Q3))) == [Q1, Q2]
     assert isna(ctx.get_at(joined(empty, empty), Q1))
     outer: Cells[int, Amounts] = components()
     assert isna(
@@ -175,7 +176,7 @@ def test_keys_and_rejected_crossing_queries_do_not_read_values():
     b = Series.of("b", accrue_monthly, [(Q1, Thunk(poison)), (Q3, Thunk(poison))])
     revenue = joined(a, b, query=exact)
     ctx = Context()
-    assert ctx.get(Cell("keys", lambda: keys_until(revenue.cells, Q3))) == [Q1, Q2, Q3]
+    assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, Q3))) == [Q1, Q2, Q3]
     assert isna(ctx.get_at(revenue, Period(Q2.start, Q3.end)))
 
 
@@ -214,7 +215,7 @@ def test_date_routing_preserves_exact_last_and_final_carry_forward():
     # Delegation on a post-seam gap retains the continuation's last policy.
     assert ctx.get_at(revenue, date(2025, 2, 15)) == 99.0
     assert ctx.get_at(revenue, d2) == ctx.get_at(revenue, d3) == 3.0
-    assert ctx.get(Cell("keys", lambda: keys_until(revenue.cells, d3))) == [d0, d1, d2]
+    assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, d3))) == [d0, d1, d2]
 
 
 def int_split(q: int, k: int) -> tuple[int | None, int | None]:
@@ -243,7 +244,7 @@ def test_infinite_base_does_not_force_outer_tail_or_treat_na_as_exhaustion():
     assert isna(ctx.get_at(revenue, 3))
     assert ctx.get_at(revenue, 5) == 5.0
     assert visited == list(range(6))
-    assert ctx.get(Cell("keys", lambda: keys_until(revenue.cells, 5))) == list(range(6))
+    assert ctx.get(Fn("keys", lambda: keys_until(revenue.cells, 5))) == list(range(6))
     assert visited == list(range(7))  # keys_until's ordinary one-node lookahead
 
 
@@ -253,7 +254,7 @@ def test_query_endpoint_does_not_peek_into_base_tail_or_next_component():
 
     base = Series(
         "base",
-        Cell("head", lambda: Cons(Q1, Cell("value", lambda: 10.0), Cell("tail", forbidden_tail))),
+        Val("head", Cons(Q1, Val("value", 10.0), Fn("tail", forbidden_tail))),
         exact,
     )
     revenue = joined(base, monthly("forecast", Q2, 100.0))

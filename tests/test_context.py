@@ -7,9 +7,9 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Cell,
     Context,
     DepNode,
+    Fn,
     Period,
     Series,
     abs_distance,
@@ -101,15 +101,15 @@ def test_materializes_source_on_fresh_context():
 def test_unkeyed_rules_as_source_and_target():
     rev, costs = _literal_model()
 
-    @Cell.define("total")
+    @Fn.define("total")
     def total():
         return (yield from get_at(costs, Q1))
 
-    @Cell.define("leaf")
+    @Fn.define("leaf")
     def leaf():
         return 1.0
 
-    @Cell.define("via leaf")
+    @Fn.define("via leaf")
     def via_leaf():
         return ((yield from get(leaf)), (yield from get(total)))
 
@@ -129,16 +129,16 @@ def test_unkeyed_rules_as_source_and_target():
 
 
 def test_reflexive_only_through_a_cycle():
-    @Cell.define("a")
+    @Fn.define("a")
     def a():
         b_ = yield from get(b, seed=0.0, distance=abs_distance)
         return 0.5 * b_ + 1.0
 
-    @Cell.define("b")
+    @Fn.define("b")
     def b():
         return 0.5 * (yield from get(a))
 
-    @Cell.define("leaf")
+    @Fn.define("leaf")
     def leaf():
         return 1.0
 

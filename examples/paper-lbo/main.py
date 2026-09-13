@@ -6,7 +6,6 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
-    Cell,
     Context,
     Effect,
     Maybe,
@@ -14,6 +13,7 @@ from orcaset import (
     Rule,
     Series,
     Thunk,
+    Val,
     date_union,
     formatter,
     get,
@@ -43,8 +43,8 @@ purchase_multiple = 5.0
 ltv = 0.6
 ACCRUE = query.accrue(YF.cmonthly)
 
-annual_revenue_growth = Cell("Revenue growth rate", lambda: 0.1)
-exit_multiple = Cell("Exit multiple", lambda: 5.0)
+annual_revenue_growth = Val("Revenue growth rate", 0.1)
+exit_multiple = Val("Exit multiple", 5.0)
 
 
 # ---- Model definitions ----
@@ -299,10 +299,10 @@ exit_multiples = (3.0, 4.0, 5.0, 6.0, 7.0)
 
 table: list[list[str]] = []
 for multiple in exit_multiples:
-    exit_multiple.fn = lambda multiple=multiple: multiple
+    exit_multiple.value = multiple
     row = [f"{multiple:.1f}x".rjust(6)]
     for growth in growth_rates:
-        annual_revenue_growth.fn = lambda growth=growth: growth
+        annual_revenue_growth.value = growth
         scenario = Context()
         scenario_cashflows: list[float] = []
         for day in cf_dates:

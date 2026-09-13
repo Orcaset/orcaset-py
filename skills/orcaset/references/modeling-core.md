@@ -2,7 +2,7 @@
 
 ## The graph and the chain
 
-An Orcaset model consists of named `Rule` and `KeyedRule` nodes. `Cell` is an unkeyed rule. `Series[K, V, W]` is a keyed rule where:
+An Orcaset model consists of named `Rule` and `KeyedRule` nodes. `Fn` wraps a zero-arg function and `Val` holds a plain value as unkeyed rules; `KeyedFn` and `KeyedVal` are the keyed analogues. `Series[K, V, W]` is a keyed rule where:
 
 - `K` is both the cell-key and query-key type;
 - `V` is the stored cell-value type;
@@ -35,7 +35,7 @@ history = Series.of(
 Use `Series.unfold` when the domain is lazy, infinite, stateful, or determined by other rules. Its step receives state and returns `(key, value, next_state)` or `None`; the step itself may be effectful:
 
 ```python
-start_date = Cell("Forecast start", lambda: date(2027, 1, 1))
+start_date = Val("Forecast start", date(2027, 1, 1))
 
 def initial_period() -> Effect[Period]:
     start = yield from get(start_date)

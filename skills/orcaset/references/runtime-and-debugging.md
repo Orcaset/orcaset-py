@@ -13,7 +13,7 @@ debt_value = ctx.get_at(debt, period.end)
 
 Inside a rule, query, unfold step, or thunk, use `yield from get` and `yield from get_at` instead. Do not call context methods inside model computation or store a context in a model object.
 
-One context represents one run. It memoizes every resolved rule/key and keeps the dependencies traversed during that run. Reuse it for related output and diagnostics. Create a fresh context after changing a `Cell.fn`, data-source function, or scenario configuration.
+One context represents one run. It memoizes every resolved rule/key and keeps the dependencies traversed during that run. Reuse it for related output and diagnostics. Create a fresh context after changing a `Val.value`, data-source function, or scenario configuration.
 
 Keep evaluation and reporting downstream from model definition. Materialize only the requested keys into a table, JSON object, or display structure; formatted output is not a model export. Do not evaluate unbounded series.
 
@@ -24,7 +24,7 @@ For a structured income or cash-flow view, wrap the already-defined series in `s
 `keys_until(cells, stop)` walks keys through a bound without forcing their cell values or walking past the bound. Because it is effectful, resolve it through a temporary rule:
 
 ```python
-probe = Cell("Revenue keys", lambda: keys_until(revenue.cells, stop))
+probe = Fn("Revenue keys", lambda: keys_until(revenue.cells, stop))
 keys = ctx.get(probe)
 ```
 
@@ -34,7 +34,7 @@ For custom inspection, start with `node = yield from get(series.cells)` and adva
 
 Use `Context.depends_on(source, target)` to check whether an output depends directly or transitively on an expected input. Use `Context.path_to(source, target)` when you need to explain the connection. Do not manually walk, expand, or print full dependency trees for model verification; large graphs can make that prohibitively expensive.
 
-Use the same context that produced the answer. Both methods resolve the source automatically, so they also work in a fresh context. Pass a keyed `Series` or `KeyedRule` as `(rule, key)` and an unkeyed `Rule` or `Cell` directly:
+Use the same context that produced the answer. Both methods resolve the source automatically, so they also work in a fresh context. Pass a keyed `Series` or `KeyedRule` as `(rule, key)` and an unkeyed `Rule` such as `Fn` or `Val` directly:
 
 ```python
 assert ctx.depends_on((revenue, period), growth)
@@ -73,6 +73,6 @@ Common symptoms:
 - A callable returned as the answer: callables are literal values unless wrapped in `Thunk`.
 - `TypeError` mentioning a live generator: deferred computation was put in the value slot without `Thunk`.
 - A `.tail@...` `CycleError`: domain construction demanded a query that needs the same unresolved tail.
-- Stale scenario output: a context was reused after changing `Cell.fn` or a source function.
+- Stale scenario output: a context was reused after changing `Val.value` or a source function.
 - Missing dependency edge: a value bypassed `get`/`get_at`.
 - Unexpected `Na` after `ops.add` or `mul`: every source is queried at the same key and the default arithmetic policy propagates a source miss.
