@@ -16,9 +16,9 @@ Arithmetic lives under `ops` by convention. Keeping it explicit gives every resu
 
 Orcaset's arithmetic helpers are conveniences built from more general series combinators:
 
-- `ops.add` and `ops.mul` use `ops.combine` with `ops.filled` to combine any number of series.
-- `ops.sub` and `ops.div` use `ops.map2` with `ops.filled` to combine two series.
-- `ops.neg` and `ops.scale` use `ops.map_values` to transform one series with a scalar operation.
+- `ops.add` and `ops.mul` use `ops.mapn` with `query.filled` to combine any number of series.
+- `ops.sub` and `ops.div` use `ops.map2` with `query.filled` to combine two series.
+- `ops.neg` and `ops.scale` use `ops.map` to transform one series with a scalar operation.
 
 The series combinators lazily merge the source domains. Because this example is keyed by `Period`, it passes `period_union` as `merge_keys`; date-keyed series would normally use `date_union`. At each resulting key, and for arbitrary off-spine queries, the combinator queries every source at the same key. Each source therefore retains its own query semantics. Here, `accrue(YF.cmonthly)` controls how monthly values answer a query over another period.
 
@@ -30,7 +30,7 @@ from orcaset import maybe
 cogs = ops.scale("COGS", revenue, -0.5)
 
 # The underlying operation, written directly:
-cogs = ops.map_values(
+cogs = ops.map(
     "COGS",
     revenue,
     fn=maybe.map_some(lambda value: value * -0.5),
@@ -43,7 +43,7 @@ Arithmetic propagates `Na` by default. If any source answers `Na`, `add`, `mul`,
 total = ops.add("Total", actual, forecast, merge_keys=period_union, fill=0.0)
 ```
 
-`ops.combine`, `ops.map2`, and `ops.map_values` remain available when a model needs a custom operation rather than one of these arithmetic conveniences.
+`ops.mapn`, `ops.map2`, and `ops.map` remain available when a model needs a custom operation rather than one of these arithmetic conveniences.
 
 ## Run
 

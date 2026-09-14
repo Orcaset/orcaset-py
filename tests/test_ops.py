@@ -214,7 +214,7 @@ def test_fill_applies_to_every_op_and_both_sides():
         ctx.get_at(ops.div("D0", a, empty, merge_keys=date_union, fill=0.0), d)
 
 
-def test_combine_hands_na_to_fn_unchanged():
+def test_mapn_hands_na_to_fn_unchanged():
     d = date(2026, 1, 31)
     a = Series.of("A", exact, [(d, 10.0)])
     empty = Series.of("Empty", exact, [])
@@ -224,13 +224,13 @@ def test_combine_hands_na_to_fn_unchanged():
         seen.append(list(values))
         return sum(v for v in values if not isna(v))
 
-    total = ops.combine("Total", (a, empty), fn=fn, merge_keys=date_union)
+    total = ops.mapn("Total", (a, empty), fn=fn, merge_keys=date_union)
 
     assert Context().get_at(total, d) == 10.0
     assert seen == [[10.0, Na]]
 
 
-def test_combine_accepts_effectful_fn():
+def test_mapn_accepts_effectful_fn():
     d = date(2026, 1, 31)
     left = Series.of("Left", exact, [(d, 10.0)])
     right = Series.of("Right", exact, [(d, 20.0)])
@@ -240,18 +240,11 @@ def test_combine_accepts_effectful_fn():
         resolved = yield from get(offset)
         return sum(value for value in values if not isna(value)) + resolved
 
-    combined = ops.combine("Combined", (left, right), fn=fn, merge_keys=date_union)
+    combined = ops.mapn("Combined", (left, right), fn=fn, merge_keys=date_union)
     ctx = Context()
 
     assert ctx.get_at(combined, d) == 35.0
     assert ctx.depends_on((combined, d), offset)
-
-
-def test_filled_lifts_float_fold():
-    assert isna(ops.filled(sum)([1.0, Na]))
-    assert ops.filled(sum, 0.0)([1.0, Na]) == 1.0
-    assert ops.filled(sum, 0.0)([Na, Na]) == 0.0
-    assert ops.filled(sum)([1.0, 2.0]) == 3.0
 
 
 def test_fill_default_still_propagates_na():
@@ -278,10 +271,10 @@ def test_buggy_key_merge_raises():
         Context().get(Fn("keys", lambda: keys_until(total.cells, d2)))
 
 
-def test_map_values_keeps_spine_and_maps_queries():
+def test_map_keeps_spine_and_maps_queries():
     q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
     rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
-    doubled = ops.map_values("Doubled", rent, fn=lambda v: Na if isna(v) else v * 2)
+    doubled = ops.map("Doubled", rent, fn=lambda v: Na if isna(v) else v * 2)
     ctx = Context()
 
     keys = ctx.get(Fn("keys", lambda: keys_until(doubled.cells, q1)))
@@ -292,7 +285,7 @@ def test_map_values_keeps_spine_and_maps_queries():
 
 
 @pytest.mark.parametrize("effectful", [False, True])
-def test_map_values_is_lazy_and_never_forces_source_cells(effectful: bool):
+def test_map_is_lazy_and_never_forces_source_cells(effectful: bool):
     def poison() -> float:
         raise AssertionError("source cell was forced")
 
@@ -310,13 +303,13 @@ def test_map_values_is_lazy_and_never_forces_source_cells(effectful: bool):
     def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
         return sum_some(value, (yield from get(assumption)))
 
-    mapped = ops.map_values("Mapped", src, fn=apply if effectful else lambda v: v)
+    mapped = ops.map("Mapped", src, fn=apply if effectful else lambda v: v)
 
     keys = Context().get(Fn("keys", lambda: keys_until(mapped.cells, date(2026, 3, 1))))
     assert keys == [date(2026, 1, 31), date(2026, 2, 28)]
 
 
-def test_map_values_effect_maps_query_answers_and_stored_cells():
+def test_map_effect_maps_query_answers_and_stored_cells():
     q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
     rent = Series.of("Rent", prorated, [(q1, 9_000.0)])
     offset = Val("Offset", 10.0)
@@ -324,7 +317,7 @@ def test_map_values_effect_maps_query_answers_and_stored_cells():
     def apply(value: Maybe[float]) -> Effect[Maybe[float]]:
         return sum_some(value, (yield from get(offset)))
 
-    mapped = ops.map_values("Adjusted", rent, fn=apply)
+    mapped = ops.map("Adjusted", rent, fn=apply)
     ctx = Context()
     # Apply the offset once to each query answer, including off-spine queries.
     assert ctx.get_at(mapped, q1) == 9_010.0

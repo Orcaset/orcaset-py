@@ -87,9 +87,9 @@ gross_profit = ops.add(
 )
 ```
 
-- `ops.map_values` maps one source answer and retains its spine.
+- `ops.map` maps one source answer and retains its spine.
 - `ops.map2` combines two generic `Maybe`-answer series with a typed function.
-- `ops.combine`, `add`, and `mul` combine one or more float series.
+- `ops.mapn`, `add`, and `mul` combine one or more float series.
 - `ops.sub` and `div` are binary; `ops.neg` and `scale` keep one source's domain.
 
 The combined spine is the lazily merged union, but each query delegates to every source at that exact key. A key need not be on the spine. Each source's own query semantics still apply. The arithmetic operations propagate `Na` by default; `fill=` substitutes for each missing source only when that policy is economically intended.

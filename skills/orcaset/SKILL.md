@@ -16,7 +16,7 @@ Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectf
 - Emit keys in strictly ascending order. For `Period`, ordering means entirely before, so overlapping periods are not generally sortable.
 - Choose the key type, query policy, and missing-value policy explicitly. Preserve `Na` unless absence has a clear economic meaning such as zero.
 - Use `Val` for an assumption that must vary between fresh contexts; its `value` is public and replaceable. Use `Fn` or `KeyedFn` for a one-off computed body. Keep a fixed scalar plain when adjustability is not part of the model contract.
-- Build same-key derived values with `ops.map_values`, `ops.map2`, or the arithmetic operations. Transform chains directly only when the result needs structural state, a new domain, a continuation, or nested series.
+- Build same-key derived values with `ops.map`, `ops.map2`, `ops.mapn`, or the arithmetic operations. Transform chains directly only when the result needs structural state, a new domain, a continuation, or nested series.
 - Use Python 3.14+ and PEP 695 syntax. Finished code must pass the configured type checker without `Any`, casts, ignores, or suppression workarounds.
 
 ## Workflow

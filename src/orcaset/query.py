@@ -1,11 +1,11 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
-"""Common ``QueryFn`` helpers for series."""
+"""Query helpers for series."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from typing import cast
 
@@ -23,6 +23,7 @@ __all__ = [
     "covered",
     "exact",
     "exact_or",
+    "filled",
     "last",
     "last_or",
 ]
@@ -81,6 +82,29 @@ def last_or[K: Key, V](default: V) -> QueryFn[K, V, V]:
         return maybe.value_or((yield from last(q, cells)), default)
 
     return query
+
+
+def filled(
+    fn: Callable[[Sequence[float]], float],
+    fill: Maybe[float] = Na,
+) -> Callable[[Sequence[Maybe[float]]], Maybe[float]]:
+    """Lift a float fold to ``Maybe`` answers with a fill policy.
+
+    Each ``Na`` is replaced by ``fill`` before ``fn`` runs; when ``fill`` is
+    itself ``Na`` (the default) any ``Na`` makes the result ``Na``.
+    """
+
+    def apply(values: Sequence[Maybe[float]]) -> Maybe[float]:
+        present: list[float] = []
+        for value in values:
+            if isna(value):
+                if isna(fill):
+                    return Na
+                value = fill
+            present.append(value)
+        return fn(present)
+
+    return apply
 
 
 def accrue[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:

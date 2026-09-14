@@ -42,7 +42,9 @@ change between minor releases.
 
 - `accrue` now accepts series whose cell values are typed as either `float` or
   `Maybe[float]`.
-- `ops.combine`, `ops.map2`, and `ops.map_values` now accept effectful callbacks
+- Renamed `ops.map_values` to `ops.map` and `ops.combine` to `ops.mapn`.
+- Moved `ops.filled` to `query.filled`.
+- `ops.mapn`, `ops.map2`, and `ops.map` now accept effectful callbacks
   that demand other rules with `get` / `get_at`. Returned generators are
   interpreted as computations.
 - `ops.scale` now accepts a `Rule[float]` (including `Val[float]`) as its
@@ -59,7 +61,7 @@ change between minor releases.
   (`from orcaset import maybe`).
 - `Group` now takes child items as variadic arguments (`Group(*items)`),
   matching `Stmt`.
-- `ops.combine` now accepts arbitrary source query-answer and mapped result
+- `ops.mapn` now accepts arbitrary source query-answer and mapped result
   types, independently of the source cell types.
 - `ops.map2` now accepts arbitrary source query-answer and mapped result types,
   independently of the source cell types.

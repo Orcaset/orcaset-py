@@ -13,7 +13,17 @@ from orcaset import (
     Thunk,
 )
 from orcaset.maybe import Maybe, Na, isna
-from orcaset.query import accrue, accrue_or, average, covered, exact, exact_or, last, last_or
+from orcaset.query import (
+    accrue,
+    accrue_or,
+    average,
+    covered,
+    exact,
+    exact_or,
+    filled,
+    last,
+    last_or,
+)
 
 START = date(2026, 1, 1)
 P1 = Period(START, date(2026, 2, 1))
@@ -31,12 +41,20 @@ def test_query_helpers_are_exported_only_from_query_module():
         "covered",
         "exact",
         "exact_or",
+        "filled",
         "last",
         "last_or",
     }
 
     assert set(orcaset.query.__all__) == helpers
     assert all(not hasattr(orcaset, helper) for helper in helpers)
+
+
+def test_filled_lifts_float_fold():
+    assert isna(filled(sum)([1.0, Na]))
+    assert filled(sum, 0.0)([1.0, Na]) == 1.0
+    assert filled(sum, 0.0)([Na, Na]) == 0.0
+    assert filled(sum)([1.0, 2.0]) == 3.0
 
 
 def test_exact_returns_na_on_miss():

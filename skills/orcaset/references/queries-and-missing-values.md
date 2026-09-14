@@ -50,7 +50,7 @@ Apply defaults at the narrowest justified layer:
 - `maybe.value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
 - `maybe.isna(value)` plus a descriptive error when an input is required.
 
-`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold.
+`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `query.filled(fn, fill)` is the same substitution under a float fold. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold.
 
 Never replace `Na` with zero just to avoid an exception, satisfy a type checker, hide a broken dependency, or make a cycle converge.
 

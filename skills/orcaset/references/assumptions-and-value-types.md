@@ -60,7 +60,7 @@ class USD:
         return USD(self.amount + other.amount)
 ```
 
-The float arithmetic helpers are specialized to `Maybe[float]`. For rich types, use a typed `ops.map_values` or `ops.map2` function when their `Maybe`-answer contracts fit, or construct a dedicated series/query. Do not unwrap to float merely to make an operation convenient.
+The float arithmetic helpers are specialized to `Maybe[float]`. For rich types, use a typed `ops.map`, `ops.map2`, or `ops.mapn` function when their `Maybe`-answer contracts fit, or construct a dedicated series/query. Do not unwrap to float merely to make an operation convenient.
 
 ## Values with provenance
 

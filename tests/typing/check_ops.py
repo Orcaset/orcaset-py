@@ -32,7 +32,7 @@ def join_values(values: Sequence[Maybe[int]]) -> str:
     return ", ".join(map(str, values))
 
 
-combined_many = ops.combine(
+combined_many = ops.mapn(
     "combined many",
     (left,),
     fn=join_values,
@@ -63,7 +63,7 @@ def join_values_effect(values: Sequence[Maybe[int]]) -> Effect[str]:
     return f"{label}: {', '.join(map(str, values))}"
 
 
-combined_many_effect = ops.combine(
+combined_many_effect = ops.mapn(
     "combined many effect",
     (left,),
     fn=join_values_effect,
@@ -77,9 +77,9 @@ def format_effect(value: Maybe[int]) -> Effect[str]:
     return f"{label}: {value}"
 
 
-mapped = ops.map_values("mapped", left, fn=format_effect)
+mapped = ops.map("mapped", left, fn=format_effect)
 assert_type(mapped, Series[date, str, str])
-plain_mapped = ops.map_values("plain mapped", left, fn=str)
+plain_mapped = ops.map("plain mapped", left, fn=str)
 assert_type(plain_mapped, Series[date, str, str])
 
 factor = Val("factor", 2.0)
