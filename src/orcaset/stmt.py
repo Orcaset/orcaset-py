@@ -73,6 +73,7 @@ class TotalRow:
 
 @dataclass(slots=True)
 class GroupRow:
+    label: str | None
     children: tuple[StmtRow, ...]
 
 
@@ -99,9 +100,11 @@ class Total:
 @dataclass(slots=True)
 class Group:
     items: tuple[StmtItem, ...]
+    label: str | None = None
 
-    def __init__(self, *items: StmtItem) -> None:
+    def __init__(self, *items: StmtItem, label: str | None = None) -> None:
         self.items = tuple(items)
+        self.label = label
 
 
 class Stmt:
@@ -153,6 +156,7 @@ def _period_row(
 
     if isinstance(item, Group):
         return GroupRow(
+            label=item.label,
             children=tuple(_period_row(ctx, child, periods, dates) for child in item.items),
         )
 
@@ -177,7 +181,10 @@ def _date_row(
         )
 
     if isinstance(item, Group):
-        return GroupRow(children=tuple(_date_row(ctx, child, dates) for child in item.items))
+        return GroupRow(
+            label=item.label,
+            children=tuple(_date_row(ctx, child, dates) for child in item.items),
+        )
 
     return LineRow(
         name=item.name,

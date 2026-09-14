@@ -11,6 +11,8 @@ change between minor releases.
 
 ### Added
 
+- Optional `label` on `stmt.Group` / `stmt.GroupRow`. Formatters print the
+  group label when it is set.
 - `query.average(yf)` for day-count-weighted averaging across overlapping
   period values.
 - `Series.unfold`, `Series.define`, `unfold_cells`, and `scan_cells` accept a

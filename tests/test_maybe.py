@@ -10,6 +10,7 @@ from orcaset.maybe import (
     div_some,
     isna,
     mul_some,
+    neg_some,
     some,
     sub_some,
     sum_some,
@@ -62,3 +63,9 @@ def test_div_some_divides_floats_and_propagates_na():
     assert div_some(8.0, 2.0) == 4.0
     assert isna(div_some(Na, 2.0))
     assert isna(div_some(8.0, Na))
+
+
+def test_neg_some_negates_floats_and_propagates_na():
+    assert neg_some(3.0) == -3.0
+    assert neg_some(-2.5) == 2.5
+    assert isna(neg_some(Na))

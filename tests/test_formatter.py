@@ -58,7 +58,7 @@ def test_fixed_width_table_formats_totals_groups_and_indentation():
                 (stmt.PeriodValue(P1, 3.0), stmt.PeriodValue(P2, 4.0)),
                 (stmt.LineRow("B", B, (stmt.PeriodValue(P1, 5.0), stmt.PeriodValue(P2, None))),),
             ),
-            stmt.GroupRow((stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
+            stmt.GroupRow(None, (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
         ),
         periods=(P1, P2),
         dates=(),
@@ -91,7 +91,7 @@ def test_csv_table_formats_totals_groups_and_escapes_values_without_indentation(
                 (stmt.PeriodValue(P1, 3.0), stmt.PeriodValue(P2, 4.0)),
                 (stmt.LineRow("B", B, (stmt.PeriodValue(P1, 1234.0), stmt.PeriodValue(P2, None))),),
             ),
-            stmt.GroupRow((stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
+            stmt.GroupRow(None, (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
         ),
         periods=(P1, P2),
         dates=(),
@@ -127,13 +127,58 @@ def test_markdown_table_formats_totals_groups_indentation_and_escapes_cells():
                 (stmt.PeriodValue(P1, 3.0), stmt.PeriodValue(P2, 4.0)),
                 (stmt.LineRow("B", B, (stmt.PeriodValue(P1, 5.0), stmt.PeriodValue(P2, None))),),
             ),
-            stmt.GroupRow((stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
+            stmt.GroupRow(None, (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),)),
         ),
         periods=(P1, P2),
         dates=(),
     )
 
     assert formatter.markdown_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "| Start |  | 01/01 | 04/01 |\n| --- | ---: | ---: | ---: |\n| End | 01/01 | 04/01 | 07/01 |\n| A |  | 1.00 | 2.00 |\n| &nbsp;&nbsp;B |  | 5.00 |  |\n| **Total** |  | **3.00** | **4.00** |\n|  |  |  |  |\n| &nbsp;&nbsp;C |  | 8.00 | 9.00 |\n|  |  |  |  |"
+
+
+def test_fixed_width_table_prints_group_label_when_present():
+    result = stmt.StatementResult(
+        rows=(
+            stmt.GroupRow(
+                "Group",
+                (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),),
+            ),
+        ),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert formatter.fixed_width_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "Start         01/01  04/01\nEnd    01/01  04/01  07/01\n\nGroup\n  C            8.00   9.00\n"
+
+
+def test_csv_table_prints_group_label_when_present():
+    result = stmt.StatementResult(
+        rows=(
+            stmt.GroupRow(
+                "Group",
+                (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),),
+            ),
+        ),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert formatter.csv_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "Start,,01/01,04/01\nEnd,01/01,04/01,07/01\n\nGroup,,,\nC,,8.00,9.00\n"
+
+
+def test_markdown_table_prints_group_label_when_present():
+    result = stmt.StatementResult(
+        rows=(
+            stmt.GroupRow(
+                "Group",
+                (stmt.LineRow("C", C, (stmt.PeriodValue(P1, 8.0), stmt.PeriodValue(P2, 9.0))),),
+            ),
+        ),
+        periods=(P1, P2),
+        dates=(),
+    )
+
+    assert formatter.markdown_table(result, date_formatter=lambda dt: dt.strftime("%m/%d")) == "| Start |  | 01/01 | 04/01 |\n| --- | ---: | ---: | ---: |\n| End | 01/01 | 04/01 | 07/01 |\n|  |  |  |  |\n| Group |  |  |  |\n| &nbsp;&nbsp;C |  | 8.00 | 9.00 |\n|  |  |  |  |"
 
 
 def test_markdown_table_allows_custom_value_formatting():

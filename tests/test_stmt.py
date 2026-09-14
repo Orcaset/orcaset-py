@@ -133,10 +133,60 @@ def test_stmt_group_wraps_rows_with_group_row():
 
     assert len(result_rows) == 1
     assert isinstance(result_rows[0], stmt.GroupRow)
+    assert result_rows[0].label is None
     assert [row.name for row in result_rows[0].children if isinstance(row, stmt.LineRow)] == [
         "Revenue",
         "Costs",
     ]
+
+
+def test_stmt_group_optional_label_is_copied_to_group_row():
+    revenue = Series.of(
+        "Revenue",
+        exact,
+        [(Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0)],
+    )
+    costs = Series.of(
+        "Costs",
+        exact,
+        [(Period(date(2025, 1, 1), date(2025, 2, 1)), -40.0)],
+    )
+
+    ctx = Context()
+    result_rows = rows(
+        stmt.Stmt(stmt.Group(revenue, costs, label="Income")).values(
+            ctx,
+            [Period(date(2025, 1, 1), date(2025, 2, 1))],
+        )
+    )
+
+    assert len(result_rows) == 1
+    assert isinstance(result_rows[0], stmt.GroupRow)
+    assert result_rows[0].label == "Income"
+    assert [row.name for row in result_rows[0].children if isinstance(row, stmt.LineRow)] == [
+        "Revenue",
+        "Costs",
+    ]
+
+
+def test_stmt_group_optional_label_is_copied_on_date_query():
+    balance = Series.of(
+        "Balance",
+        exact,
+        [(date(2025, 1, 1), 100.0)],
+    )
+
+    ctx = Context()
+    result_rows = rows(
+        stmt.Stmt(stmt.Group(balance, label="Assets")).values_for_dates(
+            ctx,
+            [date(2025, 1, 1)],
+        )
+    )
+
+    assert len(result_rows) == 1
+    assert isinstance(result_rows[0], stmt.GroupRow)
+    assert result_rows[0].label == "Assets"
 
 
 def test_stmt_period_query_evaluates_date_series_at_period_boundaries():

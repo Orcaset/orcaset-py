@@ -256,6 +256,8 @@ def _render_rows(
             )
         elif isinstance(row, GroupRow):
             rendered.append(_Spacer())
+            if row.label is not None:
+                rendered.append(_label_row(row.label, columns, indent, level))
             rendered.extend(_render_rows(row.children, columns, value_formatter, indent, level + 1))
             rendered.append(_Spacer())
     return rendered
@@ -279,6 +281,15 @@ def _value_row(
             for column in columns
         ),
     )
+
+
+def _label_row(
+    name: str,
+    columns: Sequence[_TableColumn],
+    indent: int,
+    level: int,
+) -> tuple[str, ...]:
+    return (_label(name, indent, level), *("" for _ in columns))
 
 
 def _values_by_column(
