@@ -9,11 +9,13 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-14
+
 ### Added
 
 - Optional `label` on `stmt.Group` / `stmt.GroupRow`. Formatters print the
   group label when it is set.
-- `query.average(yf)` for day-count-weighted averaging across overlapping
+- `query.avg(yf)` for day-count-weighted averaging across overlapping
   period values.
 - `Series.unfold`, `Series.define`, `unfold_cells`, and `scan_cells` accept a
   `Thunk` seed, resolved once by the chain's head rule. This allows a series'
@@ -466,7 +468,8 @@ and formatters have been rebuilt on generic `Series`.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/orcaset/orcaset-py/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/orcaset/orcaset-py/compare/v0.9.0...v0.10.0

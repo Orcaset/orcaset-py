@@ -16,7 +16,7 @@ from orcaset.maybe import Maybe, Na, isna
 from orcaset.query import (
     accrue,
     accrue_or,
-    average,
+    avg,
     covered,
     exact,
     exact_or,
@@ -37,7 +37,7 @@ def test_query_helpers_are_exported_only_from_query_module():
         "DayCount",
         "accrue",
         "accrue_or",
-        "average",
+        "avg",
         "covered",
         "exact",
         "exact_or",
@@ -238,19 +238,19 @@ def test_accrue_does_not_force_tail_when_cell_extends_past_query():
     assert Context().get_at(series, Period(P1.start, query_end)) == 15.0
 
 
-def test_average_weights_overlapping_values_by_day_count():
+def test_avg_weights_overlapping_values_by_day_count():
     series = Series.of(
         "rate",
-        average(lambda start, end: (end - start).days),
+        avg(lambda start, end: (end - start).days),
         [(P1, 10.0), (P2, 20.0)],
     )
 
     assert Context().get_at(series, Period(P1.start, P2.end)) == (10.0 * 31 + 20.0 * 28) / 59
 
 
-def test_average_returns_na_on_miss_or_na_cell():
+def test_avg_returns_na_on_miss_or_na_cell():
     series: Series[Period, Maybe[float], Maybe[float]] = Series.of(
-        "rate", average(YF.cmonthly), [(P1, 10.0), (P2, Na)]
+        "rate", avg(YF.cmonthly), [(P1, 10.0), (P2, Na)]
     )
 
     ctx = Context()
@@ -258,13 +258,13 @@ def test_average_returns_na_on_miss_or_na_cell():
     assert ctx.get_at(series, Period(P1.start, P2.end)) is Na
 
 
-def test_average_does_not_force_tail_when_cell_ends_with_query():
+def test_avg_does_not_force_tail_when_cell_ends_with_query():
     def step(period: Period) -> tuple[Period, float, Period]:
         if period == P3:
             raise AssertionError("tail after the query was forced")
         return period, 10.0, P2 if period == P1 else P3
 
-    series = Series.unfold("rate", average(YF.cmonthly), seed=P1, step=step)
+    series = Series.unfold("rate", avg(YF.cmonthly), seed=P1, step=step)
 
     assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
 

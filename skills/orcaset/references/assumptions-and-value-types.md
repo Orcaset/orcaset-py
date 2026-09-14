@@ -15,7 +15,7 @@ def value() -> Effect[float]:
     return prior * (1.0 + rate)
 ```
 
-Do not read a separate global float when the exported `Val` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale`, while an adjustable unkeyed dependency must be demanded effectfully in a rule, unfold step, or thunk.
+Do not read a separate global float when the exported `Val` is intended to control the formula. Do not wrap every numeric literal reflexively: a fixed factor can use `ops.scale` with a float. Pass a `Val[float]` (or other `Rule[float]`) as `ops.scale`'s factor when the multiplier must change between contexts. Demand other adjustable unkeyed dependencies effectfully in a rule, unfold step, thunk, or an effectful `ops` callback.
 
 An adjustable start date can drive a series' domain through a seed thunk. The
 head resolves it once per context before invoking the first step:

@@ -22,11 +22,12 @@ If reporting boundaries are supplied, build periods from those exact dates. Do n
 | Latest value at or before a key | `query.last` |
 | Adjacent period cells must exactly tile the query | `query.covered` |
 | Overlapping period cells are weighted by a day-count function | `query.accrue(yf)` |
+| Overlapping period cells are averaged by a day-count function | `query.avg(yf)` |
 | Exact miss has a defined value | `query.exact_or(default)` |
 | Pre-domain as-of miss has a defined value | `query.last_or(default)` |
 | Accrual miss or any missing contributor has a defined value | `query.accrue_or(yf, fill)` |
 
-`query.exact` and `query.last` work for any supported key type. `query.accrue`, `query.accrue_or`, and `query.covered` are for `Period` keys and float-like flows. Import them as a namespace with `from orcaset import query`. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`.
+`query.exact` and `query.last` work for any supported key type. `query.accrue`, `query.accrue_or`, `query.avg`, and `query.covered` are for `Period` keys and float-like values. Import them as a namespace with `from orcaset import query`. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`. `query.avg(yf)` weights each overlapping value by `yf(overlap)` and divides by the total weight; it does not prorate the cell amount.
 
 `YF.cmonthly` is appropriate for calendar-month interpolation. Use `YF.act360`, `YF.thirty360`, or a stated custom measure only when the model's convention calls for it. For actual-day weighting:
 
@@ -34,7 +35,7 @@ If reporting boundaries are supplied, build periods from those exact dates. Do n
 by_days = query.accrue(lambda start, end: (end - start).days)
 ```
 
-Do not aggregate ratios, rates, prices, or per-share measures as additive flows. Resolve the reporting-period numerator and denominator first, then calculate the ratio using the intended weighting convention.
+Do not aggregate ratios, rates, prices, or per-share measures as additive flows. Resolve the reporting-period numerator and denominator first, then calculate the ratio using the intended weighting convention. Use `query.avg(yf)` when the stored cells are already levels that should be day-count-weighted across the query.
 
 ## `Na` versus zero
 
@@ -50,7 +51,7 @@ Apply defaults at the narrowest justified layer:
 - `maybe.value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
 - `maybe.isna(value)` plus a descriptive error when an input is required.
 
-`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `query.filled(fn, fill)` is the same substitution under a float fold. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold.
+`ops.add`, `mul`, `sub`, and `div` propagate `Na` by default. Their `fill=` is per-source substitution and also applies outside every source domain; use it only when that exact behavior is intended. `query.filled(fn, fill)` is the same substitution under a float fold. `maybe.sum_some()` and `maybe.mul_some()` return `Na` because no value seeds the fold. `maybe.sub_some`, `maybe.div_some`, and `maybe.neg_some` likewise propagate `Na`.
 
 Never replace `Na` with zero just to avoid an exception, satisfy a type checker, hide a broken dependency, or make a cycle converge.
 

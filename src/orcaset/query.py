@@ -19,7 +19,7 @@ __all__ = [
     "DayCount",
     "accrue",
     "accrue_or",
-    "average",
+    "avg",
     "covered",
     "exact",
     "exact_or",
@@ -133,7 +133,7 @@ def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]
     return query
 
 
-def average[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
+def avg[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
     """Build a period query that averages overlapping cell values by ``yf``.
 
     Each overlapping cell is weighted by the length of its overlap with ``q``.
