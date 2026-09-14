@@ -1,0 +1,13 @@
+[project]
+name = "multifamily-case"
+version = "0.1.0"
+description = "Multifamily acquisition pro forma for Arcadia Gardens"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy-financial>=1.0.0",
+    "orcaset==0.12.0",
+]
+
+[tool.ruff]
+line-length = 120

@@ -87,7 +87,7 @@ See the [iterative-solver](../iterative-solver/) example for additional detail.
 
 ## Run
 
-This is a standalone uv project using the repository checkout of orcaset.
+This is a standalone uv project.
 
 ```sh
 cd examples/paper-lbo

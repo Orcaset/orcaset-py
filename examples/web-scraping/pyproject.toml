@@ -10,6 +10,3 @@ dependencies = [
     "types-beautifulsoup4>=4.12.0",
     "types-requests>=2.32.0",
 ]
-
-[tool.uv.sources]
-orcaset = { path = "../../", editable = true }

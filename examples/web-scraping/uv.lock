@@ -130,22 +130,14 @@ wheels = [
 [[package]]
 name = "orcaset"
 version = "0.11.0"
-source = { editable = "../../" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil" },
     { name = "types-python-dateutil" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "python-dateutil", specifier = ">=2.9.0.post0" },
-    { name = "types-python-dateutil", specifier = ">=2.9.0.20260508" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyrefly", specifier = ">=1.2.0" },
-    { name = "pytest", specifier = ">=9.0.3" },
+sdist = { url = "https://files.pythonhosted.org/packages/8e/f8/ccdfd9c1ee1b515012f1e48a3f258a0b892c06eb141d9e0fd522c964df19/orcaset-0.11.0.tar.gz", hash = "sha256:a776e73a651fe73bdf2a58ac83132f69a900a369eb163d7b233110851e44b127", size = 37635, upload-time = "2026-09-08T14:50:37.853Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/11/87434749b935f134dae8e38aac14becd376ac049effcfa61710cda64f8d7/orcaset-0.11.0-py3-none-any.whl", hash = "sha256:fd61871ee52180063becdb98aa835a24ffe13f284e16bc031d99d628b2ed25d4", size = 41675, upload-time = "2026-09-08T14:50:36.768Z" },
 ]
 
 [[package]]
@@ -280,7 +272,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.13.0" },
-    { name = "orcaset", editable = "../../" },
+    { name = "orcaset", specifier = "==0.11.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "types-beautifulsoup4", specifier = ">=4.12.0" },
     { name = "types-requests", specifier = ">=2.32.0" },

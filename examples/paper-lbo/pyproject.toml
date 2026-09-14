@@ -7,6 +7,3 @@ dependencies = [
     "numpy-financial>=1.0.0",
     "orcaset==0.11.0",
 ]
-
-[tool.uv.sources]
-orcaset = { path = "../../", editable = true }
