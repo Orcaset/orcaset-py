@@ -20,6 +20,7 @@ change between minor releases.
   initial state and domain to depend lazily on other rules.
 - `maybe.sub_some` and `maybe.div_some` for Na-propagating binary float
   subtraction and division.
+- `maybe.neg_some` for Na-propagating unary float negation.
 - `NaType`, the public type of the `Na` singleton, exported from `orcaset`
   alongside `Maybe`, `Na`, and `isna`.
 - `Val(name, value)` and `KeyedVal(name, values)` rules holding plain values,

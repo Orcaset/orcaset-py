@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Orcaset Inc.
 # SPDX-License-Identifier: SSPL-1.0
 
+import operator
 from collections.abc import Callable
 from typing import ClassVar, TypeIs, final
 
@@ -96,35 +97,24 @@ def combine_some[V](
 
 def sum_some(*values: Maybe[float]) -> Maybe[float]:
     """Add float values, propagating ``Na``; no arguments returns ``Na``."""
-    return combine_some(values, _add_floats)
+    return combine_some(values, operator.add)
 
 
 def mul_some(*values: Maybe[float]) -> Maybe[float]:
     """Multiply float values, propagating ``Na``; no arguments returns ``Na``."""
-    return combine_some(values, _mul_floats)
+    return combine_some(values, operator.mul)
 
 
 def sub_some(left: Maybe[float], right: Maybe[float]) -> Maybe[float]:
     """Subtract floats, propagating ``Na`` if either side is ``Na``."""
-    return map2_some(_sub_floats)(left, right)
+    return map2_some(operator.sub)(left, right)
 
 
 def div_some(left: Maybe[float], right: Maybe[float]) -> Maybe[float]:
     """Divide floats, propagating ``Na`` if either side is ``Na``."""
-    return map2_some(_div_floats)(left, right)
+    return map2_some(operator.truediv)(left, right)
 
 
-def _add_floats(left: float, right: float) -> float:
-    return left + right
-
-
-def _mul_floats(left: float, right: float) -> float:
-    return left * right
-
-
-def _sub_floats(left: float, right: float) -> float:
-    return left - right
-
-
-def _div_floats(left: float, right: float) -> float:
-    return left / right
+def neg_some(value: Maybe[float]) -> Maybe[float]:
+    """Negate a float, propagating ``Na``."""
+    return map_some(operator.neg)(value)
