@@ -195,9 +195,10 @@ def growing_line(
     name: str,
     initial: Rule[float],
     growth: Series[Period, float, Maybe[float]],
+    q: QueryFn[Period, Maybe[float], Maybe[float]],
     step: relativedelta = year_offset,
 ) -> Series[Period, Maybe[float], Maybe[float]]:
-    @Series[Period, Maybe[float], Maybe[float]].define(name, query.avg(YF.cmonthly), seed=initial_period)
+    @Series[Period, Maybe[float], Maybe[float]].define(name, q, seed=initial_period)
     def line(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         if period == initial_period:
             return period, (yield from get(initial)), period.from_end(step)
@@ -235,7 +236,9 @@ def accrued_balance[V](
 
 
 # Model definitions
-market_rent_psf = growing_line("Market rent PSF", initial_annual_market_rent_psf, rent_growth)
+market_rent_psf = growing_line(
+    "Market rent PSF", initial_annual_market_rent_psf, rent_growth, query.accrue(YF.cmonthly)
+)
 market_rent = ops.scale("Market rent", market_rent_psf, rsf)
 pct_loss_to_lease = Series.of("Pct loss to lease", query.avg(YF.cmonthly), pct_loss_to_lease_assumption)
 loss_to_lease = ops.mul("Loss to lease", market_rent, pct_loss_to_lease, merge_keys=period_union)
@@ -248,18 +251,26 @@ monthly_parking_income = Fn(
 initial_annual_parking_income = Fn(
     "Initial annual parking income", lambda: (yield from get(monthly_parking_income)) * 12.0
 )
-annual_parking_income = growing_line("Annual parking income", initial_annual_parking_income, rent_growth)
+annual_parking_income = growing_line(
+    "Annual parking income", initial_annual_parking_income, rent_growth, query.accrue(YF.cmonthly)
+)
 monthly_utility_expense = Fn(
     "Monthly utility expense", lambda: (yield from get(units)) * (yield from get(monthly_utility_cost_per_unit))
 )
 annual_utility_expense_cell = Fn("Annual utility expense", lambda: (yield from get(monthly_utility_expense)) * 12.0)
-utility_expense = growing_line("Utility expense", annual_utility_expense_cell, opex_growth)
+utility_expense = growing_line(
+    "Utility expense", annual_utility_expense_cell, opex_growth, query.accrue(YF.cmonthly)
+)
 utility_reimbursements = ops.mul(
     "Utility reimbursements", utility_expense, utility_reimbursement_pct, merge_keys=period_union
 )
-annual_insurance = growing_line("Insurance", initial_annual_insurance, opex_growth)
-annual_replacement_reserves = growing_line("Replacement reserves", initial_annual_replacement_reserves, opex_growth)
-property_taxes = growing_line("Property taxes", initial_annual_property_taxes, property_tax_growth)
+annual_insurance = growing_line("Insurance", initial_annual_insurance, opex_growth, query.accrue(YF.cmonthly))
+annual_replacement_reserves = growing_line(
+    "Replacement reserves", initial_annual_replacement_reserves, opex_growth, query.accrue(YF.cmonthly)
+)
+property_taxes = growing_line(
+    "Property taxes", initial_annual_property_taxes, property_tax_growth, query.accrue(YF.cmonthly)
+)
 effective_rent = ops.add("Effective rent", market_rent, loss_to_lease, merge_keys=period_union)
 bad_debt_concessions_amount = ops.mul(
     "Bad debt and concessions amount", effective_rent, bad_debt_concessions, merge_keys=period_union
