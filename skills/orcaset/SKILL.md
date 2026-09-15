@@ -1,6 +1,6 @@
 ---
 name: orcaset
-description: "Build, extend, inspect, debug, and validate typed financial models with Orcaset's lazy Series, Rule, Fn, and effectful cell-chain APIs. Use for Orcaset model graphs, unfold/extend/flatten/merge operations, period or date queries, historical/forecast schedules, rollforwards, cohorts, circular calculations, scenarios, dependency tracing, or materializing Orcaset values. Do not use for ordinary Python calculations that do not need an Orcaset dependency graph."
+description: Build and modify financial statement models in Python with Orcaset, including linked operating schedules, balances, cash flows, scenarios, and statement reporting. Use when the model uses Orcaset or the user requests it.
 ---
 
 # Financial modeling with Orcaset
