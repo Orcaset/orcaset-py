@@ -3,45 +3,26 @@ name: orcaset
 description: "Build, extend, inspect, debug, and validate typed financial models with Orcaset's lazy Series, Rule, Fn, and effectful cell-chain APIs. Use for Orcaset model graphs, unfold/extend/flatten/merge operations, period or date queries, historical/forecast schedules, rollforwards, cohorts, circular calculations, scenarios, dependency tracing, or materializing Orcaset values. Do not use for ordinary Python calculations that do not need an Orcaset dependency graph."
 ---
 
-# Orcaset
+# Financial modeling with Orcaset
 
-Orcaset models are lazy, typed dependency graphs. A `Series` combines an effectful chain of keyed cells with a query function; a `Context` resolves and memoizes rules for one run.
+Orcaset represents a model as a lazy, typed dependency graph. Keep assumptions and financial relationships in that graph; materialize numbers only for reporting and validation.
 
-## Invariants
+This guide uses the Orcaset 0.12 API. Inspect the installed exports and relevant signatures before adapting existing code: older releases used `PeriodSeries`, `Cell`, and `Step`; 0.12 uses `Series`, `Fn`/`Val`, and `Effect`. Use the project's installed version rather than upgrading it to fit an example.
 
-- Keep queryable outputs as `Rule`, `KeyedRule`, `Fn`, `Val`, or `Series` objects. Do not replace model nodes with calculated containers or hide a private `Context` behind an export.
-- Inside a rule, unfold step, query, or thunk, retrieve dependencies only with `yield from get(...)` or `yield from get_at(...)`. Do not add a second cache or use local running values in place of graph edges.
-- Treat a series' structure and values separately. `Series.cells` is a lazy `Chain[K, V]` cons chain. A direct unfold value is computed while resolving its `Cons`; a value `Thunk` computes when the node's `value` is demanded, while a seed `Thunk` computes once when the head is demanded.
-- Prefer direct unfold values; use value `Thunk`s when separate value deferral is needed and seed `Thunk`s for computed initial state. See [modeling-core.md](references/modeling-core.md) for the decision criteria.
-- Emit keys in strictly ascending order. For `Period`, ordering means entirely before, so overlapping periods are not generally sortable.
-- Choose the key type, query policy, and missing-value policy explicitly. Preserve `Na` unless absence has a clear economic meaning such as zero.
-- Use `Val` for an assumption that must vary between fresh contexts; its `value` is public and replaceable. Use `Fn` or `KeyedFn` for a one-off computed body. Keep a fixed scalar plain when adjustability is not part of the model contract.
-- Build same-key derived values with `ops.map`, `ops.map2`, `ops.mapn`, or the arithmetic operations. Transform chains directly only when the result needs structural state, a new domain, a continuation, or nested series.
-- Use Python 3.14+ and PEP 695 syntax. Finished code must pass the configured type checker without `Any`, casts, ignores, or suppression workarounds.
+## Build or modify a model
 
-## Workflow
+1. Identify the requested outputs, existing public nodes, source inputs, units, signs, and time boundaries. For edits, trace the affected relationships and preserve the surrounding model's conventions.
+2. Separate interval flows (`Period`) from dated balances and events (`date`). A recurring monthly or annual amount is a `Period`-keyed series even when its values are constant; date-keyed observations cannot answer period queries. Anchor period boundaries to the model's transaction and fiscal dates — a year ending December 31 runs from the prior December 31, not January 1. Decide how each line answers exact, partial, combined, and missing queries. Read [graph-and-queries.md](references/graph-and-queries.md) when defining or composing series.
+3. Put adjustable inputs in `Val` and retrieve them with `yield from get(input)`. Within computations, retrieve upstream model values with `yield from get_at(series, key)`. These effects give Orcaset its dependency tracking and scenario behavior. Use a `Context` outside computations to evaluate one run.
+4. Use `ops` for same-key derived lines. Use lazy series construction when the domain or period-to-period relationship changes. Read [schedules.md](references/schedules.md) for historical/forecast joins, rollforwards, balance changes, cohorts, and circular formulas. Read [inputs-and-types.md](references/inputs-and-types.md) for scenarios, sourced values, and units.
+5. Keep operating, investing, financing, and supporting schedules linked through named nodes. Define subtotals as formulas; `stmt.Total` displays a subtotal and its components but does not create the formula. For substantial projects, separate inputs/model definitions from reporting entrypoints in a way that fits the existing project.
+6. Run the model and its configured type checker. Check representative source-to-output dependencies, boundary behavior, and economic reconciliations. Read [validation-and-reporting.md](references/validation-and-reporting.md) when checking or delivering a model.
 
-1. Inspect the installed Orcaset version, public exports, changelog, and local conventions; the API is experimental.
-2. Define each public node's key type, cell-value type, query-answer type, domain, miss behavior, and adjustable inputs.
-3. Sketch both value dependencies and structural dependencies. Mark every upstream read that must become `get` or `get_at`.
-4. Choose `Series.of` for a finite sequence of pairs or a rule supplying one, and `Series.unfold` or `@Series.define` for lazy/stateful domains. Use `Series.flatten` to join segments while preserving their query rules, `continue_series` for a lazy next segment, or `Series.extend` for a raw-chain continuation under one query policy.
-5. Compose answer-level calculations with `ops`; use `map_cells`, `scan_cells`, or `merge_cells` only for genuine chain transformations.
-6. Query every public export directly in a fresh `Context`. Exercise ordinary, missing, partial, boundary, continuation, and cyclic cases as applicable.
-7. For statement output, compose `stmt.Stmt`, `stmt.Total`, and `stmt.Group`, then render with `formatter.fixed_width_table`, `formatter.markdown_table`, or `formatter.csv_table`. Verify expected dependencies with `Context.depends_on`; use `Context.path_to` when a connecting path is needed (see [runtime-and-debugging.md](references/runtime-and-debugging.md)). Do not manually walk or print full dependency trees for verification. Run static checking, tests, and economic reconciliations.
+## Core constraints
 
-## References
-
-Read only what the task needs:
-
-- Always read [modeling-core.md](references/modeling-core.md) when creating or changing a graph or series.
-- Read [queries-and-missing-values.md](references/queries-and-missing-values.md) for timelines, query functions, partial periods, and `Na` policies.
-- Read [series-composition.md](references/series-composition.md) for joining actuals and projections, terminal growth, `Series.flatten`, `continue_series`, or raw-chain extension.
-- Read [rollforwards-and-cycles.md](references/rollforwards-and-cycles.md) for balances, flow-to-stock conversion, debt, cash, sweeps, or circular formulas.
-- Read [cohort-schedules.md](references/cohort-schedules.md) for depreciation, amortization, vintages, waterfalls, or nested schedules.
-- Read [assumptions-and-value-types.md](references/assumptions-and-value-types.md) for scenarios, sensitivities, units, citations, or other rich values.
-- Read [runtime-and-debugging.md](references/runtime-and-debugging.md) when evaluating, walking keys, tracing dependencies, or debugging laziness.
-- Read [project-quality.md](references/project-quality.md) when organizing a project or completing validation and handoff.
-
-## Completion gate
-
-Before finishing, confirm that public outputs remain Orcaset nodes; keys are strictly ascending; deferred values use `Thunk`; dependencies are effectful; query, miss, and boundary behavior is intentional; `depends_on` checks confirm the expected economic dependencies; and static checking plus tests pass.
+- Export queryable model nodes when callers need a reusable model; a table or cached dictionary is only a report.
+- `Series[K, V, W]` distinguishes key type, stored value type, and query-answer type. Annotate custom helpers and generic aliases with Python's PEP 695 syntax; resolve type errors at the actual interface.
+- Emit strictly ascending keys. Period keys must not overlap. Use the requested fiscal/transaction dates, preserving month-end offsets where appropriate.
+- Missing (`Na`) is distinct from zero. Default only where absence has an explicit economic meaning; do not conceal missing required inputs.
+- A context memoizes one run. After changing assumptions, use a fresh context.
+- Unfold steps may compute values effectfully. Use a value `Thunk` when the chain node must exist before its value resolves, or when key discovery must avoid value evaluation. A bare callable is data, not deferred computation.
