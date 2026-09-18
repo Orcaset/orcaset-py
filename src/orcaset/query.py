@@ -20,6 +20,7 @@ __all__ = [
     "accrue",
     "accrue_or",
     "avg",
+    "avg_or",
     "covered",
     "exact",
     "exact_or",
@@ -125,10 +126,16 @@ def accrue[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
 
 
 def accrue_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
-    """Build an accrual query that replaces an ``Na`` answer with ``fill``."""
+    """Build an accrual query that plugs misses with ``fill``.
+
+    ``Na`` overlapping cells contribute ``fill`` (prorated the same way as a
+    defined cell), so the rest of the query still accrues. A complete miss is
+    ``fill``. Uncovered time still contributes 0: an accrual amount is a cell
+    total, not a level.
+    """
 
     def query(q: Period, cells: Chain[Period, Maybe[float]]) -> Effect[float]:
-        return maybe.value_or((yield from _accrue(q, cells, yf)), fill)
+        return maybe.value_or((yield from _accrue(q, cells, yf, fill)), fill)
 
     return query
 
@@ -142,34 +149,74 @@ def avg[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]:
     """
 
     def query(q: Period, cells: Chain[Period, V]) -> Effect[Maybe[float]]:
-        weighted_total = 0.0
-        total_weight = 0.0
-        node = yield from get(cells)
-        while node is not None:
-            k = node.key
-            if k < q:
-                node = yield from get(node.tail)
-                continue
-            if q < k:
-                break
-            value = yield from get(node.value)
-            if isna(value):
-                return Na
-            overlap_start = max(k.start, q.start)
-            overlap_end = min(k.end, q.end)
-            weight = yf(overlap_start, overlap_end)
-            weighted_total += cast(float, value) * weight
-            total_weight += weight
-            if k.end >= q.end:
-                return weighted_total / total_weight
-            node = yield from get(node.tail)
-        return weighted_total / total_weight if total_weight else Na
+        return (yield from _avg(q, cells, yf))
 
     return query
 
 
+def avg_or(yf: DayCount, fill: float) -> QueryFn[Period, Maybe[float], float]:
+    """Build an average query that plugs misses with ``fill``.
+
+    Uncovered time inside ``q`` and ``Na`` overlapping cells contribute
+    ``fill``, so the day-count-weighted average spans the full query period.
+    A complete miss is ``fill``.
+    """
+
+    def query(q: Period, cells: Chain[Period, Maybe[float]]) -> Effect[float]:
+        return maybe.value_or((yield from _avg(q, cells, yf, fill)), fill)
+
+    return query
+
+
+def _avg[V: float | NaType](
+    q: Period,
+    cells: Chain[Period, V],
+    yf: DayCount,
+    fill: Maybe[float] = Na,
+) -> Effect[Maybe[float]]:
+    weighted_total = 0.0
+    total_weight = 0.0
+    cursor = q.start
+    node = yield from get(cells)
+    while node is not None:
+        k = node.key
+        if k < q:
+            node = yield from get(node.tail)
+            continue
+        if q < k:
+            break
+        value = yield from get(node.value)
+        overlap_start = max(k.start, q.start)
+        overlap_end = min(k.end, q.end)
+        if overlap_start > cursor and not isna(fill):
+            gap_weight = yf(cursor, overlap_start)
+            weighted_total += fill * gap_weight
+            total_weight += gap_weight
+        if isna(value):
+            if isna(fill):
+                return Na
+            amount = fill
+        else:
+            amount = cast(float, value)
+        weight = yf(overlap_start, overlap_end)
+        weighted_total += amount * weight
+        total_weight += weight
+        cursor = overlap_end
+        if k.end >= q.end:
+            return weighted_total / total_weight if total_weight else Na
+        node = yield from get(node.tail)
+    if cursor < q.end and not isna(fill):
+        gap_weight = yf(cursor, q.end)
+        weighted_total += fill * gap_weight
+        total_weight += gap_weight
+    return weighted_total / total_weight if total_weight else Na
+
+
 def _accrue[V: float | NaType](
-    q: Period, cells: Chain[Period, V], yf: DayCount
+    q: Period,
+    cells: Chain[Period, V],
+    yf: DayCount,
+    fill: Maybe[float] = Na,
 ) -> Effect[Maybe[float]]:
     total = 0.0
     hit = False
@@ -182,11 +229,14 @@ def _accrue[V: float | NaType](
         if q < k:
             break
         value = yield from get(node.value)
-        if k == q:
-            return value
         if isna(value):
-            return Na
-        amount = cast(float, value)
+            if isna(fill):
+                return Na
+            amount = fill
+        else:
+            amount = cast(float, value)
+        if k == q:
+            return amount
         overlap_start = max(k.start, q.start)
         overlap_end = min(k.end, q.end)
         total += amount * (yf(overlap_start, overlap_end) / yf(k.start, k.end))

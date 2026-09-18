@@ -51,10 +51,12 @@ A series' `.cells` is a `Chain[K, V]`, a rule resolving to `Cons(key, value, tai
 | Balance held until the next observation | `query.last` |
 | Flows that must exactly tile a requested interval | `query.covered` |
 | Flows prorated over intersecting intervals | `query.accrue(yf)` |
+| Missing flow contributors default to a fill | `query.accrue_or(yf, fill)` |
 | Levels averaged over intersecting intervals | `query.avg(yf)` |
+| Missing level observations default to a fill | `query.avg_or(yf, fill)` |
 | No event means zero | `query.exact_or(0.0)` |
 
-`query.accrue(YF.cmonthly)` weights overlaps on a calendar-month basis; use the specified day count, not an interchangeable approximation. Actual-day weighting can use `lambda start, end: (end - start).days`. Accrual returns an exact cell unchanged and otherwise weights each contributing value by overlap measure / cell measure. `covered` rejects incomplete or partial tiling. `last` returns `Na` before the first observation unless a default query is chosen.
+`query.accrue(YF.cmonthly)` weights overlaps on a calendar-month basis; use the specified day count, not an interchangeable approximation. Actual-day weighting can use `lambda start, end: (end - start).days`. Accrual returns an exact cell unchanged and otherwise weights each contributing value by overlap measure / cell measure. `accrue_or` substitutes `fill` for `Na` cells and continues the prorated sum; uncovered time contributes 0 and a complete miss is `fill`. `avg` weights overlapping levels by overlap measure. `avg_or` substitutes `fill` for uncovered time and `Na` cells so the average spans the query. `covered` rejects incomplete or partial tiling. `last` returns `Na` before the first observation unless a default query is chosen.
 
 `Period(start, end)` has `start < end`; `p.from_end(offset)` forms the next interval, and `p.from_start(-offset)` the preceding interval. For month-end schedules use `relativedelta(months=1, day=31)` to avoid drifting after February. Period ordering means entirely before, so don't sort overlapping periods as if the order were total.
 
