@@ -17,6 +17,7 @@ from orcaset.query import (
     accrue,
     accrue_or,
     avg,
+    avg_or,
     covered,
     exact,
     exact_or,
@@ -32,12 +33,17 @@ P3 = Period(date(2026, 3, 1), date(2026, 4, 1))
 Q1 = Period(START, date(2026, 4, 1))
 
 
+def days(start: date, end: date) -> float:
+    return (end - start).days
+
+
 def test_query_helpers_are_exported_only_from_query_module():
     helpers = {
         "DayCount",
         "accrue",
         "accrue_or",
         "avg",
+        "avg_or",
         "covered",
         "exact",
         "exact_or",
@@ -180,16 +186,23 @@ def test_accrue_propagates_na_cells():
     assert ctx.get_at(series, P2) is Na
 
 
-def test_accrue_or_fills_na_answers():
+def test_accrue_or_fills_na_cells_and_misses():
     series: Series[Period, Maybe[float], float] = Series.of(
-        "revenue", accrue_or(YF.cmonthly, 7.0), [(P1, 100.0), (P2, Na)]
+        "revenue", accrue_or(days, 7.0), [(P1, 100.0), (P2, Na)]
     )
 
     ctx = Context()
     assert ctx.get_at(series, P1) == 100.0
     assert ctx.get_at(series, P2) == 7.0
     assert ctx.get_at(series, P3) == 7.0
-    assert ctx.get_at(series, Period(P1.start, P2.end)) == 7.0
+    assert ctx.get_at(series, Period(P1.start, P2.end)) == 107.0
+    assert ctx.get_at(series, Period(P2.start, date(2026, 2, 15))) == 7.0 * 14 / 28
+
+
+def test_accrue_or_does_not_fill_uncovered_time():
+    series = Series.of("revenue", accrue_or(days, 7.0), [(P1, 100.0), (P3, 30.0)])
+
+    assert Context().get_at(series, Q1) == 130.0
 
 
 def test_accrue_never_forces_cells_outside_query():
@@ -265,6 +278,65 @@ def test_avg_does_not_force_tail_when_cell_ends_with_query():
         return period, 10.0, P2 if period == P1 else P3
 
     series = Series.unfold("rate", avg(YF.cmonthly), seed=P1, step=step)
+
+    assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
+
+
+def test_avg_or_fills_na_cells_and_misses():
+    series: Series[Period, Maybe[float], float] = Series.of(
+        "rate", avg_or(days, 7.0), [(P1, 10.0), (P2, Na)]
+    )
+
+    ctx = Context()
+    assert ctx.get_at(series, P1) == 10.0
+    assert ctx.get_at(series, P2) == 7.0
+    assert ctx.get_at(series, P3) == 7.0
+    assert ctx.get_at(series, Period(P1.start, P2.end)) == (10.0 * 31 + 7.0 * 28) / 59
+
+
+def test_avg_or_fills_uncovered_portions_of_the_query():
+    series = Series.of("rate", avg_or(days, 0.0), [(P1, 10.0), (P3, 30.0)])
+
+    ctx = Context()
+    assert ctx.get_at(series, Q1) == (10.0 * 31 + 0.0 * 28 + 30.0 * 31) / 90
+    feb_only = Series.of("feb", avg_or(days, 0.0), [(P2, 20.0)])
+    assert Context().get_at(feb_only, Period(P1.start, P2.end)) == (0.0 * 31 + 20.0 * 28) / 59
+    jan_only = Series.of("jan", avg_or(days, 0.0), [(P1, 10.0)])
+    assert Context().get_at(jan_only, Period(P1.start, P2.end)) == (10.0 * 31 + 0.0 * 28) / 59
+
+
+def test_avg_or_matches_avg_when_the_query_is_fully_covered():
+    pairs = [(P1, 10.0), (P2, 20.0)]
+    spanned = Period(P1.start, P2.end)
+    filled = Series.of("filled", avg_or(days, 0.0), pairs)
+    raw = Series.of("raw", avg(days), pairs)
+
+    ctx = Context()
+    assert ctx.get_at(filled, spanned) == ctx.get_at(raw, spanned)
+
+
+def test_avg_or_never_forces_cells_outside_query():
+    def poison() -> float:
+        raise AssertionError("cell outside the query was forced")
+
+    series = Series.of(
+        "rate",
+        avg_or(days, 0.0),
+        [(P1, Thunk(poison)), (P2, 20.0), (P3, Thunk(poison))],
+    )
+
+    assert Context().get_at(series, Period(P2.start, date(2026, 2, 15))) == 20.0
+    gapped = Series.of("gapped", avg_or(days, 0.0), [(P1, 10.0), (P3, Thunk(poison))])
+    assert Context().get_at(gapped, Period(P1.start, P2.end)) == (10.0 * 31 + 0.0 * 28) / 59
+
+
+def test_avg_or_does_not_force_tail_when_cell_ends_with_query():
+    def step(period: Period) -> tuple[Period, float, Period]:
+        if period == P3:
+            raise AssertionError("tail after the query was forced")
+        return period, 10.0, P2 if period == P1 else P3
+
+    series = Series.unfold("rate", avg_or(YF.cmonthly, 0.0), seed=P1, step=step)
 
     assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
 

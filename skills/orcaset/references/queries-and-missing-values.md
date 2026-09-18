@@ -23,11 +23,12 @@ If reporting boundaries are supplied, build periods from those exact dates. Do n
 | Adjacent period cells must exactly tile the query | `query.covered` |
 | Overlapping period cells are weighted by a day-count function | `query.accrue(yf)` |
 | Overlapping period cells are averaged by a day-count function | `query.avg(yf)` |
+| Average miss, gap, or missing contributor has a defined value | `query.avg_or(yf, fill)` |
 | Exact miss has a defined value | `query.exact_or(default)` |
 | Pre-domain as-of miss has a defined value | `query.last_or(default)` |
-| Accrual miss or any missing contributor has a defined value | `query.accrue_or(yf, fill)` |
+| Accrual miss or missing contributor has a defined value | `query.accrue_or(yf, fill)` |
 
-`query.exact` and `query.last` work for any supported key type. `query.accrue`, `query.accrue_or`, `query.avg`, and `query.covered` are for `Period` keys and float-like values. Import them as a namespace with `from orcaset import query`. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`. `query.avg(yf)` weights each overlapping value by `yf(overlap)` and divides by the total weight; it does not prorate the cell amount.
+`query.exact` and `query.last` work for any supported key type. `query.accrue`, `query.accrue_or`, `query.avg`, `query.avg_or`, and `query.covered` are for `Period` keys and float-like values. Import them as a namespace with `from orcaset import query`. An exact accrual hit returns the cell unchanged; otherwise each overlap is weighted by `yf(overlap) / yf(cell)`. `query.accrue_or(yf, fill)` uses the same weights but substitutes `fill` for `Na` cells so the rest of the query still accrues; uncovered time contributes 0 and a complete miss is `fill`. `query.avg(yf)` weights each overlapping value by `yf(overlap)` and divides by the total weight; it does not prorate the cell amount. `query.avg_or(yf, fill)` uses the same weights but substitutes `fill` for uncovered time and `Na` cells so the average always spans `q`.
 
 `YF.cmonthly` is appropriate for calendar-month interpolation. Use `YF.act360`, `YF.thirty360`, or a stated custom measure only when the model's convention calls for it. For actual-day weighting:
 
@@ -47,7 +48,8 @@ Apply defaults at the narrowest justified layer:
 
 - `query.exact_or(0.0)` for dated event series where no event means zero;
 - `query.last_or(opening)` when dates before the first observation have a defined opening value;
-- `query.accrue_or(yf, 0.0)` when every failed accrual answer is defined as zero;
+- `query.accrue_or(yf, 0.0)` when missing flow observations over a query window are defined as zero;
+- `query.avg_or(yf, 0.0)` when missing rate observations over a query window are defined as zero;
 - `maybe.value_or(value, 0.0)` only at a formula edge where that contribution is explicitly optional;
 - `maybe.isna(value)` plus a descriptive error when an input is required.
 
@@ -57,7 +59,7 @@ Never replace `Na` with zero just to avoid an exception, satisfy a type checker,
 
 ## Boundaries and lazy walks
 
-Query functions walk the chain only until ordering proves later nodes cannot matter. `query.last` retains only the latest candidate and does not force a superseded value. `query.accrue` and `query.covered` do not force cells outside the query. Preserve these properties in custom queries.
+Query functions walk the chain only until ordering proves later nodes cannot matter. `query.last` retains only the latest candidate and does not force a superseded value. `query.accrue`, `query.avg`, `query.avg_or`, and `query.covered` do not force cells outside the query. Preserve these properties in custom queries.
 
 For each public series, test:
 

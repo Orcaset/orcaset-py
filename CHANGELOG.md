@@ -9,6 +9,19 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `query.avg_or(yf, fill)` plugs uncovered time and `Na` overlapping cells
+  with `fill` so a day-count-weighted average still spans the full query
+  period. A complete miss is `fill`.
+
+### Changed
+
+- `query.accrue_or(yf, fill)` substitutes `fill` for `Na` overlapping cells
+  and continues the prorated sum, instead of replacing the entire `Na`
+  answer. A complete miss is still `fill`. Uncovered time still contributes
+  0.
+
 ## [0.12.0] - 2026-09-14
 
 ### Added
