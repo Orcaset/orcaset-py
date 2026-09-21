@@ -178,7 +178,7 @@ def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
     assert first_context.depends_on(series.cells, start)
     assert first_context.depends_on((series, first), start)
     head_dependencies = tuple(
-        _flatten(first_context.rule_dependencies(series.cells, structural=True))
+        _flatten(first_context.dependencies(series.cells, structural=True))
     )
     assert head_dependencies[0].name == "Deferred seed.cells"
     assert any(node.name == "Start date" for node in head_dependencies)

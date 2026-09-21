@@ -1,4 +1,4 @@
-"""Accepted and rejected argument shapes for ``Context.depends_on`` / ``path_to``."""
+"""Accepted and rejected argument shapes for context dependency queries."""
 
 from datetime import date
 from typing import assert_type
@@ -17,9 +17,14 @@ assert_type(ctx.depends_on(total, (revenue, JAN)), bool)
 assert_type(ctx.depends_on((costs, JAN), total), bool)
 assert_type(ctx.path_to((costs, JAN), (revenue, JAN)), tuple[DepNode, ...] | None)
 assert_type(ctx.path_to(total, total, structural=True), tuple[DepNode, ...] | None)
+assert_type(ctx.dependencies(costs, JAN), DepNode)
+assert_type(ctx.dependencies(total), DepNode)
+assert_type(ctx.dependencies(costs, JAN, structural=True), DepNode)
 
 ctx.depends_on((costs, "jan"), (revenue, JAN))  # pyrefly: ignore[bad-argument-type]
 ctx.depends_on((costs, JAN), (revenue, date(2026, 1, 1)))  # pyrefly: ignore[bad-argument-type]
 ctx.depends_on(costs, (revenue, JAN))  # pyrefly: ignore[bad-argument-type]
 ctx.depends_on((total, JAN), (revenue, JAN))  # pyrefly: ignore[bad-argument-type]
 ctx.path_to((costs, JAN), revenue)  # pyrefly: ignore[bad-argument-type]
+ctx.dependencies(costs)  # pyrefly: ignore[bad-argument-type]
+ctx.dependencies(total, JAN)  # pyrefly: ignore[bad-argument-type]

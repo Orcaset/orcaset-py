@@ -17,6 +17,8 @@ change between minor releases.
 
 ### Changed
 
+- `Context.rule_dependencies` is removed. `Context.dependencies` takes either
+  a keyed rule and its key, or an unkeyed rule alone.
 - `query.accrue_or(yf, fill)` substitutes `fill` for `Na` overlapping cells
   and continues the prorated sum, instead of replacing the entire `Na`
   answer. A complete miss is still `fill`. Uncovered time still contributes

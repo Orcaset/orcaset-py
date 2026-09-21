@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass, field
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn, cast, overload
 
 from orcaset.rule import _UNIT, Effect, Iterate, KeyedRule, Rule
 from orcaset.series import Cons, Series
@@ -179,23 +179,38 @@ class Context:
     def get[V](self, rule: Rule[V]) -> V:
         return self._resolve(rule, _UNIT, lambda: rule.compute())
 
+    @overload
+    def dependencies[V](self, rule: Rule[V], *, structural: bool = False) -> DepNode: ...
+
+    @overload
     def dependencies[K: Hashable, V](
         self,
         rule: KeyedRule[K, V],
         key: K,
         *,
         structural: bool = False,
-    ) -> DepNode:
-        """Resolve a keyed rule, then return its dependency tree.
+    ) -> DepNode: ...
 
+    def dependencies(
+        self,
+        rule: Rule[Any] | KeyedRule[Any, Any],
+        key: Hashable = _MISSING,
+        *,
+        structural: bool = False,
+    ) -> DepNode:
+        """Resolve a rule, then return its dependency tree.
+
+        A keyed rule is passed with its key. An unkeyed rule is passed alone.
         Internal chain traversal rules are folded by default. Pass
         ``structural=True`` for the full scheduler-level tree.
         """
-        self.get_at(rule, key)
-        return self._dep_node((rule.id, key), seen=set(), structural=structural)
-
-    def rule_dependencies[V](self, rule: Rule[V], *, structural: bool = False) -> DepNode:
-        """Resolve an unkeyed rule, then return its dependency tree."""
+        if isinstance(rule, KeyedRule):
+            if key is _MISSING:
+                raise TypeError("keyed rule requires a key")
+            self.get_at(rule, key)
+            return self._dep_node((rule.id, key), seen=set(), structural=structural)
+        if key is not _MISSING:
+            raise TypeError("unkeyed rule does not take a key")
         self.get(rule)
         return self._dep_node((rule.id, _UNIT), seen=set(), structural=structural)
 
