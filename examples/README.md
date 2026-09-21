@@ -12,6 +12,7 @@ These self-contained examples demonstrate common financial-modeling patterns and
 | [Iterative solver](iterative-solver/) | Solves a cyclic value dependency for capitalized interest on average debt. |
 | [Series composition](series-composition/) | Combine linked-list series with typed arithmetic combinators. |
 | [Multifamily](multifamily/) | Models an apartment acquisition with an operating pro forma, sources and uses, and unlevered and levered returns. |
+| [Office acquisition](cre-office/) | Models an office acquisition with tenant leases, an operating pro forma, sources and uses, and unlevered and levered returns. |
 | [Paper LBO](paper-lbo/) | Models a basic leveraged buyout with pro forma financials and IRR sensitivity. |
 | [Typed units](typed-units/) | Prevents accidental cross-currency combinations using custom value types. |
 | [Web scraping](web-scraping/) | Embeds inline data retrieval over the web and JSON parsing to directly ingest data from an outside data source. |
