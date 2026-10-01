@@ -25,7 +25,7 @@ Build a multifamily acquisition pro forma for **Arcadia Gardens**, a 76-unit apa
 - Loan issuance fees: 1.0% of senior debt
 - Acquisition LTV: 65.0% of acquisition price
 - Upfront reserve funding: $19,000
-- Loan interest rate: 5.0% on a 30/360 basis
+- Loan interest rate: 5.0% assuming 12 30-day months and 360 days per year
 - Loan amortization period: 30 years on monthly basis
 - Loan maturity: 5 years
 - Exit capitalization rate: 6.00% of NTM NOI

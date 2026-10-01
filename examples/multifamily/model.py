@@ -430,8 +430,7 @@ def interest_expense(period: Period) -> Effect[tuple[Period, Maybe[float], Perio
     """One month of 30/360 interest on the beginning balance."""
     balance = yield from get_at(loan_balance, period.start)
     rate = yield from get(loan_interest_rate)
-    year_frac = YF.thirty360(period.start, period.end)
-    return period, maybe.mul_some(balance, rate * year_frac), period.from_end(month_offset)
+    return period, maybe.mul_some(balance, rate * 1 / 12), period.from_end(month_offset)
 
 
 debt_pi = ops.neg("Debt P&I", debt_service)
