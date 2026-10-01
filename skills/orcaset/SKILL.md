@@ -1,28 +1,29 @@
 ---
 name: orcaset
-description: Build and modify financial statement models in Python with Orcaset, including linked operating schedules, balances, cash flows, scenarios, and statement reporting. Use when the model uses Orcaset or the user requests it.
+description: Build and modify financial statement models in Python with Orcaset. Use when the model uses Orcaset, builds financial models in Python, or the user requests it.
+license: Complete terms in LICENSE.txt
 ---
 
 # Financial modeling with Orcaset
 
-Orcaset represents a model as a lazy, typed dependency graph. Keep assumptions and financial relationships in that graph; materialize numbers only for reporting and validation.
+Orcaset models are lazy dependency graphs of date- or period-keyed line items. Dependencies are resolved using effect handlers, and all dependencies are traced within an evaluation context.
 
-This guide uses the Orcaset 0.12 API. Inspect the installed exports and relevant signatures before adapting existing code: older releases used `PeriodSeries`, `Cell`, and `Step`; 0.12 uses `Series`, `Fn`/`Val`, and `Effect`. Use the project's installed version rather than upgrading it to fit an example.
+Use this skill as your guide to the library. Read library source only to confirm specific signatures or behavior.
 
-## Build or modify a model
+## Process
 
-1. Identify the requested outputs, existing public nodes, source inputs, units, signs, and time boundaries. For edits, trace the affected relationships and preserve the surrounding model's conventions.
-2. Separate interval flows (`Period`) from dated balances and events (`date`). A recurring monthly or annual amount is a `Period`-keyed series even when its values are constant; date-keyed observations cannot answer period queries. Anchor period boundaries to the model's transaction and fiscal dates — a year ending December 31 runs from the prior December 31, not January 1. Decide how each line answers exact, partial, combined, and missing queries. Read [graph-and-queries.md](references/graph-and-queries.md) when defining or composing series.
-3. Put adjustable inputs in `Val` and retrieve them with `yield from get(input)`. Within computations, retrieve upstream model values with `yield from get_at(series, key)`. These effects give Orcaset its dependency tracking and scenario behavior. Use a `Context` outside computations to evaluate one run.
-4. Use `ops` for same-key derived lines. Use lazy series construction when the domain or period-to-period relationship changes. Read [schedules.md](references/schedules.md) for historical/forecast joins, rollforwards, balance changes, cohorts, and circular formulas. Read [inputs-and-types.md](references/inputs-and-types.md) for scenarios, sourced values, and units.
-5. Keep operating, investing, financing, and supporting schedules linked through named nodes. Define subtotals as formulas; `stmt.Total` displays a subtotal and its components but does not create the formula. For substantial projects, separate inputs/model definitions from reporting entrypoints in a way that fits the existing project.
-6. Run the model and its configured type checker. Check representative source-to-output dependencies, boundary behavior, and economic reconciliations. Read [validation-and-reporting.md](references/validation-and-reporting.md) when checking or delivering a model.
+1. **Examine environment** Confirm whether the environment has the `orcaset` Python library installed and its version. If `orcaset` is not installed, notify the user and try to install it from PyPI. Also confirm whether the environment has a type checker (prefer `pyrefly`) and code formatter such as `ruff`. Check for `numpy-financial` and other installed libraries.
+2. **Review patterns** Read [core.md](references/core.md) and any applicable additional reference files before any actions involving writing, reading, or modifying any code.
+3. **Build.** After considering any model intricacies, write the code. For schedules such as cohorts, depreciation, debt, or linked statements, read [patterns.md](references/patterns.md). If inputs need units, citations, or other metadata, read [values.md](references/values.md).
+4. **Verify** Verify model and code structure according to [verification.md](references/verification.md). Run `scripts/check.sh` which confirms type checking with pyrefly and formats code with ruff until it passes.
+5. **Produce outputs** Run or report final outputs to the user.
 
-## Core constraints
+## References
 
-- Export queryable model nodes when callers need a reusable model; a table or cached dictionary is only a report.
-- `Series[K, V, W]` distinguishes key type, stored value type, and query-answer type. Annotate custom helpers and generic aliases with Python's PEP 695 syntax; resolve type errors at the actual interface.
-- Emit strictly ascending keys. Period keys must not overlap. Use the requested fiscal/transaction dates, preserving month-end offsets where appropriate.
-- Missing (`Na`) is distinct from zero. Default only where absence has an explicit economic meaning; do not conceal missing required inputs.
-- A context memoizes one run. After changing assumptions, use a fresh context.
-- Unfold steps may compute values effectfully. Use a value `Thunk` when the chain node must exist before its value resolves, or when key discovery must avoid value evaluation. A bare callable is data, not deferred computation.
+| File | Read when |
+|---|---|
+| [core.md](references/core.md) | Every task: core workflow, periods and dates, queries, line-item design |
+| [patterns.md](references/patterns.md) | Building cohorts, depreciation, debt, rollforwards, or three-statement models |
+| [output.md](references/output.md) | Structuring or formatting statements and exported results |
+| [verification.md](references/verification.md) | Required checks before reporting any model results |
+| [values.md](references/values.md) | Inputs that carry units, citations, or other metadata |
