@@ -1,6 +1,6 @@
 """Lease types, rollover costs, and expense reimbursements."""
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -8,7 +8,6 @@ from enum import StrEnum
 from dateutil.relativedelta import relativedelta
 from orcaset import (
     YF,
-    Chain,
     Effect,
     Fn,
     Maybe,
@@ -29,15 +28,6 @@ type Amount = Series[Period, Maybe[float], Maybe[float]]
 type Occupancy = Series[Period, float, Maybe[float]]
 type Growth = Series[Period, float, Maybe[float]]
 type GrowingLine = Callable[[str, Rule[float], Growth], Amount]
-
-
-def accrue_or_zero(
-    q: Period, cells: Chain[Period, Maybe[float]]
-) -> Effect[Maybe[float]]:
-    result = query.accrue(YF.cmonthly)(q, cells)
-    if isinstance(result, Generator):
-        result = yield from result
-    return maybe.value_or(result, 0.0)
 
 
 class LeaseType(StrEnum):
@@ -107,7 +97,7 @@ def lease(
 
     occupied = Series[Period, float, Maybe[float]].of(
         f"{name} occupied RSF",
-        query.avg_or(YF.cmonthly, fill=0.0),
+        query.avg_fill(YF.cmonthly, fill=0.0),
         Fn(f"{name} occupancy window", occupancy_window),
     )
     rent_psf = growing_line(
@@ -120,7 +110,7 @@ def lease(
 
     @Series[Period, Maybe[float], Maybe[float]].define(
         f"{name} turnover vacancy",
-        accrue_or_zero,
+        query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
     )
     def vacancy(
@@ -142,7 +132,7 @@ def lease(
 
     @Series[Period, Maybe[float], Maybe[float]].define(
         f"{name} free rent",
-        accrue_or_zero,
+        query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
     )
     def free_rent(
@@ -163,7 +153,7 @@ def lease(
 
     @Series[Period, Maybe[float], Maybe[float]].define(
         f"{name} tenant improvements",
-        accrue_or_zero,
+        query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
     )
     def improvements(
@@ -180,7 +170,7 @@ def lease(
 
     @Series[Period, Maybe[float], Maybe[float]].define(
         f"{name} leasing commissions",
-        accrue_or_zero,
+        query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
     )
     def commissions(
@@ -217,7 +207,7 @@ def lease(
 
         @Series[Period, Maybe[float], Maybe[float]].define(
             f"{name} reimbursement downtime",
-            accrue_or_zero,
+            query.accrue_drop(YF.cmonthly),
             seed=Thunk(expiration_seed),
         )
         def downtime_loss(
@@ -248,7 +238,7 @@ def lease(
     match lease_type:
         case LeaseType.FULL_SERVICE:
             reimbursements = Series[Period, Maybe[float], Maybe[float]].of(
-                f"{name} reimbursements", accrue_or_zero, ()
+                f"{name} reimbursements", query.accrue_drop(YF.cmonthly), ()
             )
         case LeaseType.SINGLE_NET:
             reimbursements = reimbursed(property_taxes)

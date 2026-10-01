@@ -3,21 +3,25 @@
 
 from datetime import date
 
+import pytest
+
 import orcaset
 from orcaset import (
     YF,
     Context,
     Fn,
     Period,
+    QueryFn,
     Series,
     Thunk,
 )
 from orcaset.maybe import Maybe, Na, isna
 from orcaset.query import (
     accrue,
-    accrue_or,
+    accrue_drop,
     avg,
-    avg_or,
+    avg_drop,
+    avg_fill,
     covered,
     exact,
     exact_or,
@@ -41,9 +45,10 @@ def test_query_helpers_are_exported_only_from_query_module():
     helpers = {
         "DayCount",
         "accrue",
-        "accrue_or",
+        "accrue_drop",
         "avg",
-        "avg_or",
+        "avg_drop",
+        "avg_fill",
         "covered",
         "exact",
         "exact_or",
@@ -148,11 +153,37 @@ def test_accrue_exact_hit_returns_cell_unchanged():
 def test_accrue_weights_overlap_by_yf():
     series = Series.of("revenue", accrue(lambda a, b: (b - a).days), [(Q1, 90.0)])
 
+    # January sits inside the quarter, so 31 / 90 of the cell is accrued.
+    assert Context().get_at(series, P1) == 90.0 * 31 / 90
+
+
+def test_accrue_returns_na_when_query_extends_outside_cells():
+    series = Series.of("revenue", accrue(lambda a, b: (b - a).days), [(Q1, 90.0)])
+    gapped = Series.of(
+        "gapped", accrue(lambda a, b: (b - a).days), [(P1, 100.0), (P3, 30.0)]
+    )
+
     ctx = Context()
-    # 31 / 90 of the quarter lands in January.
-    assert ctx.get_at(series, P1) == 90.0 * 31 / 90
-    # A query spanning the quarter end takes only the covered share.
+    assert isna(ctx.get_at(series, Period(date(2025, 12, 31), P1.end)))
+    assert isna(ctx.get_at(series, Period(P3.start, date(2026, 5, 1))))
+    assert isna(ctx.get_at(gapped, Q1))
+
+
+def test_accrue_drop_ignores_time_outside_cells():
+    series = Series.of("revenue", accrue_drop(lambda a, b: (b - a).days), [(Q1, 90.0)])
+    gapped = Series.of(
+        "gapped",
+        accrue_drop(lambda a, b: (b - a).days),
+        [(P1, 100.0), (P3, 30.0)],
+    )
+
+    ctx = Context()
     assert ctx.get_at(series, Period(P3.start, date(2026, 5, 1))) == 90.0 * 31 / 90
+    assert ctx.get_at(gapped, Q1) == 130.0
+    # Dropping all of the query leaves an empty sum.
+    assert ctx.get_at(series, Period(date(2026, 4, 1), date(2026, 5, 1))) == 0.0
+    empty = Series.of("empty", accrue_drop(days), [])
+    assert ctx.get_at(empty, P1) == 0.0
 
 
 def test_accrue_sums_across_multiple_cells():
@@ -171,8 +202,10 @@ def test_accrue_sums_across_multiple_cells():
 
 def test_accrue_returns_na_on_miss():
     series = Series.of("revenue", accrue(YF.cmonthly), [(P1, 100.0)])
+    empty = Series.of("empty", accrue(YF.cmonthly), [])
 
     assert Context().get_at(series, P3) is Na
+    assert Context().get_at(empty, P1) is Na
 
 
 def test_accrue_propagates_na_cells():
@@ -186,23 +219,15 @@ def test_accrue_propagates_na_cells():
     assert ctx.get_at(series, P2) is Na
 
 
-def test_accrue_or_fills_na_cells_and_misses():
-    series: Series[Period, Maybe[float], float] = Series.of(
-        "revenue", accrue_or(days, 7.0), [(P1, 100.0), (P2, Na)]
+def test_accrue_drop_propagates_na_cells():
+    series: Series[Period, Maybe[float], Maybe[float]] = Series.of(
+        "revenue", accrue_drop(days), [(P1, 100.0), (P2, Na)]
     )
 
     ctx = Context()
     assert ctx.get_at(series, P1) == 100.0
-    assert ctx.get_at(series, P2) == 7.0
-    assert ctx.get_at(series, P3) == 7.0
-    assert ctx.get_at(series, Period(P1.start, P2.end)) == 107.0
-    assert ctx.get_at(series, Period(P2.start, date(2026, 2, 15))) == 7.0 * 14 / 28
-
-
-def test_accrue_or_does_not_fill_uncovered_time():
-    series = Series.of("revenue", accrue_or(days, 7.0), [(P1, 100.0), (P3, 30.0)])
-
-    assert Context().get_at(series, Q1) == 130.0
+    assert isna(ctx.get_at(series, Period(P1.start, P2.end)))
+    assert isna(ctx.get_at(series, Period(P2.start, P3.end)))
 
 
 def test_accrue_never_forces_cells_outside_query():
@@ -216,6 +241,21 @@ def test_accrue_never_forces_cells_outside_query():
     )
 
     assert Context().get_at(series, Period(P2.start, date(2026, 2, 15))) == 20.0 * 14 / 28
+
+
+@pytest.mark.parametrize("query_fn", [accrue(days), avg(days), covered])
+def test_strict_queries_force_no_values_when_the_cells_miss_part_of_the_query(
+    query_fn: QueryFn[Period, float, Maybe[float]],
+):
+    def poison() -> float:
+        raise AssertionError("a value was forced for a query that is Na")
+
+    trailing = Series.of("trailing", query_fn, [(P1, Thunk(poison)), (P2, Thunk(poison))])
+    gapped = Series.of("gapped", query_fn, [(P1, Thunk(poison)), (P3, Thunk(poison))])
+
+    ctx = Context()
+    assert isna(ctx.get_at(trailing, Q1))
+    assert isna(ctx.get_at(gapped, Q1))
 
 
 def test_accrue_does_not_force_tail_when_cell_ends_with_query():
@@ -271,6 +311,27 @@ def test_avg_returns_na_on_miss_or_na_cell():
     assert ctx.get_at(series, Period(P1.start, P2.end)) is Na
 
 
+def test_avg_returns_na_when_query_extends_outside_cells():
+    series = Series.of("rate", avg(days), [(P1, 10.0), (P2, 20.0)])
+    gapped = Series.of("gapped", avg(days), [(P1, 10.0), (P3, 30.0)])
+
+    ctx = Context()
+    assert ctx.get_at(series, P1) == 10.0
+    assert isna(ctx.get_at(series, Period(P2.start, date(2026, 3, 15))))
+    assert isna(ctx.get_at(gapped, Q1))
+
+
+def test_avg_drop_ignores_time_outside_cells():
+    series = Series.of("rate", avg_drop(days), [(P1, 10.0)])
+
+    # February is outside the cell, so the average is January's level.
+    assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
+    assert isna(Context().get_at(series, P3))
+    gapped = Series.of("gapped", avg_drop(days), [(P1, 10.0), (P3, 30.0)])
+    # February sits between the cells and is left out of the weights.
+    assert Context().get_at(gapped, Q1) == (10.0 * 31 + 30.0 * 31) / 62
+
+
 def test_avg_does_not_force_tail_when_cell_ends_with_query():
     def step(period: Period) -> tuple[Period, float, Period]:
         if period == P3:
@@ -282,61 +343,104 @@ def test_avg_does_not_force_tail_when_cell_ends_with_query():
     assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
 
 
-def test_avg_or_fills_na_cells_and_misses():
-    series: Series[Period, Maybe[float], float] = Series.of(
-        "rate", avg_or(days, 7.0), [(P1, 10.0), (P2, Na)]
+def test_avg_fill_plugs_misses_but_propagates_na_cells():
+    series: Series[Period, Maybe[float], Maybe[float]] = Series.of(
+        "rate", avg_fill(days, 7.0), [(P1, 10.0), (P2, Na)]
     )
 
     ctx = Context()
     assert ctx.get_at(series, P1) == 10.0
-    assert ctx.get_at(series, P2) == 7.0
+    assert ctx.get_at(series, P2) is Na
     assert ctx.get_at(series, P3) == 7.0
-    assert ctx.get_at(series, Period(P1.start, P2.end)) == (10.0 * 31 + 7.0 * 28) / 59
+    assert ctx.get_at(series, Period(P1.start, P2.end)) is Na
 
 
-def test_avg_or_fills_uncovered_portions_of_the_query():
-    series = Series.of("rate", avg_or(days, 0.0), [(P1, 10.0), (P3, 30.0)])
+def test_avg_fill_fills_uncovered_portions_before_averaging():
+    series = Series.of("rate", avg_fill(days, 0.0), [(P1, 10.0), (P3, 30.0)])
 
     ctx = Context()
     assert ctx.get_at(series, Q1) == (10.0 * 31 + 0.0 * 28 + 30.0 * 31) / 90
-    feb_only = Series.of("feb", avg_or(days, 0.0), [(P2, 20.0)])
+    feb_only = Series.of("feb", avg_fill(days, 0.0), [(P2, 20.0)])
     assert Context().get_at(feb_only, Period(P1.start, P2.end)) == (0.0 * 31 + 20.0 * 28) / 59
-    jan_only = Series.of("jan", avg_or(days, 0.0), [(P1, 10.0)])
+    jan_only = Series.of("jan", avg_fill(days, 0.0), [(P1, 10.0)])
     assert Context().get_at(jan_only, Period(P1.start, P2.end)) == (10.0 * 31 + 0.0 * 28) / 59
+    # Gaps on both sides of the only cell are filled.
+    index = Series.of("index", avg_fill(days, 1.0), [(P2, 20.0)])
+    assert Context().get_at(index, Q1) == (1.0 * 31 + 20.0 * 28 + 1.0 * 31) / 90
 
 
-def test_avg_or_matches_avg_when_the_query_is_fully_covered():
+def test_avg_weights_by_actual_days_when_yf_measures_the_query_as_zero():
+    # YF.thirty360 measures Jan 30 - Jan 31 as zero, but the query is covered.
+    zero_q = Period(date(2026, 1, 30), date(2026, 1, 31))
+    series = Series.of("rate", avg(YF.thirty360), [(P1, 10.0)])
+    dropped = Series.of("rate", avg_drop(YF.thirty360), [(P1, 10.0)])
+    filled_series = Series.of("rate", avg_fill(YF.thirty360, 99.0), [(P1, 10.0)])
+
+    ctx = Context()
+    assert ctx.get_at(series, zero_q) == 10.0
+    assert ctx.get_at(dropped, zero_q) == 10.0
+    assert ctx.get_at(filled_series, zero_q) == 10.0
+
+
+def test_avg_fill_weights_segments_by_actual_days_when_yf_is_degenerate():
+    # When yf measures every segment as zero, actual days decide the weights:
+    # 31 days of 10.0 and a 28-day gap of 0.0.
+    def zero_yf(a: date, b: date) -> float:
+        return 0.0
+
+    series = Series.of("rate", avg_fill(zero_yf, 0.0), [(P1, 10.0)])
+
+    assert Context().get_at(series, Period(P1.start, P2.end)) == (10.0 * 31) / 59
+
+
+def test_accrue_prorates_zero_yf_cells_by_actual_days():
+    # A zero-measure cell strictly inside the query must not divide by zero.
+    cell = Period(date(2026, 1, 30), date(2026, 1, 31))
+    series = Series.of(
+        "revenue",
+        accrue(YF.thirty360),
+        [(Period(P1.start, cell.start), 29.0), (cell, 100.0)],
+    )
+
+    assert Context().get_at(series, Period(P1.start, cell.end)) == 29.0 + 100.0
+
+    half = Series.of("revenue", accrue(YF.thirty360), [(cell, 100.0)])
+    # Whole-cell overlap accrues the full value even though yf(cell) == 0.
+    assert Context().get_at(half, cell) == 100.0
+
+
+def test_avg_fill_matches_avg_when_the_query_is_fully_covered():
     pairs = [(P1, 10.0), (P2, 20.0)]
     spanned = Period(P1.start, P2.end)
-    filled = Series.of("filled", avg_or(days, 0.0), pairs)
+    filled = Series.of("filled", avg_fill(days, 0.0), pairs)
     raw = Series.of("raw", avg(days), pairs)
 
     ctx = Context()
     assert ctx.get_at(filled, spanned) == ctx.get_at(raw, spanned)
 
 
-def test_avg_or_never_forces_cells_outside_query():
+def test_avg_fill_never_forces_cells_outside_query():
     def poison() -> float:
         raise AssertionError("cell outside the query was forced")
 
     series = Series.of(
         "rate",
-        avg_or(days, 0.0),
+        avg_fill(days, 0.0),
         [(P1, Thunk(poison)), (P2, 20.0), (P3, Thunk(poison))],
     )
 
     assert Context().get_at(series, Period(P2.start, date(2026, 2, 15))) == 20.0
-    gapped = Series.of("gapped", avg_or(days, 0.0), [(P1, 10.0), (P3, Thunk(poison))])
+    gapped = Series.of("gapped", avg_fill(days, 0.0), [(P1, 10.0), (P3, Thunk(poison))])
     assert Context().get_at(gapped, Period(P1.start, P2.end)) == (10.0 * 31 + 0.0 * 28) / 59
 
 
-def test_avg_or_does_not_force_tail_when_cell_ends_with_query():
+def test_avg_fill_does_not_force_tail_when_cell_ends_with_query():
     def step(period: Period) -> tuple[Period, float, Period]:
         if period == P3:
             raise AssertionError("tail after the query was forced")
         return period, 10.0, P2 if period == P1 else P3
 
-    series = Series.unfold("rate", avg_or(YF.cmonthly, 0.0), seed=P1, step=step)
+    series = Series.unfold("rate", avg_fill(YF.cmonthly, 0.0), seed=P1, step=step)
 
     assert Context().get_at(series, Period(P1.start, P2.end)) == 10.0
 

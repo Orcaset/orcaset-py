@@ -41,7 +41,7 @@ def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     return current_date, maybe.sum_some(begin, interest_amt), current_date
 
 
-@Series.define("Interest", query.accrue_or(YF.act360, 0.0), seed=FIRST_MONTH)
+@Series.define("Interest", query.accrue_drop(YF.act360), seed=FIRST_MONTH)
 def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     begin = yield from get_at(debt, period.start)
 

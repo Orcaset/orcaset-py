@@ -27,7 +27,7 @@ from orcaset import (
     unfold_cells,
 )
 from orcaset.maybe import Maybe, Na, isna
-from orcaset.query import accrue, covered, exact, last
+from orcaset.query import accrue, accrue_drop, covered, exact, last
 
 MONTH = relativedelta(months=1)
 Q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
@@ -38,6 +38,7 @@ NOV = Period(date(2025, 11, 1), date(2025, 12, 1))
 DEC = Period(date(2025, 12, 1), date(2026, 1, 1))
 YEAR = Period(Q1.start, DEC.end)
 accrue_monthly = accrue(YF.cmonthly)
+drop_monthly = accrue_drop(YF.cmonthly)
 
 type Amounts = Series[Period, Any, Maybe[float]]
 type AmountQuery = QueryFn[Period, Maybe[float], Maybe[float]]
@@ -186,19 +187,20 @@ def test_stitch_can_short_circuit_before_reading_later_component_values():
     assert isna(Context().get_at(joined(a, b), Period(Q1.start, Q2.end)))
 
 
-@pytest.mark.parametrize("forecast_query", [covered, accrue_monthly])
+@pytest.mark.parametrize("forecast_query", [covered, accrue_monthly, drop_monthly])
 def test_a_gap_after_the_seam_belongs_to_the_next_component(forecast_query: AmountQuery):
     a = Series.of("a", covered, [(Q3, 300.0)])
     b = Series.of("b", forecast_query, [(NOV, 100.0)])
     revenue = joined(a, b)
     ctx = Context()
-    assert isna(ctx.get_at(revenue, OCT))
     crossing = Period(Q3.start, NOV.end)
-    if forecast_query is covered:
-        assert isna(ctx.get_at(revenue, crossing))
-    else:
-        # The outer fold preserves the source's policy for missing coverage.
+    # October belongs to the next component, so that component's query decides it.
+    if forecast_query is drop_monthly:
+        assert ctx.get_at(revenue, OCT) == 0.0
         assert ctx.get_at(revenue, crossing) == 400.0
+    else:
+        assert isna(ctx.get_at(revenue, OCT))
+        assert isna(ctx.get_at(revenue, crossing))
 
 
 def test_date_routing_preserves_exact_last_and_final_carry_forward():

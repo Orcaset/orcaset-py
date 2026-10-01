@@ -11,18 +11,31 @@ change between minor releases.
 
 ### Added
 
-- `query.avg_or(yf, fill)` plugs uncovered time and `Na` overlapping cells
-  with `fill` so a day-count-weighted average still spans the full query
-  period. A complete miss is `fill`.
+- `query.accrue_drop(yf)` accrues the part of the query the cells cover and
+  ignores the rest. A complete miss is `0.0`. An `Na` cell still propagates.
+- `query.avg_drop(yf)` averages over the part of the query the cells cover
+  and ignores the rest. A complete miss is `Na`. An `Na` cell still
+  propagates.
+- `query.avg_fill(yf, fill)` treats time the cells don't cover as the level
+  `fill`, so a day-count-weighted average still spans the full query period.
+  A complete miss is `fill`. An `Na` cell still propagates.
 
 ### Changed
 
 - `Context.rule_dependencies` is removed. `Context.dependencies` takes either
   a keyed rule and its key, or an unkeyed rule alone.
-- `query.accrue_or(yf, fill)` substitutes `fill` for `Na` overlapping cells
-  and continues the prorated sum, instead of replacing the entire `Na`
-  answer. A complete miss is still `fill`. Uncovered time still contributes
-  0.
+- `query.accrue` and `query.avg` return `Na` when any date in the query falls
+  outside the cells, including a gap between cells. A cell may still extend
+  past the query.
+- The `avg` variants weight segments by actual days when `yf` measures the
+  whole query as zero (e.g. `YF.thirty360` over Jan 30 - Jan 31), and the
+  `accrue` variants prorate zero-`yf` cells by actual days instead of raising
+  `ZeroDivisionError`.
+
+### Removed
+
+- `query.accrue_or`. Use `accrue_drop` to ignore uncovered time. For a
+  non-zero fill, accrue a separate series over the gaps and combine it.
 
 ## [0.12.0] - 2026-09-14
 
