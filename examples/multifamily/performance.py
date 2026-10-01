@@ -101,9 +101,7 @@ def gross_sale_price() -> Effect[Maybe[float]]:
 buying_costs = Fn("Buying costs", lambda: -(yield from get(acquisition_price)) * (yield from get(acquisition_cost_pct)))
 selling_costs = Fn(
     "Selling costs",
-    lambda: maybe.neg_some(
-        maybe.mul_some((yield from get(gross_sale_price)), (yield from get(selling_cost_pct)))
-    ),
+    lambda: maybe.neg_some(maybe.mul_some((yield from get(gross_sale_price)), (yield from get(selling_cost_pct)))),
 )
 reserve_release = Fn("Reserve release", lambda: (yield from get_at(reserve_balance, (yield from get(exit_date)))))
 loan_fees = Fn("Loan issuance fees", lambda: -(yield from get(senior_debt)) * (yield from get(loan_issuance_fee_pct)))
@@ -322,7 +320,7 @@ if __name__ == "__main__":
         ),
     ):
         result = ctx.get(irr)
-        rate = "N/A" if isna(result) else f"{result:.2%}"
+        rate = "N/A" if isna(result) else f"{result:.4%}"
         sections.append(
             f"{title}\n{formatter.fixed_width_table(table.values_for_periods(ctx, periods))}\n{irr.name}: {rate}"
         )
@@ -334,6 +332,7 @@ if __name__ == "__main__":
             value = ctx.get(metric)
             formatted = "N/A" if isna(value) else format(value, spec) + ("x" if metric is moic else "")
             sections[-1] += f"\n{label}: {formatted}"
+
     def sources_uses_line(node: Fn[Maybe[float]] | Val[float], *, indent: bool = True) -> str:
         value = ctx.get(node)
         amount = "N/A" if isna(value) else f"{value:,.2f}"
@@ -351,9 +350,7 @@ if __name__ == "__main__":
         sources_uses_line(equity_investment),
         sources_uses_line(total_sources, indent=False),
     ]
-    sections.append(
-        "Sources and uses at acquisition\n" + "\n".join(uses) + "\n" + "-" * 47 + "\n" + "\n".join(sources)
-    )
+    sections.append("Sources and uses at acquisition\n" + "\n".join(uses) + "\n" + "-" * 47 + "\n" + "\n".join(sources))
     sections.append(
         "Debt metrics (coverage ratios in x)\n"
         + formatter.fixed_width_table(debt_metrics.values_for_periods(ctx, periods))

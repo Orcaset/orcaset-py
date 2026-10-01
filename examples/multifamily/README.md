@@ -2,7 +2,7 @@
 
 This example builds an acquisition model for Arcadia Gardens, a 76-unit apartment community in Phoenix. It includes an operating pro forma, unlevered and levered returns, sources and uses, and return metrics (IRR, MOIC, DSCR).
 
-The model follows [`arcadia-gardens-outline.md`](arcadia-gardens-outline.md), which is based on the Excel model [here](https://mergersandinquisitions.com/real-estate-financial-modeling/) with minor changes to reserve funding.
+The model follows [`arcadia-gardens-outline.md`](arcadia-gardens-outline.md), which is based on the Excel model [here](https://mergersandinquisitions.com/real-estate-financial-modeling/) with minor changes to reserve funding and debt service frequency.
 
 ## Run the model
 
@@ -47,11 +47,11 @@ End                                       2016-12-31    2017-12-31    2018-12-31
   Reserve flows                                 0.00     19,000.00    -38,000.00    -20,727.10    -20,761.81          0.00    -15,200.00          0.00
   Replacement reserve balance                            19,000.00        570.00          0.00          0.00     21,384.67     28,210.87     50,897.87
 
-      Interest expense                                                317,687.50    312,905.85    307,885.11    302,613.34    297,077.98          0.00
-      Principal payments                                               95,633.06    100,414.71    105,435.44    110,707.22    116,242.58         -0.00
+      Interest expense                                                314,634.62    309,805.15    305,620.01    299,439.92    293,835.26          0.00
+      Principal payments                                               94,665.02     99,494.50    103,679.64    109,859.73    115,464.38         -0.00
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-    Debt P&I                                                          413,320.56    413,320.56    413,320.56    413,320.56    413,320.56         -0.00
-    Loan balance                                      6,353,750.00  6,258,116.94  6,157,702.24  6,052,266.79  5,941,559.58          0.00          0.00
+    Debt P&I                                                          409,299.65    409,299.65    409,299.65    409,299.65    409,299.65         -0.00
+    Loan balance                                      6,353,750.00  6,259,084.98  6,159,590.48  6,055,910.84  5,946,051.11          0.00          0.00
 
 
 
@@ -85,9 +85,9 @@ End                                       2016-12-31    2017-12-31    2018-12-31
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 Adjusted NOI                                                          566,979.51    550,441.30    602,363.57    677,737.68    698,447.22    720,134.52
   Adjusted NOI                                                        566,979.51    550,441.30    602,363.57    677,737.68    698,447.22    720,134.52
-  Debt service                                                       -413,320.56   -413,320.56   -413,320.56   -413,320.56   -413,320.56          0.00
+  Debt service                                                       -409,299.65   -409,299.65   -409,299.65   -409,299.65   -409,299.65          0.00
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-Levered cash flow                                                     153,658.95    137,120.75    189,043.01    264,417.12    285,126.66    720,134.52
+Levered cash flow                                                     157,679.86    141,141.65    193,063.92    268,438.03    289,147.57    720,134.52
 ```
 
 `performance.py`:
@@ -105,7 +105,7 @@ End                                2017-12-31  2018-12-31  2019-12-31  2020-12-3
   Reserve release                                                                                  28,210.87
 ------------------------------------------------------------------------------------------------------------
 Total unlevered cash flow       -9,891,750.00  566,979.51  550,441.30  602,363.57  677,737.68  12,488,855.17
-Unlevered IRR: 9.37%
+Unlevered IRR: 9.3735%
 Total initial investment: 9,891,750.00
 Total return (cash distributions): 14,886,377.23
 MOIC: 1.50x
@@ -116,14 +116,14 @@ End                                   2017-12-31   2018-12-31   2019-12-31   202
   Total unlevered cash flow        -9,891,750.00   566,979.51   550,441.30   602,363.57   677,737.68  12,488,855.17
   Debt draw                         6,353,750.00
   Loan issuance fees                  -63,537.50
-  Debt service                              0.00  -413,320.56  -413,320.56  -413,320.56  -413,320.56    -413,320.56
-  Debt payoff                                                                                         -5,825,317.00
+  Debt service                              0.00  -409,299.65  -409,299.65  -409,299.65  -409,299.65    -409,299.65
+  Debt payoff                                                                                         -5,830,586.73
 -------------------------------------------------------------------------------------------------------------------
-Total levered cash flow to equity  -3,601,537.50   153,658.95   137,120.75   189,043.01   264,417.12   6,250,217.61
-Levered IRR: 15.13%
+Total levered cash flow to equity  -3,601,537.50   157,679.86   141,141.65   193,063.92   268,438.03   6,248,968.79
+Levered IRR: 15.2025%
 Total initial investment: 3,601,537.50
-Total return (cash distributions): 6,994,457.45
-MOIC: 1.94x
+Total return (cash distributions): 7,009,292.26
+MOIC: 1.95x
 
 Sources and uses at acquisition
   Acquisition price                9,775,000.00
@@ -140,6 +140,6 @@ Debt metrics (coverage ratios in x)
 Start                          2017-12-31  2018-12-31  2019-12-31  2020-12-31  2021-12-31
 End                2017-12-31  2018-12-31  2019-12-31  2020-12-31  2021-12-31  2022-12-31
 Debt yield (%)                       8.92        9.53       10.05       10.67       10.99
-Interest coverage                    1.78        1.94        2.07        2.24        2.35
-DSCR                                 1.37        1.47        1.55        1.64        1.69
+Interest coverage                    1.80        1.96        2.09        2.26        2.38
+DSCR                                 1.39        1.48        1.56        1.66        1.71
 ```

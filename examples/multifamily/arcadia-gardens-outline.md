@@ -25,8 +25,8 @@ Build a multifamily acquisition pro forma for **Arcadia Gardens**, a 76-unit apa
 - Loan issuance fees: 1.0% of senior debt
 - Acquisition LTV: 65.0% of acquisition price
 - Upfront reserve funding: $19,000
-- Loan interest rate: 5.0%
-- Loan amortization period: 30 years
+- Loan interest rate: 5.0% on a 30/360 basis
+- Loan amortization period: 30 years on monthly basis
 - Loan maturity: 5 years
 - Exit capitalization rate: 6.00% of NTM NOI
 - Selling costs: 2.0% of gross sale price
@@ -71,6 +71,15 @@ Build a multifamily acquisition pro forma for **Arcadia Gardens**, a 76-unit apa
 - Include debt yield based off the total initial debt and TTM NOI
 - Include TTM interest coverage and DSCR on NOI
 - Cash flows for IRRs should include return of unspent replacement reserve
+
+## Replacement reserve timing
+
+- Fund the reserve at acquisition with the upfront reserve amount.
+- Grow annual replacement reserve contributions with operating-expense growth and accrue them within each annual period on a calendar-month basis.
+- Reserve-funded capex is the lesser of capex spending and the beginning reserve balance plus that period's contributions, floored at zero.
+- Post reserve-funded capex draws at the end of each annual period. Roll the balance forward by adding contributions and subtracting those draws.
+- Between annual boundaries, the reserve balance is the last posted balance plus contributions accrued since that boundary. Do not deduct future period-end draws early or double-count contributions at a boundary.
+- Return the remaining reserve balance once at exit in both unlevered and levered investment cash flows.
 
 ## Outputs
 

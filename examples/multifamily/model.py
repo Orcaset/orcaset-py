@@ -133,9 +133,7 @@ vacancy_assumption = Val(
 
 
 rent_growth = Series[Period, float, Maybe[float]].of("Rent growth", query.avg(YF.cmonthly), growth_assumptions)
-bad_debt_concessions = Series.of(
-    "Bad debt and concessions", query.avg(YF.cmonthly), bad_debt_concessions_assumption
-)
+bad_debt_concessions = Series.of("Bad debt and concessions", query.avg(YF.cmonthly), bad_debt_concessions_assumption)
 utility_reimbursement_pct = Series.of(
     "Utility reimbursement percentage", query.avg(YF.cmonthly), utility_reimbursement_assumption
 )
@@ -189,6 +187,7 @@ sales_marketing_admin_pct = Series.of(
 
 # Helpers
 year_offset = relativedelta(years=1)
+month_offset = relativedelta(months=1, day=31)
 
 
 def growing_line(
@@ -258,9 +257,7 @@ monthly_utility_expense = Fn(
     "Monthly utility expense", lambda: (yield from get(units)) * (yield from get(monthly_utility_cost_per_unit))
 )
 annual_utility_expense_cell = Fn("Annual utility expense", lambda: (yield from get(monthly_utility_expense)) * 12.0)
-utility_expense = growing_line(
-    "Utility expense", annual_utility_expense_cell, opex_growth, query.accrue(YF.cmonthly)
-)
+utility_expense = growing_line("Utility expense", annual_utility_expense_cell, opex_growth, query.accrue(YF.cmonthly))
 utility_reimbursements = ops.mul(
     "Utility reimbursements", utility_expense, utility_reimbursement_pct, merge_keys=period_union
 )
@@ -384,54 +381,59 @@ adjusted_noi = ops.add("Adjusted NOI", noi, capex, capex_funded_by_reserves, mer
 
 
 # Debt schedule and levered cash flow
-@Fn.define("Annual debt service")
-def annual_debt_service() -> Effect[float]:
+@Fn.define("Monthly debt service")
+def monthly_debt_service() -> Effect[float]:
     principal = yield from get(senior_debt)
-    rate = yield from get(loan_interest_rate)
+    annual_rate = yield from get(loan_interest_rate)
     years = yield from get(loan_amortization_years)
-    return principal * rate / (1.0 - (1.0 + rate) ** -years)
+    monthly_rate = annual_rate / 12.0
+    months = years * 12.0
+    return principal * monthly_rate / (1.0 - (1.0 + monthly_rate) ** -months)
 
 
-@Series.define("Loan balance", query.last, seed=acquisition_period)
+first_loan_month = Period(acquisition_date, acquisition_date + month_offset)
+
+
+@Series.define("Loan balance", query.last, seed=first_loan_month)
 def loan_balance(period: Period) -> Effect[tuple[date, Maybe[float], Period]]:
     """Post the balance at ``period.start``; carry it until payment, with zero at maturity."""
     maturity = yield from get(loan_maturity_years)
     if period.start >= acquisition_date + relativedelta(years=maturity):
-        return period.start, maybe.some(0.0), period.from_end(year_offset)
-    if period == acquisition_period:
-        return period.start, (yield from get(senior_debt)), period.from_end(year_offset)
-    prior = yield from get_at(loan_balance, period.from_start(-year_offset).start)
-    service = yield from get(annual_debt_service)
-    rate = yield from get(loan_interest_rate)
+        return period.start, maybe.some(0.0), period.from_end(month_offset)
+    if period.start == acquisition_date:
+        return period.start, (yield from get(senior_debt)), period.from_end(month_offset)
+    prior_period = period.from_start(-month_offset)
+    prior = yield from get_at(loan_balance, prior_period.start)
+    payment = yield from get(monthly_debt_service)
+    interest = yield from get_at(interest_expense, prior_period)
 
-    def amortize(b: float) -> float:
-        return b - (service - b * rate)
+    def amortize(b: float, i: float) -> float:
+        return b - (payment - i)
 
-    return period.start, maybe.map_some(amortize)(prior), period.from_end(year_offset)
+    return period.start, maybe.map2_some(amortize)(prior, interest), period.from_end(month_offset)
 
 
-@Series.define("Debt service", query.accrue(YF.cmonthly), seed=acquisition_period)
+@Series.define("Debt service", query.accrue(YF.cmonthly), seed=first_loan_month)
 def debt_service(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
-    """Annual P&I paid while the loan is outstanding, as a negative cash flow."""
+    """One monthly P&I payment while the loan is outstanding, as a negative cash flow."""
     balance = yield from get_at(loan_balance, period.start)
-    service = yield from get(annual_debt_service)
+    payment = yield from get(monthly_debt_service)
 
-    def payment(b: float) -> float:
-        return -service if b > 0.0 else 0.0
+    def cash_flow(b: float) -> float:
+        return -payment if b > 0.0 else 0.0
 
-    return period, maybe.map_some(payment)(balance), period.from_end(year_offset)
+    return period, maybe.map_some(cash_flow)(balance), period.from_end(month_offset)
 
 
-@Series.define("Interest expense", query.accrue(YF.cmonthly), seed=acquisition_period)
+@Series.define("Interest expense", query.accrue(YF.cmonthly), seed=first_loan_month)
 def interest_expense(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
-    """Accrue annual interest on the beginning-of-period loan balance."""
+    """One month of 30/360 interest on the beginning balance."""
     balance = yield from get_at(loan_balance, period.start)
     rate = yield from get(loan_interest_rate)
-    return period, maybe.mul_some(balance, rate), period.from_end(year_offset)
+    year_frac = YF.thirty360(period.start, period.end)
+    return period, maybe.mul_some(balance, rate * year_frac), period.from_end(month_offset)
 
 
 debt_pi = ops.neg("Debt P&I", debt_service)
 principal_paid = ops.sub("Principal payments", debt_pi, interest_expense, merge_keys=period_union)
-levered_cash_flow = ops.add(
-    "Levered cash flow", adjusted_noi, debt_service, merge_keys=period_union
-)
+levered_cash_flow = ops.add("Levered cash flow", adjusted_noi, debt_service, merge_keys=period_union)
