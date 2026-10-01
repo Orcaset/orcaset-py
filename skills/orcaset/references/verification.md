@@ -38,7 +38,7 @@ Exercise queries that expose the changed relationship:
 - Immediately before inception and around a contractual end, payoff, sale, or other boundary.
 - Missing prerequisites, zero denominators, and scenario branches relevant to the change. An expected `Na` is different from an unexplained missing result.
 
-Match checks to the query's semantics. For additive flows, compare an aggregate with the sum of its component periods. For balances or averages, check the correct endpoint or weighting instead of summing them. Accrual or averaging of available overlaps should not be used as proof that the source covers every requested date; inspect source coverage separately when full coverage is required. Bound all evaluation of potentially infinite series.
+Match checks to the query's semantics. For additive flows, compare an aggregate with the sum of its component periods. For balances or averages, check the correct endpoint or weighting instead of summing them. `accrue` and `avg` return `Na` unless the cells cover every date in the query, so they check coverage. `accrue_drop`, `avg_drop`, and `avg_fill` answer from the covered or filled part and are not that check. Bound all evaluation of potentially infinite series.
 
 ## Dependency inspection
 
@@ -46,8 +46,7 @@ Dependency direction runs from the consuming output to its upstream input. Pass 
 
 | API | Result |
 |---|---|
-| `ctx.dependencies(series, key)` | Dependency tree for a keyed result (USE SPARINGLY; OUTPUT CAN BE ENORMOUS AND SLOW) |
-| `ctx.rule_dependencies(rule)` | Dependency tree for an unkeyed result (USE SPARINGLY; OUTPUT CAN BE ENORMOUS AND SLOW) |
+| `ctx.dependencies(series, key)` or `ctx.dependencies(rule)` | Dependency tree for a keyed or unkeyed result (USE SPARINGLY; OUTPUT CAN BE ENORMOUS AND SLOW) |
 | `ctx.depends_on(source, target)` | Booliean for whether the evaluated source transitively demands the target |
 | `ctx.path_to(source, target)` | Shortest dependency path as a tuple of `DepNode`, or `None` |
 
@@ -98,7 +97,7 @@ if __name__ == "__main__":
     path = ctx.path_to(first_quarter_profit, cost_ratio)
     assert path is not None
     print(ctx.dependencies(profit, quarter))
-    print(ctx.rule_dependencies(first_quarter_profit))
+    print(ctx.dependencies(first_quarter_profit))
 ```
 
 Use targeted dependency assertions for important drivers, then inspect paths when a relationship is missing or unexpected. A path establishes a demanded dependency, not a nonzero numerical sensitivity: an input can be read and then multiplied by zero. Branches only contribute the dependencies actually demanded in that scenario. A node does not count as depending on itself unless there is a demand cycle. For citation-bearing inputs, inspect the source values in the tree; derived arithmetic may have discarded the citation attribute.
@@ -129,7 +128,7 @@ Check both the magnitude and direction of the changed output against the formula
 | Symptom | Inspect first |
 |---|---|
 | Unexpected `Na` | Exact keys, query policy, actual/forecast seam, and the first missing prerequisite in the dependency path |
-| Unexpected zero | `fill=0.0`, `value_or`, or other defaults that may hide missing data |
+| Unexpected zero | `accrue_drop` (a complete miss is `0.0`), `avg_fill` with `fill=0.0`, `value_or`, or other defaults that may hide missing data |
 | Ascending-key or overlap error | Repeated keys, period boundaries, and the next state returned by the unfold step |
 | A generator appears where a value is expected | A live effect stored as a literal; defer the computation with `Thunk` where required |
 | Stale result after an input change | Reuse of a context that already cached the result |
