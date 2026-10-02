@@ -9,6 +9,8 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-02
+
 ### Added
 
 - `query.accrue_drop(yf)` accrues the part of the query the cells cover and
@@ -21,7 +23,8 @@ change between minor releases.
   A complete miss is `fill`. An `Na` cell still propagates.
 - `Stmt.values(ctx, keys)` accepts any mix of `Period` and `date` keys and
   returns one value per key, in input order. At a date key, date-keyed series
-  answer at the date and period-keyed series yield `None`.
+  answer at the date and period-keyed series are not queried (`query` is
+  `None` and `value` is `Na`).
 - `StatementResult.keys` holds the requested keys in input order.
 - `stmt.StmtValue` is now one cell class carrying `key` (the column), `series`,
   `query` (the key the series was queried at, or `None` when it was not
@@ -536,7 +539,8 @@ and formatters have been rebuilt on generic `Series`.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/orcaset/orcaset-py/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/orcaset/orcaset-py/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/orcaset/orcaset-py/compare/v0.10.0...v0.11.0

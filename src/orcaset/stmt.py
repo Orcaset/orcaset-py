@@ -143,7 +143,8 @@ class Stmt:
         Each key is a ``Period`` or a ``date``, and the two may be mixed. At a
         period, period-keyed series answer at the period and date-keyed series
         answer at the period's end. At a date, date-keyed series answer at the
-        date and period-keyed series yield ``None``. Keys are not sorted or
+        date and period-keyed series are not queried (``query`` is ``None``
+        and ``value`` is ``Na``). Keys are not sorted or
         deduplicated; periods may have gaps, overlap, or nest.
         """
         key_tuple = tuple(keys)
