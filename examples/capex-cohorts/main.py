@@ -127,7 +127,7 @@ for spend_key in years[:3]:
     cohorts.append(schedule)
 
 statement = stmt.Stmt(capex, stmt.Total(total_depreciation, cohorts))
-print(formatter.fixed_width_table(statement.values_for_periods(ctx, years)))
+print(formatter.fixed_width_table(statement.values(ctx, years)))
 print(f"\nCapex @ partial {partial}: {ctx.get_at(capex, partial)}")
 print(f"Total dep @ partial {partial}: {ctx.get_at(total_depreciation, partial)}")
 print(f"First cohort @ partial {partial}: {ctx.get_at(cohorts[0], partial)}")

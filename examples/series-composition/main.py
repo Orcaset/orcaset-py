@@ -75,7 +75,7 @@ print(f"{'-' * 58}\nGross profit @ {q}: \t{ctx.get_at(gross_profit, q):>10.2f}")
 quarters = Period.list(date(2026, 1, 1), relativedelta(months=3), date(2027, 1, 1))
 quarterly_statement = stmt.Stmt(
     stmt.Total(income, [stmt.Total(gross_profit, [revenue, cogs]), rd, sga])
-).values_for_periods(ctx, quarters)
+).values(ctx, quarters)
 
 print("\nQuarterly statement")
 print(formatter.fixed_width_table(quarterly_statement))

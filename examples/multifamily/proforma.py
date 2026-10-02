@@ -127,4 +127,4 @@ proforma = stmt.Stmt(
 periods = Period.list(date(2016, 12, 31), relativedelta(years=1), date(2023, 12, 31))
 
 ctx = Context()
-print(formatter.fixed_width_table(proforma.values_for_periods(ctx, periods)))
+print(formatter.fixed_width_table(proforma.values(ctx, periods)))

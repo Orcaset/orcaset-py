@@ -10,14 +10,15 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from io import StringIO
+from typing import Any
 
+from orcaset.maybe import isna
 from orcaset.period import Period
 from orcaset.stmt import (
-    DateValue,
     GroupRow,
     LineRow,
-    PeriodValue,
     StatementResult,
+    StmtKey,
     StmtRow,
     StmtValue,
     TotalRow,
@@ -25,16 +26,18 @@ from orcaset.stmt import (
 
 __all__ = [
     "DateFormatter",
+    "TypeFormatters",
     "ValueFormatter",
     "csv_table",
     "fixed_width_table",
+    "format_value",
     "markdown_table",
 ]
 
 type ValueFormatter = Callable[[float | None], str]
+type TypeFormatters = Mapping[type[Any], Callable[[Any], str]]
 type DateFormatter = Callable[[date], str]
-type _TableColumn = _InitialDateColumn | _PeriodColumn
-type _ColumnKey = date | Period
+type _CellFormatter = Callable[[object], str]
 type _RenderedRow = tuple[str, ...] | _HorizontalRule | _Spacer
 
 
@@ -43,23 +46,20 @@ def fixed_width_table(
     *,
     date_formatter: DateFormatter | None = None,
     value_formatter: ValueFormatter | None = None,
+    type_formatters: TypeFormatters | None = None,
     indent: int = 2,
     padding: int = 2,
 ) -> str:
     """
-    Format a period-based statement result as a fixed-width table.
+    Format a statement result as a fixed-width table.
 
-    Date-keyed values align to the initial period start or to period end dates.
-    Raises ``ValueError`` if the result has no periods or contains date values at
-    other dates.
+    Each key in ``result.keys`` is one value column, in order. A period column's
+    headers are its start and end; a date column has a blank start and the date
+    as its end. Each value lands in the column matching its ``key``; a column
+    with no value is blank. Cells are printed with ``format_value``. Raises
+    ``ValueError`` if a value's key is not in ``result.keys``.
     """
-    if not result.periods:
-        raise ValueError("fixed_width_table requires a statement result with periods")
-
-    date_format = date_formatter or _format_date
-    value_format = value_formatter or _format_value
-    columns = _period_columns(result.periods)
-    table = _render_table(result.rows, columns, date_format, value_format, indent)
+    table = _render_table(result, date_formatter, value_formatter, type_formatters, indent)
     widths = _column_widths(table)
 
     lines = [
@@ -84,21 +84,18 @@ def csv_table(
     *,
     date_formatter: DateFormatter | None = None,
     value_formatter: ValueFormatter | None = None,
+    type_formatters: TypeFormatters | None = None,
 ) -> str:
     """
-    Format a period-based statement result as CSV.
+    Format a statement result as CSV.
 
-    Date-keyed values align to the initial period start or to period end dates.
-    Raises ``ValueError`` if the result has no periods or contains date values at
-    other dates.
+    Each key in ``result.keys`` is one value column, in order. A period column's
+    headers are its start and end; a date column has a blank start and the date
+    as its end. Each value lands in the column matching its ``key``; a column
+    with no value is blank. Cells are printed with ``format_value``. Raises
+    ``ValueError`` if a value's key is not in ``result.keys``.
     """
-    if not result.periods:
-        raise ValueError("csv_table requires a statement result with periods")
-
-    date_format = date_formatter or _format_date
-    value_format = value_formatter or _format_value
-    columns = _period_columns(result.periods)
-    table = _render_table(result.rows, columns, date_format, value_format, indent=0)
+    table = _render_table(result, date_formatter, value_formatter, type_formatters, 0)
 
     output = StringIO()
     writer = csv.writer(output, lineterminator="\n")
@@ -121,22 +118,19 @@ def markdown_table(
     *,
     date_formatter: DateFormatter | None = None,
     value_formatter: ValueFormatter | None = None,
+    type_formatters: TypeFormatters | None = None,
     indent: int = 2,
 ) -> str:
     """
-    Format a period-based statement result as a Markdown table.
+    Format a statement result as a Markdown table.
 
-    Date-keyed values align to the initial period start or to period end dates.
-    Raises ``ValueError`` if the result has no periods or contains date values at
-    other dates.
+    Each key in ``result.keys`` is one value column, in order. A period column's
+    headers are its start and end; a date column has a blank start and the date
+    as its end. Each value lands in the column matching its ``key``; a column
+    with no value is blank. Cells are printed with ``format_value``. Raises
+    ``ValueError`` if a value's key is not in ``result.keys``.
     """
-    if not result.periods:
-        raise ValueError("markdown_table requires a statement result with periods")
-
-    date_format = date_formatter or _format_date
-    value_format = value_formatter or _format_value
-    columns = _period_columns(result.periods)
-    table = _render_table(result.rows, columns, date_format, value_format, indent)
+    table = _render_table(result, date_formatter, value_formatter, type_formatters, indent)
     column_count = len(_column_widths(table))
 
     lines = [
@@ -160,16 +154,6 @@ def markdown_table(
 
 
 @dataclass(slots=True)
-class _InitialDateColumn:
-    date: date
-
-
-@dataclass(slots=True)
-class _PeriodColumn:
-    period: Period
-
-
-@dataclass(slots=True)
 class _HorizontalRule:
     pass
 
@@ -187,58 +171,51 @@ class _RenderedTable:
 
 
 def _render_table(
-    rows: Sequence[StmtRow],
-    columns: Sequence[_TableColumn],
-    date_formatter: DateFormatter,
-    value_formatter: ValueFormatter,
+    result: StatementResult,
+    date_formatter: DateFormatter | None,
+    value_formatter: ValueFormatter | None,
+    type_formatters: TypeFormatters | None,
     indent: int,
 ) -> _RenderedTable:
+    date_format = date_formatter or _format_date
+    columns = result.keys
+
+    def cell_format(value: object) -> str:
+        return format_value(
+            value, value_formatter=value_formatter, type_formatters=type_formatters
+        )
+
     return _RenderedTable(
-        start_header=_start_header(columns, date_formatter),
-        end_header=_end_header(columns, date_formatter),
-        rows=tuple(_render_rows(rows, columns, value_formatter, indent)),
-    )
-
-
-def _period_columns(periods: Sequence[Period]) -> tuple[_TableColumn, ...]:
-    return (
-        _InitialDateColumn(periods[0].start),
-        *(_PeriodColumn(period) for period in periods),
+        start_header=_start_header(columns, date_format),
+        end_header=_end_header(columns, date_format),
+        rows=tuple(_render_rows(result.rows, columns, cell_format, indent)),
     )
 
 
 def _start_header(
-    columns: Sequence[_TableColumn],
+    columns: Sequence[StmtKey],
     date_formatter: DateFormatter,
 ) -> tuple[str, ...]:
     return (
         "Start",
-        *(
-            "" if isinstance(column, _InitialDateColumn) else date_formatter(column.period.start)
-            for column in columns
-        ),
+        *(date_formatter(key.start) if isinstance(key, Period) else "" for key in columns),
     )
 
 
 def _end_header(
-    columns: Sequence[_TableColumn],
+    columns: Sequence[StmtKey],
     date_formatter: DateFormatter,
 ) -> tuple[str, ...]:
     return (
         "End",
-        *(
-            date_formatter(column.date)
-            if isinstance(column, _InitialDateColumn)
-            else date_formatter(column.period.end)
-            for column in columns
-        ),
+        *(date_formatter(key.end if isinstance(key, Period) else key) for key in columns),
     )
 
 
 def _render_rows(
     rows: Sequence[StmtRow],
-    columns: Sequence[_TableColumn],
-    value_formatter: ValueFormatter,
+    columns: Sequence[StmtKey],
+    cell_format: _CellFormatter,
     indent: int,
     level: int = 0,
 ) -> list[_RenderedRow]:
@@ -246,19 +223,19 @@ def _render_rows(
     for row in rows:
         if isinstance(row, LineRow):
             rendered.append(
-                _value_row(row.name, row.values, columns, value_formatter, indent, level)
+                _value_row(row.name, row.values, columns, cell_format, indent, level)
             )
         elif isinstance(row, TotalRow):
-            rendered.extend(_render_rows(row.children, columns, value_formatter, indent, level + 1))
+            rendered.extend(_render_rows(row.children, columns, cell_format, indent, level + 1))
             rendered.append(_HorizontalRule())
             rendered.append(
-                _value_row(row.name, row.values, columns, value_formatter, indent, level)
+                _value_row(row.name, row.values, columns, cell_format, indent, level)
             )
         elif isinstance(row, GroupRow):
             rendered.append(_Spacer())
             if row.label is not None:
                 rendered.append(_label_row(row.label, columns, indent, level))
-            rendered.extend(_render_rows(row.children, columns, value_formatter, indent, level + 1))
+            rendered.extend(_render_rows(row.children, columns, cell_format, indent, level + 1))
             rendered.append(_Spacer())
     return rendered
 
@@ -266,70 +243,40 @@ def _render_rows(
 def _value_row(
     name: str,
     values: Sequence[StmtValue],
-    columns: Sequence[_TableColumn],
-    value_formatter: ValueFormatter,
+    columns: Sequence[StmtKey],
+    cell_format: _CellFormatter,
     indent: int,
     level: int,
 ) -> tuple[str, ...]:
-    values_by_column = _values_by_column(values, columns)
+    values_by_key = _values_by_key(values, columns)
     return (
         _label(name, indent, level),
-        *(
-            ""
-            if _column_key(column) not in values_by_column
-            else value_formatter(values_by_column[_column_key(column)])
-            for column in columns
-        ),
+        *(cell_format(values_by_key[key]) if key in values_by_key else "" for key in columns),
     )
 
 
 def _label_row(
     name: str,
-    columns: Sequence[_TableColumn],
+    columns: Sequence[StmtKey],
     indent: int,
     level: int,
 ) -> tuple[str, ...]:
     return (_label(name, indent, level), *("" for _ in columns))
 
 
-def _values_by_column(
+def _values_by_key(
     values: Sequence[StmtValue],
-    columns: Sequence[_TableColumn],
-) -> Mapping[_ColumnKey, float | None]:
-    valid_keys = {_column_key(column) for column in columns}
-    mapped: dict[_ColumnKey, float | None] = {}
+    columns: Sequence[StmtKey],
+) -> Mapping[StmtKey, object]:
+    valid_keys = set(columns)
+    mapped: dict[StmtKey, object] = {}
 
     for value in values:
-        key = _value_key(value, columns)
-        if key not in valid_keys:
+        if value.key not in valid_keys:
             raise ValueError(f"Statement value does not align to a table column: {value!r}")
-        mapped[key] = value.value
+        mapped[value.key] = value.value
 
     return mapped
-
-
-def _value_key(value: StmtValue, columns: Sequence[_TableColumn]) -> _ColumnKey:
-    if isinstance(value, PeriodValue):
-        return value.period
-    if isinstance(value, DateValue):
-        return _date_key(value.date, columns)
-
-    raise TypeError(f"Unsupported statement value: {value!r}")
-
-
-def _date_key(dt: date, columns: Sequence[_TableColumn]) -> _ColumnKey:
-    for column in columns:
-        if isinstance(column, _InitialDateColumn) and column.date == dt:
-            return column.date
-        if isinstance(column, _PeriodColumn) and column.period.end == dt:
-            return column.period
-    return dt
-
-
-def _column_key(column: _TableColumn) -> _ColumnKey:
-    if isinstance(column, _InitialDateColumn):
-        return column.date
-    return column.period
 
 
 def _label(name: str, indent: int, level: int) -> str:
@@ -399,6 +346,34 @@ def _escape_markdown_cell(value: str) -> str:
     if not leading_spaces:
         return escaped
     return f"{'&nbsp;' * leading_spaces}{escaped[leading_spaces:]}"
+
+
+def format_value(
+    value: object,
+    *,
+    value_formatter: ValueFormatter | None = None,
+    type_formatters: TypeFormatters | None = None,
+) -> str:
+    """
+    Format one statement value for display.
+
+    ``None`` and ``Na`` print as ``value_formatter(None)``. Otherwise the first
+    match wins: a ``type_formatters`` entry for the value's type or its nearest
+    base class, then ``value_formatter(float(value))`` when the type defines
+    ``__float__``, then ``str(value)``. ``value_formatter`` defaults to two
+    decimal places with thousands separators and a blank for missing values.
+    """
+    value_format = value_formatter or _format_value
+    if value is None or isna(value):
+        return value_format(None)
+    if type_formatters:
+        for cls in type(value).__mro__:
+            type_format = type_formatters.get(cls)
+            if type_format is not None:
+                return type_format(value)
+    if hasattr(type(value), "__float__"):
+        return value_format(float(value))  # type: ignore[arg-type]
+    return str(value)
 
 
 def _format_value(value: float | None) -> str:

@@ -4,10 +4,14 @@
 """Statement views over period- and date-keyed series.
 
 Build a ``Stmt`` from line items, ``Total``s, and ``Group``s, then evaluate with
-``values_for_periods`` / ``values_for_dates``. Period-keyed series answer at each
-requested period; date-keyed series answer at period boundaries (or at the
-requested dates). ``Na`` becomes ``None`` in the structured result so formatters
-can treat misses uniformly.
+``values`` at any mix of periods and dates.
+
+Every row holds one ``StmtValue`` per requested key, in key order, and each
+value names its ``key``. At a ``Period`` key, period-keyed series are queried
+at the period and date-keyed series at the period's end. At a ``date`` key,
+date-keyed series are queried at the date and period-keyed series are not
+queried. Periods need not be sorted, contiguous, or disjoint. Each value keeps
+the series, the key it was queried at, and the model value unchanged.
 """
 
 from __future__ import annotations
@@ -18,19 +22,18 @@ from datetime import date
 from typing import Any, Literal
 
 from orcaset.context import Context
-from orcaset.maybe import isna
+from orcaset.maybe import Na
 from orcaset.period import Period
 from orcaset.series import Series
 
 __all__ = [
-    "DateValue",
     "Group",
     "GroupRow",
     "LineRow",
-    "PeriodValue",
     "StatementResult",
     "Stmt",
     "StmtItem",
+    "StmtKey",
     "StmtRow",
     "StmtSeries",
     "StmtValue",
@@ -40,20 +43,27 @@ __all__ = [
 
 type StmtSeries = Series[Any, Any, Any]
 type StmtItem = StmtSeries | Total | Group
-type StmtValue = PeriodValue | DateValue
+type StmtKey = Period | date
 type _KeyKind = Literal["period", "date", "empty"]
 
 
 @dataclass(slots=True)
-class PeriodValue:
-    period: Period
-    value: float | None
+class StmtValue:
+    """
+    One statement cell: ``series`` evaluated for the column ``key``.
 
+    ``query`` is the key the series was actually queried at: ``key`` itself, a
+    period's end for a date-keyed series, or ``None`` when a period-keyed series
+    is not queried at a date column. ``value`` is the model value unchanged, so
+    units and citations survive; it is ``Na`` on a miss or when not queried.
+    When ``query`` is set, ``ctx.dependencies(series, query)`` traces where the
+    value came from.
+    """
 
-@dataclass(slots=True)
-class DateValue:
-    date: date
-    value: float | None
+    key: StmtKey
+    series: StmtSeries
+    query: StmtKey | None
+    value: object
 
 
 @dataclass(slots=True)
@@ -82,15 +92,24 @@ type StmtRow = LineRow | TotalRow | GroupRow
 
 @dataclass(slots=True)
 class StatementResult:
+    """Resolved statement rows and the keys they were evaluated at, in input order."""
+
     rows: tuple[StmtRow, ...]
-    periods: tuple[Period, ...]
-    dates: tuple[date, ...]
+    keys: tuple[StmtKey, ...]
+
+    @property
+    def periods(self) -> tuple[Period, ...]:
+        return tuple(key for key in self.keys if isinstance(key, Period))
+
+    @property
+    def dates(self) -> tuple[date, ...]:
+        return tuple(key for key in self.keys if not isinstance(key, Period))
 
 
 @dataclass(slots=True)
 class Total:
     series: StmtSeries
-    items: tuple[StmtItem, ...] = ()
+    items: tuple[StmtItem, ...]
 
     def __init__(self, series: StmtSeries, items: Sequence[StmtItem]) -> None:
         self.series = series
@@ -116,115 +135,70 @@ class Stmt:
     def values(
         self,
         ctx: Context,
-        periods: Sequence[Period],
+        keys: Sequence[StmtKey],
     ) -> StatementResult:
-        return self.values_for_periods(ctx, periods)
+        """
+        Evaluate the statement with one value per key, in the order given.
 
-    def values_for_periods(
-        self,
-        ctx: Context,
-        periods: Sequence[Period],
-    ) -> StatementResult:
-        period_tuple = tuple(periods)
-        date_tuple = _period_boundaries(period_tuple)
-        rows = tuple(_period_row(ctx, item, period_tuple, date_tuple) for item in self.items)
-        return StatementResult(rows=rows, periods=period_tuple, dates=date_tuple)
-
-    def values_for_dates(
-        self,
-        ctx: Context,
-        dates: Sequence[date],
-    ) -> StatementResult:
-        date_tuple = tuple(dict.fromkeys(dates))
-        rows = tuple(_date_row(ctx, item, date_tuple) for item in self.items)
-        return StatementResult(rows=rows, periods=(), dates=date_tuple)
+        Each key is a ``Period`` or a ``date``, and the two may be mixed. At a
+        period, period-keyed series answer at the period and date-keyed series
+        answer at the period's end. At a date, date-keyed series answer at the
+        date and period-keyed series yield ``None``. Keys are not sorted or
+        deduplicated; periods may have gaps, overlap, or nest.
+        """
+        key_tuple = tuple(keys)
+        rows = tuple(_row(ctx, item, key_tuple) for item in self.items)
+        return StatementResult(rows=rows, keys=key_tuple)
 
 
-def _period_row(
+def _row(
     ctx: Context,
     item: StmtItem,
-    periods: Sequence[Period],
-    dates: Sequence[date],
+    keys: Sequence[StmtKey],
 ) -> StmtRow:
-    if isinstance(item, Total):
-        return TotalRow(
-            name=item.series.name,
-            series=item.series,
-            values=_series_period_values(ctx, item.series, periods, dates),
-            children=tuple(_period_row(ctx, child, periods, dates) for child in item.items),
-        )
-
-    if isinstance(item, Group):
-        return GroupRow(
-            label=item.label,
-            children=tuple(_period_row(ctx, child, periods, dates) for child in item.items),
-        )
-
-    return LineRow(
-        name=item.name,
-        series=item,
-        values=_series_period_values(ctx, item, periods, dates),
-    )
-
-
-def _date_row(
-    ctx: Context,
-    item: StmtItem,
-    dates: Sequence[date],
-) -> StmtRow:
-    if isinstance(item, Total):
-        return TotalRow(
-            name=item.series.name,
-            series=item.series,
-            values=_series_date_values(ctx, item.series, dates),
-            children=tuple(_date_row(ctx, child, dates) for child in item.items),
-        )
-
-    if isinstance(item, Group):
-        return GroupRow(
-            label=item.label,
-            children=tuple(_date_row(ctx, child, dates) for child in item.items),
-        )
-
-    return LineRow(
-        name=item.name,
-        series=item,
-        values=_series_date_values(ctx, item, dates),
-    )
+    match item:
+        case Total():
+            return TotalRow(
+                name=item.series.name,
+                series=item.series,
+                values=_series_values(ctx, item.series, keys),
+                children=tuple(_row(ctx, child, keys) for child in item.items),
+            )
+        case Group():
+            return GroupRow(
+                label=item.label,
+                children=tuple(_row(ctx, child, keys) for child in item.items),
+            )
+        case Series():
+            return LineRow(
+                name=item.name,
+                series=item,
+                values=_series_values(ctx, item, keys),
+            )
+        case _:
+            raise TypeError(f"statement items must be Series, Total, or Group, got {type(item)!r}")
 
 
-def _series_period_values(
+def _series_values(
     ctx: Context,
     series: StmtSeries,
-    periods: Sequence[Period],
-    dates: Sequence[date],
+    keys: Sequence[StmtKey],
 ) -> tuple[StmtValue, ...]:
     kind = _key_kind(ctx, series)
-    if kind == "date":
-        return _date_series_values(ctx, series, dates)
-    # Period-keyed (or empty) series answer at each requested period.
-    return tuple(
-        PeriodValue(period, _optional_float(ctx.get_at(series, period))) for period in periods
-    )
+    return tuple(_key_value(ctx, series, kind, key) for key in keys)
 
 
-def _series_date_values(
-    ctx: Context,
-    series: StmtSeries,
-    dates: Sequence[date],
-) -> tuple[DateValue, ...]:
-    kind = _key_kind(ctx, series)
-    if kind == "period":
-        return tuple(DateValue(dt, None) for dt in dates)
-    return _date_series_values(ctx, series, dates)
+def _key_value(ctx: Context, series: StmtSeries, kind: _KeyKind, key: StmtKey) -> StmtValue:
+    query = _query_key(kind, key)
+    value = Na if query is None else ctx.get_at(series, query)
+    return StmtValue(key=key, series=series, query=query, value=value)
 
 
-def _date_series_values(
-    ctx: Context,
-    series: StmtSeries,
-    dates: Sequence[date],
-) -> tuple[DateValue, ...]:
-    return tuple(DateValue(dt, _optional_float(ctx.get_at(series, dt))) for dt in dates)
+def _query_key(kind: _KeyKind, key: StmtKey) -> StmtKey | None:
+    if isinstance(key, Period):
+        # Date-keyed series report the closing value at the period's end.
+        return key.end if kind == "date" else key
+    return None if kind == "period" else key
 
 
 def _key_kind(ctx: Context, series: StmtSeries) -> _KeyKind:
@@ -239,15 +213,3 @@ def _key_kind(ctx: Context, series: StmtSeries) -> _KeyKind:
     raise TypeError(
         f"statement series {series.name!r} must be keyed by Period or date, got {type(key)!r}"
     )
-
-
-def _optional_float(value: object) -> float | None:
-    if isna(value):
-        return None
-    if value is None:
-        return None
-    return float(value)  # type: ignore[arg-type]
-
-
-def _period_boundaries(periods: Sequence[Period]) -> tuple[date, ...]:
-    return tuple(sorted({dt for period in periods for dt in (period.start, period.end)}))

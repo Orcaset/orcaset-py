@@ -31,35 +31,44 @@ profit = ops.add("Profit", revenue, costs, merge_keys=period_union)
 
 
 if __name__ == "__main__":
+    from dateutil.relativedelta import relativedelta
+
     from orcaset import Context, formatter, stmt
 
     ctx = Context()
-    periods = Period.list(date(2025, 12, 31), relativedelta(years=1), date(2026, 2, 28))
+    periods = Period.list(date(2025, 12, 31), relativedelta(months=1), date(2026, 2, 28))
     statement = stmt.Stmt(
         stmt.Group(stmt.Total(profit, [revenue, costs]), label="Operating results")
     )
-    result = statement.values_for_periods(ctx, periods)
+    result = statement.values(ctx, periods)
     print(formatter.fixed_width_table(result))
 ```
 
-For recurring report intervals, create a bounded `Period.list(start, offset, end)` or take a finite slice of `Period.seq(...)`. Keep the report periods in chronological order.
+For recurring report intervals, create a bounded `Period.list(start, offset, end)` or take a finite slice of `Period.seq(...)`. Columns appear in the order the keys are given.
 
 ## Periods, dates, and query behavior
 
-`statement.values_for_periods(ctx, periods)` returns a `stmt.StatementResult` containing nested rows, the requested periods, and their unique sorted boundary dates. `statement.values(ctx, periods)` is an alias.
+`statement.values(ctx, keys)` takes a sequence of keys, each a `Period` or a `date`, and the two may be mixed. It returns a `stmt.StatementResult` with nested rows. `result.keys` holds the keys in input order, and every `LineRow` and `TotalRow` has one `stmt.StmtValue` per key, in key order. Each value carries its `key`, so match values to keys explicitly rather than by position. `result.periods` and `result.dates` hold the `Period` and `date` keys.
 
-- A period-keyed series is queried at each requested `Period`. A series' query policy determines how to interpolate and aggregate values when query periods do not align with underlying period boundaries.
-- A date-keyed series is queried at every distinct start and end date in the requested periods. Built-in tables align these values to an initial-date column and the period-end columns. Use this to show a single balance series at opening and closing dates.
+How a series is queried depends on the column key and on the series' own key type:
 
-Use contiguous periods for mixed balance-and-flow tables. A gap can introduce a start date that is neither the first start nor another period's end, so its date-keyed value has no table column and the formatter raises `ValueError`.
+- At a `Period` key, a period-keyed series is queried at the period. Its query policy determines how to interpolate and aggregate values when query periods do not align with underlying period boundaries.
+- At a `Period` key, a date-keyed series is queried at the period's **end**. Periods that share an end both show that closing value. No value is taken at a period's start.
+- At a `date` key, a date-keyed series is queried at the date. A period-keyed series is not queried; its value is `Na`, not a point-in-time conversion.
 
-`statement.values_for_dates(ctx, dates)` queries date-keyed series at the requested dates, deduplicated in input order. Period-keyed rows have `None` values in this view; they are not converted to point-in-time values. The built-in table formatters require a nonempty period-based result, so render a dates-only result with a custom exporter.
+Each `StmtValue` records where it came from: `key` (the column), `series`, `query` (the key the series was queried at, or `None` when not queried), and `value` (the model value unchanged, `Na` on a miss). `ctx.dependencies(value.series, value.query)` traces a cell back through the model.
+
+Keys are not sorted, deduplicated, or checked for contiguity. Out-of-order periods, gaps, overlaps, and nested periods (four quarters followed by their year) are all valid and produce one column each. To show an opening balance, put the opening date before the periods:
+
+```py
+result = statement.values(ctx, [periods[0].start, *periods])
+```
 
 ## Formats and missing values
 
-`formatter.fixed_width_table`, `formatter.markdown_table`, and `formatter.csv_table` return strings. Each accepts `date_formatter: Callable[[date], str]` and `value_formatter: Callable[[float | None], str]`. Fixed-width and Markdown tables also accept `indent`; fixed-width tables accept `padding`.
+`formatter.fixed_width_table`, `formatter.markdown_table`, and `formatter.csv_table` return strings. Each key is one value column, in order. A period column's `Start` and `End` headers are that period's start and end dates; a date column has a blank `Start` and the date as `End`. Cells align by key. A dates-only result renders with a blank `Start` row. Each accepts `date_formatter: Callable[[date], str]`, `value_formatter: Callable[[float | None], str]`, and `type_formatters: Mapping[type, Callable[[Any], str]]`. Cells print with `formatter.format_value`: `None` and `Na` go to `value_formatter(None)`; otherwise a `type_formatters` entry for the value's type (or nearest base class) wins, then `value_formatter(float(value))` when the type defines `__float__`, then `str(value)`. Fixed-width and Markdown tables also accept `indent`; fixed-width tables accept `padding`.
 
-The defaults use ISO dates, two decimal places with thousands separators, and a blank for missing values. Model `Na` values become `None` in statement results. Preserve the distinction between missing values and genuine zeroes; use an explicit missing-value label when blanks could mislead.
+The defaults use ISO dates, two decimal places with thousands separators, and a blank for missing values. Preserve the distinction between missing values and genuine zeroes; use an explicit missing-value label when blanks could mislead.
 
 Add the following inside the example's existing `__main__` block to write CSV using a format suitable for numeric consumers:
 
@@ -84,8 +93,8 @@ One value formatter applies to the whole table and receives no row identity. Use
 
 ## Custom values and standalone metrics
 
-Statement values are converted with `float(value)`; `Na` and `None` become `None`. Citation-bearing float subclasses therefore lose their attached metadata in the resolved statement. Unit wrappers without `__float__` cannot be rendered directly. Extract a numeric reporting view explicitly, or use a custom exporter that preserves units and source fields. See [values.md](values.md) for the underlying value patterns.
+`StmtValue.value` is the model value unchanged, so citation-bearing float subclasses and unit wrappers keep their metadata for custom exporters. For display, pass `type_formatters` to print a wrapper type (for example `{USD: lambda v: f"${v.amount:,.0f}"}`). Without one, a type defining `__float__` prints as a number and anything else prints with `str()`. See [values.md](values.md) for the underlying value patterns.
 
-`Stmt` accepts series, totals, and groups. Resolve standalone metrics such as IRR or MOIC with `ctx.get(metric)` and format them separately; do NOT fabricate a time series just to put a scalar into a table. For custom exports, inspect `LineRow`, `TotalRow`, and `GroupRow`, then `PeriodValue` or `DateValue` within their values. Groups contain children; totals contain both their own values and children.
+`Stmt` accepts series, totals, and groups. Resolve standalone metrics such as IRR or MOIC with `ctx.get(metric)` and format them separately; do NOT fabricate a time series just to put a scalar into a table. For custom exports, inspect `LineRow`, `TotalRow`, and `GroupRow`, then the `StmtValue`s within their values. Groups contain children; totals contain both their own values and children.
 
 Before delivering a report, apply [verification.md](verification.md), inspect the rendered dates and signs, and confirm that displayed totals use the verified model nodes.

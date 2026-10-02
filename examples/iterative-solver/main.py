@@ -65,5 +65,5 @@ if __name__ == "__main__":
     from orcaset import Context, formatter, stmt
 
     ctx = Context()
-    periods = list(islice(Period.seq(START_DATE, MONTH), 4))
-    print(formatter.fixed_width_table(stmt.Stmt(debt, interest).values_for_periods(ctx, periods)))
+    periods = [START_DATE, *islice(Period.seq(START_DATE, MONTH), 4)]
+    print(formatter.fixed_width_table(stmt.Stmt(debt, interest).values(ctx, periods)))

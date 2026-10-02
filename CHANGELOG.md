@@ -19,11 +19,47 @@ change between minor releases.
 - `query.avg_fill(yf, fill)` treats time the cells don't cover as the level
   `fill`, so a day-count-weighted average still spans the full query period.
   A complete miss is `fill`. An `Na` cell still propagates.
+- `Stmt.values(ctx, keys)` accepts any mix of `Period` and `date` keys and
+  returns one value per key, in input order. At a date key, date-keyed series
+  answer at the date and period-keyed series yield `None`.
+- `StatementResult.keys` holds the requested keys in input order.
+- `stmt.StmtValue` is now one cell class carrying `key` (the column), `series`,
+  `query` (the key the series was queried at, or `None` when it was not
+  queried), and `value` (the model value unchanged, `Na` on a miss).
+  `ctx.dependencies(value.series, value.query)` traces a cell back through the
+  model. Values are no longer converted to `float`, so unit wrappers and
+  citation-bearing values survive into the statement result.
+- `formatter.format_value(value, *, value_formatter, type_formatters)` prints a
+  statement value: `None`/`Na` via `value_formatter(None)`, then a
+  `type_formatters` entry for the value's type or nearest base class, then
+  `value_formatter(float(value))` when the type defines `__float__`, then
+  `str(value)`. The table formatters accept `type_formatters` and print cells
+  this way. `formatter.TypeFormatters` is the mapping type.
+- `stmt.StmtKey`, the `Period | date` key type.
+- `Stmt.values` raises `TypeError` for an item that is not a `Series`,
+  `Total`, or `Group`.
 
 ### Changed
 
 - `Context.rule_dependencies` is removed. `Context.dependencies` takes either
   a keyed rule and its key, or an unkeyed rule alone.
+- At period keys, `Stmt.values` returns one value per period, in the order
+  given. Periods are not sorted, deduplicated, or checked for contiguity, so
+  out-of-order, gapped, overlapping, and nested periods are all valid.
+  Date-keyed series are queried at each period's end and stored in that
+  period's column, instead of at the unique boundary dates, so periods that
+  share an end both show the closing value. No value is taken at the first
+  period's start.
+- `StatementResult` is built from `rows` and `keys`. `periods` and `dates` are
+  now read-only properties derived from `keys`, and `dates` is empty for
+  period-only results.
+- `fixed_width_table`, `csv_table`, and `markdown_table` print one value column
+  per key in `result.keys`. A period column's headers are its start and end; a
+  date column has a blank start and the date as its end. Each value is placed
+  in the column matching its `key`. Period tables no longer get an automatic opening-date column.
+  Pass the opening date as a leading key instead:
+  `values(ctx, [start, *periods])`. Date-only results now render, with a blank
+  start row.
 - `query.accrue` and `query.avg` return `Na` when any date in the query falls
   outside the cells, including a gap between cells. A cell may still extend
   past the query.
@@ -34,6 +70,10 @@ change between minor releases.
 
 ### Removed
 
+- `stmt.PeriodValue` and `stmt.DateValue`. Rows hold `stmt.StmtValue` cells,
+  each naming its key.
+- `Stmt.values_for_periods` and `Stmt.values_for_dates`. Use `Stmt.values`,
+  which takes periods, dates, or both. It does not deduplicate dates.
 - `query.accrue_or`. Use `accrue_drop` to ignore uncovered time. For a
   non-zero fill, accrue a separate series over the gaps and combine it.
 

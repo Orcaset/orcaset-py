@@ -84,10 +84,10 @@ if __name__ == "__main__":
         date(2026, 12, 31), relativedelta(years=1, day=31), date(2032, 12, 31)
     )
     ctx = Context()
-    html = html_formatter.html_table(proforma.values_for_periods(ctx, display_periods), title=title)
+    html = html_formatter.html_table(proforma.values(ctx, display_periods), title=title)
     with open("proforma.html", "w", encoding="utf-8") as f:
         f.write(html)
 
     from orcaset import formatter
 
-    print(formatter.fixed_width_table(proforma.values_for_periods(ctx, display_periods)))
+    print(formatter.fixed_width_table(proforma.values(ctx, display_periods)))

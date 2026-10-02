@@ -322,7 +322,7 @@ if __name__ == "__main__":
         result = ctx.get(irr)
         rate = "N/A" if isna(result) else f"{result:.4%}"
         sections.append(
-            f"{title}\n{formatter.fixed_width_table(table.values_for_periods(ctx, periods))}\n{irr.name}: {rate}"
+            f"{title}\n{formatter.fixed_width_table(table.values(ctx, [dates[0], *periods]))}\n{irr.name}: {rate}"
         )
         for label, metric, spec in (
             ("Total initial investment", initial, ",.2f"),
@@ -353,6 +353,6 @@ if __name__ == "__main__":
     sections.append("Sources and uses at acquisition\n" + "\n".join(uses) + "\n" + "-" * 47 + "\n" + "\n".join(sources))
     sections.append(
         "Debt metrics (coverage ratios in x)\n"
-        + formatter.fixed_width_table(debt_metrics.values_for_periods(ctx, periods))
+        + formatter.fixed_width_table(debt_metrics.values(ctx, periods))
     )
     print("\n\n".join(sections))

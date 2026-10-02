@@ -32,38 +32,38 @@ Performance file output:
 
 ```txt
 Unlevered investment performance
-Start                                             2026-12-31    2027-12-31    2028-12-31     2029-12-31
-End                                 2026-12-31    2027-12-31    2028-12-31    2029-12-31     2030-12-31
+Start                                             2026-12-31    2027-12-31    2028-12-31    2029-12-31     2030-12-31
+End                                 2026-12-31    2027-12-31    2028-12-31    2029-12-31    2030-12-31     2031-12-31
   Purchase price                -25,000,000.00
   Buying costs                     -250,000.00
   Initial reserve funding           -62,500.00
-  Unlevered property cash flow            0.00  1,746,656.80  1,841,994.05  1,309,355.58   1,511,918.48
-  Sale price                                                                              34,561,864.25
-  Selling costs                                                                             -518,427.96
--------------------------------------------------------------------------------------------------------
-Total unlevered cash flow       -25,312,500.00  1,746,656.80  1,841,994.05  1,309,355.58  35,555,354.77
-Unlevered IRR: 13.47%
+  Unlevered property cash flow            0.00  1,746,656.80  1,841,994.05  1,309,355.58  1,511,918.48   2,073,711.85
+  Sale price                                                                                            35,684,042.39
+  Selling costs                                                                                           -535,260.64
+---------------------------------------------------------------------------------------------------------------------
+Total unlevered cash flow       -25,312,500.00  1,746,656.80  1,841,994.05  1,309,355.58  1,511,918.48  37,222,493.61
+Unlevered IRR: 12.71%
 Total initial investment: 25,312,500.00
 Total capital contributed: 25,312,500.00
-Total return (cash distributions): 40,453,361.20
-MOIC: 1.60x
+Total return (cash distributions): 43,632,418.52
+MOIC: 1.72x
 
 Levered equity performance
-Start                                                 2026-12-31     2027-12-31     2028-12-31      2029-12-31
-End                                    2026-12-31     2027-12-31     2028-12-31     2029-12-31      2030-12-31
-  Total unlevered cash flow        -25,312,500.00   1,746,656.80   1,841,994.05   1,309,355.58   35,555,354.77
+Start                                                 2026-12-31     2027-12-31     2028-12-31     2029-12-31      2030-12-31
+End                                    2026-12-31     2027-12-31     2028-12-31     2029-12-31     2030-12-31      2031-12-31
+  Total unlevered cash flow        -25,312,500.00   1,746,656.80   1,841,994.05   1,309,355.58   1,511,918.48   37,222,493.61
   Debt draw                         15,000,000.00
   Loan issuance fees                  -225,000.00
-  Debt service                               0.00  -1,061,905.72  -1,067,155.72  -1,072,563.22   -1,078,132.94
-  Senior debt payoff                                                                            -11,371,153.62
-  Mezzanine debt payoff                                                                          -2,813,772.02
---------------------------------------------------------------------------------------------------------------
-Total levered cash flow to equity  -10,537,500.00     684,751.08     774,838.33     236,792.36   20,292,296.18
-Levered IRR: 21.48%
+  Debt service                               0.00  -1,061,905.72  -1,067,155.72  -1,072,563.22  -1,078,132.94   -1,083,869.76
+  Senior debt payoff                                                                                           -11,052,805.59
+  Mezzanine debt payoff                                                                                         -2,898,185.19
+-----------------------------------------------------------------------------------------------------------------------------
+Total levered cash flow to equity  -10,537,500.00     684,751.08     774,838.33     236,792.36     433,785.54   22,187,633.08
+Levered IRR: 19.59%
 Total initial investment: 10,537,500.00
 Total capital contributed: 10,537,500.00
-Total return (cash distributions): 21,988,677.96
-MOIC: 2.09x
+Total return (cash distributions): 24,317,800.40
+MOIC: 2.31x
 
 Sources and uses at acquisition
   Acquisition price               25,000,000.00
@@ -79,15 +79,15 @@ Total uses                        25,537,500.00
 Total sources                     25,537,500.00
 
 Debt metrics (coverage ratios in x)
-Start                                       2026-12-31  2027-12-31  2028-12-31  2029-12-31
-End                             2026-12-31  2027-12-31  2028-12-31  2029-12-31  2030-12-31
-Debt yield (%)                                   11.64       12.28        8.73       10.40
-NOI interest coverage                             2.00        2.12        1.52        1.82
-Adjusted NOI interest coverage                    2.00        2.12        1.52        1.76
-NOI DSCR                                          1.54        1.61        1.14        1.35
-Adjusted NOI DSCR                                 1.54        1.61        1.14        1.30
+Start                           2026-12-31  2027-12-31  2028-12-31  2029-12-31  2030-12-31
+End                             2027-12-31  2028-12-31  2029-12-31  2030-12-31  2031-12-31
+Debt yield (%)                       11.64       12.28        8.73       10.40       13.82
+NOI interest coverage                 2.00        2.12        1.52        1.82        2.44
+Adjusted NOI interest coverage        2.00        2.12        1.52        1.76        2.44
+NOI DSCR                              1.54        1.61        1.14        1.35        1.78
+Adjusted NOI DSCR                     1.54        1.61        1.14        1.30        1.78
 
 Going-in cap rate: 6.99%
-Gross exit value: 34,561,864.25
-Exit value / RSF: 1,382.47
+Gross exit value: 35,684,042.39
+Exit value / RSF: 1,427.36
 ```

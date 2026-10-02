@@ -266,7 +266,8 @@ ctx = Context()
 display_periods = Period.list(
     acquisition_date, year_offset, acquisition_date + hold_period + year_offset
 )
-print(formatter.fixed_width_table(statement.values_for_periods(ctx, display_periods)))
+# Lead with the acquisition date so date-keyed cash flows show a t0 column.
+print(formatter.fixed_width_table(statement.values(ctx, [acquisition_date, *display_periods])))
 
 cf_dates = [acquisition_date, *[period.end for period in sweep_periods]]
 cashflows: list[float] = []

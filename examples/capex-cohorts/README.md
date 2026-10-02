@@ -105,7 +105,7 @@ The total inherits the annual capex keys and uses `by_days` for partial-period q
 
 ```py
 statement = stmt.Stmt(capex, stmt.Total(total_depreciation, cohorts))
-print(formatter.fixed_width_table(statement.values_for_periods(ctx, years)))
+print(formatter.fixed_width_table(statement.values(ctx, years)))
 ```
 Both the individual schedules and total depreciation support partial-period queries. The script queries through June 30, 2027, when only the first cohort has started depreciating, so its contribution equals the total.
 
@@ -118,16 +118,16 @@ uv run python examples/capex-cohorts/main.py
 Output:
 
 ```txt
-Start                                  2025-12-31  2026-12-31  2027-12-31  2028-12-31
-End                        2025-12-31  2026-12-31  2027-12-31  2028-12-31  2029-12-31
-capex                                      100.00      100.00      100.00      100.00
-  Depreciation@2026-12-31                               50.00       50.00
-  Depreciation@2027-12-31                                           50.00       50.00
-  Depreciation@2028-12-31                                                       50.00
--------------------------------------------------------------------------------------
-total_depreciation                           0.00       50.00      100.00      100.00
+Start                      2025-12-31  2026-12-31  2027-12-31  2028-12-31
+End                        2026-12-31  2027-12-31  2028-12-31  2029-12-31
+capex                          100.00      100.00      100.00      100.00
+  Depreciation@2026-12-31                   50.00       50.00
+  Depreciation@2027-12-31                               50.00       50.00
+  Depreciation@2028-12-31                                           50.00
+-------------------------------------------------------------------------
+total_depreciation               0.00       50.00      100.00      100.00
 
 Capex @ partial Period(2025-12-31, 2027-06-30): 149.58904109589042
 Total dep @ partial Period(2025-12-31, 2027-06-30): 24.794520547945208
-First cohort @ partial Period(2025-12-31, 2027-06-30): 24.794520547945208
+First cohort @ partial Period(2025-12-31, 2027-06-30): Na
 ```

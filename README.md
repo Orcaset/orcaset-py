@@ -63,15 +63,15 @@ from orcaset.formatter import fixed_width_table
 
 ctx = Context()
 periods = list(islice(Period.seq(date(2026, 1, 1), relativedelta(months=1)), 4))
-statement = Stmt(Total(profit, [revenue, costs])).values_for_periods(ctx, periods)
+statement = Stmt(Total(profit, [revenue, costs])).values(ctx, periods)
 print(fixed_width_table(statement))
 
-# Start                  2026-01-01  2026-02-01  2026-03-01  2026-04-01
-# End        2026-01-01  2026-02-01  2026-03-01  2026-04-01  2026-05-01
-#   Revenue                  100.00      110.00      121.00      133.10
-#   Costs                    -50.00      -55.00      -60.50      -66.55
-# ---------------------------------------------------------------------
-# Profit                      50.00       55.00       60.50       66.55
+# Start      2026-01-01  2026-02-01  2026-03-01  2026-04-01
+# End        2026-02-01  2026-03-01  2026-04-01  2026-05-01
+#   Revenue      100.00      110.00      121.00      133.10
+#   Costs        -50.00      -55.00      -60.50      -66.55
+# ---------------------------------------------------------
+# Profit          50.00       55.00       60.50       66.55
 ```
 
 `orcaset` uses effect handlers to trace calculation dependencies and memoize values within a run context. Dependencies can be inspected through the context object.

@@ -51,7 +51,7 @@ def main() -> None:
     print()
 
     quarters = Period.list(OUTPUT_START, QUARTER, OUTPUT_END)
-    result = operating_revenue_stmt.values_for_periods(ctx, quarters)
+    result = operating_revenue_stmt.values(ctx, quarters)
     table = formatter.fixed_width_table(
         result,
         date_formatter=quarter_label,

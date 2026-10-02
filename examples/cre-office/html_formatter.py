@@ -7,27 +7,23 @@ financial statement.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from html import escape
 
-from orcaset.formatter import DateFormatter, ValueFormatter
+from orcaset.formatter import DateFormatter, TypeFormatters, ValueFormatter, format_value
 from orcaset.period import Period
 from orcaset.stmt import (
-    DateValue,
     GroupRow,
     LineRow,
-    PeriodValue,
     StatementResult,
+    StmtKey,
     StmtRow,
     StmtValue,
     TotalRow,
 )
 
 __all__ = ["html_table"]
-
-type _TableColumn = _InitialDateColumn | _PeriodColumn
-type _ColumnKey = date | Period
 
 _STYLE = """\
 <style>
@@ -48,23 +44,27 @@ def html_table(
     title: str | None = None,
     date_formatter: DateFormatter | None = None,
     value_formatter: ValueFormatter | None = None,
+    type_formatters: TypeFormatters | None = None,
     indent: int = 2,
 ) -> str:
     """
-    Format a period-based statement result as a complete HTML document.
+    Format a statement result as a complete HTML document.
 
     Declares UTF-8 in ``<head>`` so typographic punctuation in titles and labels
-    (em dashes, en dashes) is not misread as Windows-1252. Date-keyed values
-    align to the initial period start or to period end dates. Raises
-    ``ValueError`` if the result has no periods or contains date values at other
-    dates.
+    (em dashes, en dashes) is not misread as Windows-1252. Each key in
+    ``result.keys`` is one value column; a date column has a blank start header.
+    Each value lands in the column matching its ``key`` and is printed with
+    ``format_value``. Raises ``ValueError`` if a value's key is not in
+    ``result.keys``.
     """
-    if not result.periods:
-        raise ValueError("html_table requires a statement result with periods")
-
     date_format = date_formatter or _format_date
-    value_format = value_formatter or _format_value
-    columns = _period_columns(result.periods)
+
+    def value_format(value: object) -> str:
+        return format_value(
+            value, value_formatter=value_formatter, type_formatters=type_formatters
+        )
+
+    columns = result.keys
     column_count = len(columns) + 1
     escaped_title = escape(title) if title is not None else "Statement"
 
@@ -98,46 +98,27 @@ def html_table(
     return "\n".join(parts)
 
 
-class _InitialDateColumn:
-    def __init__(self, date: date) -> None:
-        self.date = date
-
-
-class _PeriodColumn:
-    def __init__(self, period: Period) -> None:
-        self.period = period
-
-
-def _period_columns(periods: Sequence[Period]) -> tuple[_TableColumn, ...]:
-    return (
-        _InitialDateColumn(periods[0].start),
-        *(_PeriodColumn(period) for period in periods),
-    )
-
-
 def _header_row(
     title: str,
-    columns: Sequence[_TableColumn],
+    columns: Sequence[StmtKey],
     date_formatter: DateFormatter,
     *,
     start: bool,
 ) -> str:
     cells = [f'<th class="label">{escape(title)}</th>']
-    for column in columns:
-        if start:
-            value = "" if isinstance(column, _InitialDateColumn) else date_formatter(column.period.start)
+    for key in columns:
+        if isinstance(key, Period):
+            value = date_formatter(key.start if start else key.end)
         else:
-            value = date_formatter(
-                column.date if isinstance(column, _InitialDateColumn) else column.period.end
-            )
+            value = "" if start else date_formatter(key)
         cells.append(f'<th class="num">{escape(value)}</th>')
     return f"<tr>{''.join(cells)}</tr>"
 
 
 def _render_rows(
     rows: Sequence[StmtRow],
-    columns: Sequence[_TableColumn],
-    value_formatter: ValueFormatter,
+    columns: Sequence[StmtKey],
+    value_formatter: Callable[[object], str],
     indent: int,
     column_count: int,
     level: int = 0,
@@ -173,19 +154,19 @@ def _spacer_row(column_count: int) -> str:
 def _value_row(
     name: str,
     values: Sequence[StmtValue],
-    columns: Sequence[_TableColumn],
-    value_formatter: ValueFormatter,
+    columns: Sequence[StmtKey],
+    value_formatter: Callable[[object], str],
     indent: int,
     level: int,
     *,
     css_class: str = "line",
 ) -> str:
-    values_by_column = _values_by_column(values, columns)
+    values_by_key = _values_by_key(values, columns)
     cells = [
         f'<td class="label" style="padding-left:{indent * level}ch">{escape(name)}</td>',
         *(
-            f'<td class="num">{escape(value_formatter(values_by_column.get(_column_key(column))))}</td>'
-            for column in columns
+            f'<td class="num">{escape(value_formatter(values_by_key.get(key)))}</td>'
+            for key in columns
         ),
     ]
     return f'<tr class="{css_class}">{"".join(cells)}</tr>'
@@ -193,7 +174,7 @@ def _value_row(
 
 def _label_row(
     name: str,
-    columns: Sequence[_TableColumn],
+    columns: Sequence[StmtKey],
     indent: int,
     level: int,
 ) -> str:
@@ -204,48 +185,19 @@ def _label_row(
     return f'<tr class="group-label">{"".join(cells)}</tr>'
 
 
-def _values_by_column(
+def _values_by_key(
     values: Sequence[StmtValue],
-    columns: Sequence[_TableColumn],
-) -> Mapping[_ColumnKey, float | None]:
-    valid_keys = {_column_key(column) for column in columns}
-    mapped: dict[_ColumnKey, float | None] = {}
+    columns: Sequence[StmtKey],
+) -> Mapping[StmtKey, object]:
+    valid_keys = set(columns)
+    mapped: dict[StmtKey, object] = {}
 
     for value in values:
-        key = _value_key(value, columns)
-        if key not in valid_keys:
+        if value.key not in valid_keys:
             raise ValueError(f"Statement value does not align to a table column: {value!r}")
-        mapped[key] = value.value
+        mapped[value.key] = value.value
 
     return mapped
-
-
-def _value_key(value: StmtValue, columns: Sequence[_TableColumn]) -> _ColumnKey:
-    if isinstance(value, PeriodValue):
-        return value.period
-    if isinstance(value, DateValue):
-        return _date_key(value.date, columns)
-
-    raise TypeError(f"Unsupported statement value: {value!r}")
-
-
-def _date_key(dt: date, columns: Sequence[_TableColumn]) -> _ColumnKey:
-    for column in columns:
-        if isinstance(column, _InitialDateColumn) and column.date == dt:
-            return column.date
-        if isinstance(column, _PeriodColumn) and column.period.end == dt:
-            return column.period
-    return dt
-
-
-def _column_key(column: _TableColumn) -> _ColumnKey:
-    if isinstance(column, _InitialDateColumn):
-        return column.date
-    return column.period
-
-
-def _format_value(value: float | None) -> str:
-    return "" if value is None else f"{value:,.2f}"
 
 
 def _format_date(dt: date) -> str:
