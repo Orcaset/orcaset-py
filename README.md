@@ -2,6 +2,8 @@
 
 `orcaset` builds financial statement models as code, making it easy for agents to build verifiable, open, and scalable analysis.
 
+> Orcaset can also be used with the [MCP connector](https://orcaset.com/mcp) which provides secure, hosted execution environment
+
 The framework helps agents write correct models quickly. Strong typing surfaces incorrect relationships at write time rather than silently failing or raising exceptions at runtime. It also gives formulas clear semantic meaning by building dependencies from named `get_at(line_item, period)` effect handlers rather than anonymous `A1:B2` address references.
 
 Install with `uv` or `pip`:
