@@ -10,8 +10,10 @@ from orcaset import (
     Effect,
     Period,
     Series,
+    concat_cells,
     continue_series,
     date_split,
+    flat_map_cells,
     get,
     period_split,
 )
@@ -98,3 +100,23 @@ assert_type(
     Series.flatten("plain", plain_outer.cells, query=plain_sum, split_keys=period_split),
     Series[Period, float, float],
 )
+
+# concat_cells joins a chain of chains; outer keys of any type are discarded.
+chains = Series.of("chains", exact, [(Q1, actuals.cells), (Q2, forecast.cells)])
+assert_type(concat_cells("joined", chains.cells), Chain[Period, float])
+
+# flat_map_cells is concat after mapping resolved outer values to chains.
+pairs = Series.of("pairs", exact, [(0, (actuals, forecast))])
+assert_type(flat_map_cells("cells", pairs.cells, lambda pair: pair[1].cells), Chain[Period, float])
+
+
+def actual_cells(source: Series[Period, float, Maybe[float]]) -> Chain[Period, float]:
+    return source.cells
+
+
+assert_type(flat_map_cells("period outer", period_outer.cells, actual_cells), Chain[Period, float])
+labelled = Series.of("labelled", exact, [("actuals", actuals)])
+assert_type(flat_map_cells("str outer", labelled.cells, actual_cells), Chain[Period, float])
+
+# The concatenated cell type follows the inner chains.
+assert_type(flat_map_cells("labels", pairs.cells, lambda _: labels.cells), Chain[Period, str])

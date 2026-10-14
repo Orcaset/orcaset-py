@@ -452,6 +452,67 @@ def extend_cells[K: Key, V](
     return wrap(None, base)
 
 
+def concat_cells[J: Key, K: Key, V](name: str, outer: Chain[J, Chain[K, V]]) -> Chain[K, V]:
+    """Concatenate a chain of chains in outer order; outer keys are discarded.
+
+    Inner nodes pass through with their own value rules. An outer value is read
+    only when the walk exhausts the chain before it, so an infinite inner chain
+    leaves later outer values untouched.
+
+    Keys must stay strictly ascending across the concatenation. Nothing is
+    clipped: a key that is not entirely after the previous one raises
+    ``ValueError`` when the walk reaches it. Gaps are allowed and are answered
+    by the query of the series built over the result.
+    """
+
+    def walk(
+        prev: Cons[K, V] | None, rest: Chain[J, Chain[K, V]], inner: Chain[K, V] | None
+    ) -> Chain[K, V]:
+        def compute() -> Effect[Cons[K, V] | None]:
+            remaining, cells = rest, inner
+            while True:
+                if cells is None:
+                    head = yield from get(remaining)
+                    if head is None:
+                        return None
+                    cells = yield from get(head.value)
+                    remaining = head.tail
+                node = yield from get(cells)
+                if node is None:
+                    cells = None
+                    continue
+                if prev is not None and not prev.key < node.key:
+                    raise ValueError(
+                        f"keys must be strictly ascending: got {prev.key!r} then {node.key!r}"
+                    )
+                return Cons(node.key, node.value, walk(node, remaining, node.tail))
+
+        label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
+        return Fn(label, compute, structural=True)
+
+    return walk(None, outer, None)
+
+
+def flat_map_cells[J: Key, A, K: Key, V](
+    name: str,
+    outer: Chain[J, A],
+    fn: Callable[[A], Chain[K, V]],
+) -> Chain[K, V]:
+    """Map each outer value to a chain and concatenate them: ``concat ∘ map``.
+
+    ``fn`` receives the resolved value, since the resulting structure depends on
+    it. See ``concat_cells`` for laziness and key ordering.
+    """
+
+    def chain(_key: J, value: Rule[A]) -> Thunk[Chain[K, V]]:
+        def build() -> Effect[Chain[K, V]]:
+            return fn((yield from get(value)))
+
+        return Thunk(build)
+
+    return concat_cells(name, map_cells(f"{name}.chains", outer, chain))
+
+
 def continue_series[K: Key, V, W](
     name: str,
     base: Series[K, V, W],

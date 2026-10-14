@@ -17,8 +17,10 @@ from orcaset import (
     Series,
     Thunk,
     Val,
+    concat_cells,
     continue_series,
     date_split,
+    flat_map_cells,
     get,
     get_at,
     keys_until,
@@ -397,3 +399,120 @@ def test_non_numeric_answers_use_an_explicit_crossing_fold():
     b = Series.of("b", exact, [(Q2, "forecast")])
     series = Series.flatten("labels", components(a, b), query=concatenate, split_keys=period_split)
     assert Context().get_at(series, Period(Q1.start, Q2.end)) == "actual/forecast"
+
+
+def leases(*rents: tuple[Period, float]) -> Chain[int, Series[Period, float, Maybe[float]]]:
+    return components(*(Series.of(f"lease {i}", accrue_monthly, [r]) for i, r in enumerate(rents)))
+
+
+def test_concat_cells_joins_chains_in_outer_order_and_skips_empty_ones():
+    empty: Series[Period, float, Maybe[float]] = Series.of("empty", accrue_monthly, [])
+    q1 = Series.of("q1", accrue_monthly, [(Q1, 30.0)])
+    q2 = Series.of("q2", accrue_monthly, [(Q2, 60.0)])
+    # Outer keys are positions of any key type; only their order matters.
+    outer = Series.of("chains", exact, [("a", empty.cells), ("b", q1.cells), ("c", q2.cells)])
+    rent = Series("rent", concat_cells("rent", outer.cells), accrue_monthly)
+    ctx = Context()
+    assert keys_of(ctx, rent.cells) == [Q1, Q2]
+    assert ctx.get_at(rent, Period(Q1.start, Q2.end)) == 90.0
+
+
+def test_concat_cells_of_an_empty_outer_chain_is_empty():
+    outer: Series[int, Chain[Period, float], Maybe[Chain[Period, float]]] = Series.of(
+        "chains", exact, []
+    )
+    assert Context().get(concat_cells("rent", outer.cells)) is None
+
+
+def test_concat_cells_reads_later_chains_only_when_the_walk_reaches_them():
+    built: list[int] = []
+
+    def chain(i: int) -> Thunk[Chain[int, float]]:
+        def compute() -> Chain[int, float]:
+            built.append(i)
+            return Series.of(f"chain {i}", exact, [(i, float(i))]).cells
+
+        return Thunk(compute)
+
+    def step(i: int) -> tuple[int, Thunk[Chain[int, float]], int]:
+        assert i < 5, "attempted to materialize all chains"
+        return i, chain(i), i + 1
+
+    joined = Series(
+        "joined", concat_cells("joined", unfold_cells("chains", seed=0, step=step)), exact
+    )
+    assert Context().get_at(joined, 1) == 1.0
+    assert built == [0, 1]
+
+
+def keys_of[K: Key, V](ctx: Context, cells: Chain[K, V]) -> list[K]:
+    keys: list[K] = []
+    node = ctx.get(cells)
+    while node is not None:
+        keys.append(node.key)
+        node = ctx.get(node.tail)
+    return keys
+
+
+def test_flat_map_cells_concatenates_under_one_query():
+    outer = leases((Q1, 30.0), (Q2, 60.0))
+    rent = Series("rent", flat_map_cells("rent", outer, lambda lease: lease.cells), accrue_monthly)
+    ctx = Context()
+    # A query across the seam reads cells from both leases; no splitting is involved.
+    assert ctx.get_at(rent, Period(date(2025, 3, 1), date(2025, 5, 1))) == pytest.approx(
+        30.0, rel=1e-3
+    )
+    assert ctx.get_at(rent, Period(Q1.start, Q2.end)) == 90.0
+
+
+def test_flat_map_cells_passes_inner_value_rules_through():
+    lease = Series.of("lease", accrue_monthly, [(Q1, 30.0)])
+    outer = components(lease)
+    ctx = Context()
+    inner = ctx.get(lease.cells)
+    flat = ctx.get(flat_map_cells("rent", outer, lambda s: s.cells))
+    assert inner is not None and flat is not None
+    assert flat.value is inner.value
+
+
+def test_flat_map_cells_reads_outer_values_only_when_reached():
+    read: list[int] = []
+
+    def value(i: int) -> Thunk[int]:
+        def compute() -> int:
+            read.append(i)
+            return i
+
+        return Thunk(compute)
+
+    def step(i: int) -> tuple[int, Thunk[int], int]:
+        assert i < 5, "attempted to materialize all components"
+        return i, value(i), i + 1
+
+    def cells(i: int) -> Chain[int, float]:
+        return Series.of(f"component {i}", exact, [(i, float(i) * 10)]).cells
+
+    outer = unfold_cells("values", seed=0, step=step)
+    series = Series("series", flat_map_cells("series", outer, cells), exact)
+    assert Context().get_at(series, 1) == 10.0
+    assert read == [0, 1]
+
+
+def test_flat_map_cells_rejects_overlap_when_the_walk_reaches_it():
+    overlapping = Period(date(2025, 3, 1), Q2.end)
+    rent = Series(
+        "rent",
+        flat_map_cells("rent", leases((Q1, 30.0), (overlapping, 40.0)), lambda s: s.cells),
+        accrue_monthly,
+    )
+    ctx = Context()
+    assert ctx.get_at(rent, Period(Q1.start, date(2025, 2, 1))) == pytest.approx(10.0, rel=1e-2)
+    with pytest.raises(ValueError, match="strictly ascending"):
+        ctx.get_at(rent, Q2)
+
+
+@pytest.mark.parametrize(("query", "expected"), [(accrue_monthly, Na), (drop_monthly, 0.0)])
+def test_flat_map_cells_gaps_follow_the_series_query(query: AmountQuery, expected: Maybe[float]):
+    flat = flat_map_cells("rent", leases((Q1, 30.0), (Q3, 30.0)), lambda s: s.cells)
+    rent: Amounts = Series("rent", flat, query)
+    assert Context().get_at(rent, Q2) == expected
