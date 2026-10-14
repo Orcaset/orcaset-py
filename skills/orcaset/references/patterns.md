@@ -165,6 +165,74 @@ Do not exhaust the base to find its last value before constructing the combined 
 
 For raw cells sharing one query policy, `Series.extend(name, query, base=base.cells, cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
 
+## Joining chains of chains
+
+`concat_cells(name, outer)` joins a chain whose values are cell chains into one chain, in outer order; the outer keys are discarded. `flat_map_cells(name, outer, fn)` maps each outer value to a chain first (`concat_cells` after a map); `fn` receives the resolved value because the resulting structure depends on it. Put one query over the result with `Series(name, cells, query)`.
+
+```py
+from datetime import date
+
+from orcaset import YF, Chain, Maybe, Period, Series, concat_cells, query
+
+opening = date(2025, 12, 31)
+midyear = date(2026, 6, 30)
+year_end = date(2026, 12, 31)
+
+first: Series[Period, float, Maybe[float]] = Series.of(
+    "First", query.accrue(YF.cmonthly), [(Period(opening, midyear), 1.0)]
+)
+second: Series[Period, float, Maybe[float]] = Series.of(
+    "Second", query.accrue(YF.cmonthly), [(Period(midyear, year_end), 2.0)]
+)
+segments: Series[int, Chain[Period, float], Maybe[Chain[Period, float]]] = Series.of(
+    "Segments", query.exact, [(0, first.cells), (1, second.cells)]
+)
+joined = Series("Joined", concat_cells("Joined", segments.cells), query.accrue_drop(YF.cmonthly))
+# Context().get_at(joined, Period(opening, year_end)) == 3.0
+```
+
+- Inner cells pass through with their own value rules. The segments' own queries are dropped; the joined series' query answers everything, including gaps between segments.
+- Keys must be strictly ascending across the join. Nothing is clipped: an overlap raises `ValueError` when the walk reaches it.
+- An outer value is read only when the walk exhausts the chain before it, so an infinite inner chain leaves later outer values unbuilt, and the outer chain may itself be lazy and infinite.
+
+Choose the join by how the pieces relate:
+
+| Pieces | Use |
+| --- | --- |
+| Sequential, non-overlapping, one query policy for the whole line (e.g. successive contracts) | `flat_map_cells` / `concat_cells` |
+| Sequential segments that keep their own query policies (e.g. actuals then projections) | `Series.flatten` |
+| A base followed by a continuation built from its last node | `continue_series` or `Series.extend` |
+| Concurrent, overlapping (e.g. cohorts, many independent instances) | `ops.add`, or a scan rollup |
+
+[components.md](components.md) uses `flat_map_cells` to join one line across a lazy chain of component records.
+
+## Clipping a series to a window
+
+`clip_periods(name, series, start, end)` restricts a period-keyed series to `(start, end]`; `clip_dates` does the same for a date-keyed series. Either bound may be `None`. Use them to take part of an existing line, such as a share of a flow over an abatement, waiver, or ramp window, instead of rebuilding its cells.
+
+```py
+from orcaset import Val, clip_dates, clip_periods, ops
+
+fee = Series.of(
+    "Fee",
+    query.accrue(YF.cmonthly),
+    [(Period(opening, midyear), 600.0), (Period(midyear, year_end), 900.0)],
+)
+waiver_share = Val("Waiver share", 0.5)
+waived = clip_periods("Waived fee basis", fee, date(2026, 3, 31), date(2026, 9, 30))
+waiver = ops.neg("Fee waiver", ops.scale("Waived fee", waived, waiver_share))
+# Year: -(300 * 0.5 + 450 * 0.5) == -375.0
+
+balance = Series.of("Balance", query.last, [(opening, 10.0), (midyear, 20.0)])
+balance_after_close = clip_dates("Balance after close", balance, start=date(2026, 3, 31))
+# 2026-04-30: Na, since the earlier cell is outside the window; 2026-07-31: 20.0
+```
+
+- `clip_periods` trims each query to the window and forwards it to the source, so a window crossing a step in the source values each side at its own amount. Its cells are the source cells trimmed to the window, each valued by the source's query, so they agree with direct queries. A query entirely outside is `Na`; the result type is `Series[Period, W, Maybe[W]]`.
+- `clip_dates` passes cells inside the window through unchanged and answers queries inside with the source's query over those cells only, so a look-back query like `query.last` cannot reach a cell before `start`. Queries outside are `Na`.
+- Clipped series are views: they follow scenario changes to the source and record it as a dependency.
+- A zero-length window should be an empty series (`Series[...].empty(name, query.accrue_drop(yf))`) when the caller expects a flow that answers `0.0`, rather than a clip whose answers are all `Na`.
+
 ## Cyclic value dependency
 
 Use a seeded demand for a genuine financial circularity. In a revolver plug, ending debt depends on the cash shortfall including interest, while interest on average debt depends on ending debt. The iterative-solver example uses the same mechanism for capitalized interest.

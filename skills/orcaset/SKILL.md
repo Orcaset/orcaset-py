@@ -14,7 +14,7 @@ Use this skill as your guide to the library. Read library source only to confirm
 
 1. **Examine environment** Confirm whether the environment has the `orcaset` Python library installed and its version. If `orcaset` is not installed, notify the user and try to install it from PyPI. Also confirm whether the environment has a type checker (prefer `pyrefly`) and code formatter such as `ruff`. Check for `numpy-financial` and other installed libraries.
 2. **Review patterns** Read [core.md](references/core.md) and any applicable additional reference files before any actions involving writing, reading, or modifying any code.
-3. **Build.** After considering any model intricacies, write the code. For schedules such as cohorts, depreciation, debt, or linked statements, read [patterns.md](references/patterns.md). If inputs need units, citations, or other metadata, read [values.md](references/values.md).
+3. **Build.** After considering any model intricacies, write the code. For schedules such as cohorts, depreciation, debt, or linked statements, read [patterns.md](references/patterns.md). If the model has many instances of the same component (each with several lines, possibly followed by successors decided by assumptions), read [components.md](references/components.md). If inputs need units, citations, or other metadata, read [values.md](references/values.md).
 4. **Verify** Verify model and code structure according to [verification.md](references/verification.md). Run `scripts/check.sh` which confirms type checking with pyrefly and formats code with ruff until it passes.
 5. **Produce outputs** Run or report final outputs to the user.
 
@@ -23,7 +23,8 @@ Use this skill as your guide to the library. Read library source only to confirm
 | File | Read when |
 |---|---|
 | [core.md](references/core.md) | Every task: core workflow, periods and dates, queries, line-item design |
-| [patterns.md](references/patterns.md) | Building cohorts, depreciation, debt, rollforwards, or three-statement models |
+| [patterns.md](references/patterns.md) | Building cohorts, depreciation, debt, rollforwards, or three-statement models; joining or clipping series |
+| [components.md](references/components.md) | Many instances of a component built from data rows, or chains of successors (renewals, refinancings, replacements) |
 | [output.md](references/output.md) | Structuring or formatting statements and exported results |
 | [verification.md](references/verification.md) | Required checks before reporting any model results |
 | [values.md](references/values.md) | Inputs that carry units, citations, or other metadata |

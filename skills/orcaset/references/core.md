@@ -8,7 +8,7 @@ Follow these rules when building or modifying Orcaset models.
     - Small models (less than ~500 lines): Single file with all outputs behind an `if __name___...` clause.
     - Larger models (greater than ~500 lines): Separate file(s) for model component(s) and output(s). Model should be organized into logical components (e.g., income, balance sheet, schedules, etc). Separate distinct outputs into separate files (e.g., pro forma, sensitivity, etc). Use `if TYPECHECKING` clauses for circular type imports.
 - All value and series definitions should be at the module/file level so that they can be imported from external scripts.
-- ALWAYS AVOID helper and builder functions, even if there are many similarly constructed line items. Helpers make it harder to modify individual line items and obfuscate definitions.
+- ALWAYS AVOID helper and builder functions for one-off line items, even if there are many similarly constructed line items. Helpers make it harder to modify individual line items and obfuscate definitions. The exception is a component instantiated many times from data rows or created lazily inside a chain (for example contracts, instruments, or assets with successors); build those as records with constructors as described in [components.md](components.md).
 - Lift values users may want to sensitize into rules with `Val`.
 - NEVER use horizon or end dates in model definitions unless there is a specific financial reason (e.g., loan maturity date, sale date). Series are meant to be infinite; model-level horizons may artificially introduce out of bounds `Na` values on query.
 - Type ignore comments and type casts are STRICTLY prohibited. `Any` types are ONLY permitted in cases where an exsistential type is required by the type checker. Any other use of `Any` types is strictly prohibited. Add explicity type annotations if required by the type checker.
@@ -215,6 +215,8 @@ line_c: Series[Period, Maybe[float], Maybe[float]] = ops.add(
 ```
 
 `ops` has combinators for `map`, `map2`, `mapn`, `add`, `mul`, `neg`, `scale`, `sub` and `div`.
+
+Other constructors: `Series.of(name, query, pairs)` builds a series from a list of `(key, value)` pairs (values may be `Thunk`s). `Series.empty(name, query)` builds a series with no cells, answered entirely by its query; give the type parameters explicitly, e.g. `Series[Period, float, Maybe[float]].empty(name, query.accrue_drop(YF.cmonthly))`. `clip_periods` and `clip_dates` restrict a series to a window, and `concat_cells` and `flat_map_cells` join chains of chains; see [patterns.md](patterns.md).
 Use `orcaset.date_union` as the key merge function for date-keyed series.
 
 The `query` module holds functions for querying over cell chains.
@@ -224,7 +226,9 @@ The `query` module holds functions for querying over cell chains.
 - `accrue_drop[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]`: Accrue the covered part of the query and ignore the rest. Time before, after, or between cells adds nothing, so a complete miss is `0.0`. An `Na` cell still makes the result `Na`. There is no fill variant; for a non-zero fill, accrue a separate series over the gaps and combine it.
 - `avg[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]`: Average cell values over a query the cells must cover, weighting each overlap by `yf`. Returns `Na` when any date in the query falls outside the cells — before the first, after the last, or in a gap — or when an overlapping cell is `Na`. Use like `query.avg(YF.cmonthly)` for period-keyed stocks.
 - `avg_drop[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]`: Average only the covered part of the query. Uncovered time is left out of the weights. A complete miss is `Na`. An `Na` cell still makes the result `Na`.
-- `avg_fill[V: float | NaType](yf: DayCount, fill: float) -> QueryFn[Period, V, Maybe[float]]`: Hold uncovered time at the level `fill`, then average, so the result spans the whole query. A complete miss is `fill`. An `Na` cell still makes the result `Na`. Use `0` for vacant area and `1` for an index base.
+- `avg_fill[V: float | NaType](yf: DayCount, fill: float) -> QueryFn[Period, V, Maybe[float]]`: Hold uncovered time at the level `fill`, then average, so the result spans the whole query. A complete miss is `fill`. An `Na` cell still makes the result `Na`. Use `0` for unused capacity and `1` for an index base.
+
+The query decides what time without cells means, so choose it from what a gap represents: missing data (`accrue`, `avg`: `Na`), nothing happened (`accrue_drop`: `0.0`), or a known level (`avg_fill`).
 
 ## Key selection
 
