@@ -9,6 +9,8 @@ change between minor releases.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-14
+
 ### Added
 
 - `clip_periods(name, series, start, end)` restricts a period-keyed series to
@@ -560,7 +562,8 @@ and formatters have been rebuilt on generic `Series`.
   excluded from source scans, fixing non-convergence caused by recreating
   clipped span cells during cell solving. Includes regression coverage.
 
-[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/orcaset/orcaset-py/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/orcaset/orcaset-py/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/orcaset/orcaset-py/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/orcaset/orcaset-py/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/orcaset/orcaset-py/compare/v0.11.0...v0.11.1
