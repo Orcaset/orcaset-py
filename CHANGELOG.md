@@ -11,11 +11,22 @@ change between minor releases.
 
 ### Added
 
+- `clip_periods(name, series, start, end)` restricts a period-keyed series to
+  `(start, end]`, with either bound optional. Queries are trimmed to the bounds
+  and forwarded to the series; a query entirely outside is `Na`. Cells crossing
+  a bound are trimmed and valued by the series, so a clip of stepped rent keeps
+  each step.
+- `clip_dates(name, series, start, end)` restricts a date-keyed series to
+  `(start, end]`. Cells within the bounds pass through; queries inside are
+  answered over those cells only, and queries outside are `Na`.
 - `concat_cells(name, outer)` concatenates a chain of chains into one chain,
   for one query over the combined cells (for example, the rent of successive
   leases). Outer keys may be any key type and are discarded. Keys must stay
   strictly ascending; an overlap raises `ValueError` when reached, and gaps
   follow the series query.
+- `Series.empty(name, query)` builds a series with no cells; its query answers
+  every key. Give the types explicitly, e.g.
+  `Series[Period, float, Maybe[float]].empty(name, query.accrue_drop(yf))`.
 - `flat_map_cells(name, outer, fn)` maps each outer value to a chain and
   concatenates the results (`concat_cells` after a map).
 

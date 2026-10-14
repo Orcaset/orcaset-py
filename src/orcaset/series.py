@@ -5,8 +5,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Hashable, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Protocol, Self, cast, overload
 
+from orcaset.maybe import Maybe, Na
+from orcaset.period import Period
 from orcaset.rule import Effect, Fn, KeyedRule, Rule, get, get_at
 
 
@@ -251,6 +254,19 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
 
             return cls.unfold(name, query, seed=Thunk(initial), step=step)
         return cls.unfold(name, query, seed=(pairs, 0), step=step)
+
+    @classmethod
+    def empty(cls, name: str, query: QueryFn[K, V, W]) -> Series[K, V, W]:
+        """Build a series with no cells; ``query`` answers every key over the empty chain.
+
+        With no cells to infer from, give the types explicitly, e.g.
+        ``Series[Period, float, Maybe[float]].empty(name, query.accrue_drop(YF.cmonthly))``.
+        """
+
+        def step(_state: None) -> None:
+            return None
+
+        return cls.unfold(name, query, seed=None, step=step)
 
     @classmethod
     @overload
@@ -511,6 +527,92 @@ def flat_map_cells[J: Key, A, K: Key, V](
         return Thunk(build)
 
     return concat_cells(name, map_cells(f"{name}.chains", outer, chain))
+
+
+def _clip_period(key: Period, start: date | None, end: date | None) -> Period | None:
+    """The part of ``key`` within ``(start, end]``, or ``None`` if they don't overlap."""
+    lo = key.start if start is None else max(key.start, start)
+    hi = key.end if end is None else min(key.end, end)
+    return Period(lo, hi) if lo < hi else None
+
+
+def clip_periods[V, W](
+    name: str,
+    source: Series[Period, V, W],
+    start: date | None = None,
+    end: date | None = None,
+) -> Series[Period, W, Maybe[W]]:
+    """``source`` within ``(start, end]``; either bound may be open.
+
+    A query is trimmed to the bounds and forwarded to ``source``, so time outside
+    them is left out; a query entirely outside is ``Na``. Cells are ``source``'s
+    cells trimmed to the bounds, each holding ``source``'s answer for its trimmed
+    period, so concatenations agree with direct queries. Cells before ``start``
+    are skipped and the walk stops at the first cell starting at or after ``end``,
+    reading keys only.
+    """
+
+    def answer(key: Period) -> Thunk[W]:
+        return Thunk(lambda: get_at(source, key))
+
+    def step(
+        cells: Chain[Period, V],
+    ) -> Effect[tuple[Period, Thunk[W], Chain[Period, V]] | None]:
+        node = yield from get(cells)
+        while node is not None:
+            if end is not None and end <= node.key.start:
+                return None
+            key = _clip_period(node.key, start, end)
+            if key is not None:
+                return key, answer(key), node.tail
+            node = yield from get(node.tail)
+        return None
+
+    def compute(q: Period, _cells: Chain[Period, W]) -> Effect[Maybe[W]]:
+        inside = _clip_period(q, start, end)
+        if inside is None:
+            return Na
+        return (yield from get_at(source, inside))
+
+    return Series(name, unfold_cells(name, seed=source.cells, step=step), compute)
+
+
+def clip_dates[V, W](
+    name: str,
+    source: Series[date, V, W],
+    start: date | None = None,
+    end: date | None = None,
+) -> Series[date, V, Maybe[W]]:
+    """``source`` within ``(start, end]``; either bound may be open.
+
+    Cells are ``source``'s cells within the bounds, passed through with their own
+    value rules. A query inside the bounds is answered by ``source``'s query over
+    those cells, so a look-back query such as ``last`` cannot reach a cell before
+    ``start``; a query outside the bounds is ``Na``. Cells before ``start`` are
+    skipped and the walk stops at the first cell after ``end``, reading keys only.
+    """
+
+    def inside(key: date) -> bool:
+        return (start is None or start < key) and (end is None or key <= end)
+
+    def walk(prev: date | None, rest: Chain[date, V]) -> Chain[date, V]:
+        def compute() -> Effect[Cons[date, V] | None]:
+            node = yield from get(rest)
+            while node is not None and start is not None and node.key <= start:
+                node = yield from get(node.tail)
+            if node is None or not inside(node.key):
+                return None
+            return Cons(node.key, node.value, walk(node.key, node.tail))
+
+        label = f"{name}.cells" if prev is None else f"{name}.tail@{prev}"
+        return Fn(label, compute, structural=True)
+
+    def query(q: date, cells: Chain[date, V]) -> Effect[Maybe[W]]:
+        if not inside(q):
+            return Na
+        return (yield from _as_effect(source._query(q, cells)))
+
+    return Series(name, walk(None, source.cells), query)
 
 
 def continue_series[K: Key, V, W](

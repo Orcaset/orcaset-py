@@ -5,6 +5,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 
 from orcaset import (
+    YF,
     Context,
     CycleError,
     DepNode,
@@ -21,7 +22,7 @@ from orcaset import (
     scan_cells,
 )
 from orcaset.maybe import Maybe, Na, isna
-from orcaset.query import exact, last
+from orcaset.query import accrue, accrue_drop, exact, last
 
 MONTH = relativedelta(months=1)
 YEAR = relativedelta(years=1, day=31)
@@ -177,9 +178,7 @@ def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
     assert first_context.get_at(series, first) == 1.0
     assert first_context.depends_on(series.cells, start)
     assert first_context.depends_on((series, first), start)
-    head_dependencies = tuple(
-        _flatten(first_context.dependencies(series.cells, structural=True))
-    )
+    head_dependencies = tuple(_flatten(first_context.dependencies(series.cells, structural=True)))
     assert head_dependencies[0].name == "Deferred seed.cells"
     assert any(node.name == "Start date" for node in head_dependencies)
 
@@ -379,3 +378,13 @@ def test_scan_cells_resolves_thunk_accumulator_seed():
 
     assert ctx.get_at(scanned, day) == 15
     assert ctx.depends_on(scanned.cells, offset)
+
+
+def test_empty_series_has_no_cells_and_its_query_answers_every_key():
+    q = Period(date(2025, 1, 31), date(2026, 1, 31))
+    dropped = Series[Period, float, Maybe[float]].empty("dropped", accrue_drop(YF.cmonthly))
+    strict = Series[Period, float, Maybe[float]].empty("strict", accrue(YF.cmonthly))
+    ctx = Context()
+    assert ctx.get(dropped.cells) is None
+    assert ctx.get_at(dropped, q) == 0.0
+    assert isna(ctx.get_at(strict, q))

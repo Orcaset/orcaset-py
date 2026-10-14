@@ -10,6 +10,8 @@ from orcaset import (
     Effect,
     Period,
     Series,
+    clip_dates,
+    clip_periods,
     concat_cells,
     continue_series,
     date_split,
@@ -120,3 +122,22 @@ assert_type(flat_map_cells("str outer", labelled.cells, actual_cells), Chain[Per
 
 # The concatenated cell type follows the inner chains.
 assert_type(flat_map_cells("labels", pairs.cells, lambda _: labels.cells), Chain[Period, str])
+
+# An empty series takes its cell type from the class subscript, not from cells.
+empty = Series[Period, float, Maybe[float]].empty("empty", accrue(YF.cmonthly))
+assert_type(empty, Series[Period, float, Maybe[float]])
+assert_type(
+    concat_cells(
+        "with empty", Series.of("chains", exact, [(0, empty.cells), (1, actuals.cells)]).cells
+    ),
+    Chain[Period, float],
+)
+
+# Clipping keeps the key type; trimmed period cells hold the source's answers.
+assert_type(
+    clip_periods("clipped", actuals, Q1.start, Q1.end), Series[Period, Maybe[float], Maybe[float]]
+)
+dated = Series.of("dated", exact, [(date(2025, 3, 31), 1.0)])
+assert_type(clip_dates("clipped", dated, end=date(2025, 6, 30)), Series[date, float, Maybe[float]])
+clip_periods("bad keys", dated, date(2025, 1, 1))  # pyrefly: ignore[bad-argument-type]
+clip_dates("bad keys", actuals, date(2025, 1, 1))  # pyrefly: ignore[bad-argument-type]
