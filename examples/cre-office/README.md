@@ -21,11 +21,12 @@ Run the `proforma.py` file to write the operating pro forma to an HTML table or 
 
 ## Run
 
-Python 3.14+ and uv are required. There are two output files: `proforma.py` writes an HTML file with the operating pro forma and the `performance.py` file prints performance metrics.
+This example is a uv workspace member, so `uv run` builds it against this checkout of orcaset. Python 3.14+ is required. `numpy-financial` is used for IRR calculations and is installed automatically. There are two output files: `proforma.py` writes an HTML file with the operating pro forma and the `performance.py` file prints performance metrics.
 
 ```sh
-uv run examples/cre-office/proforma.py
-uv run --with numpy-financial examples/cre-office/performance.py
+cd examples/cre-office
+uv run python proforma.py
+uv run python performance.py
 ```
 
 Performance file output:

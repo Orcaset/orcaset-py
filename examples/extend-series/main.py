@@ -50,7 +50,7 @@ def terminal_revenue(
     """Grow revenue each month at a 2% annual rate after prior series ends."""
     # If there is no prior node (e.g., the prior series is empty), return an empty series.
     if last_node is None:
-        return Series.of("Terminal growth", accrue_monthly, [])
+        return Series[Period, Maybe[float], Maybe[float]].empty("Terminal growth", accrue_monthly)
 
     # Otherwise, grow revenue each month at a 2% annual rate after the prior series ends.
     # Note that this series is lazily bound to `revenue`

@@ -5,5 +5,8 @@ description = "Simple leveraged buyout model with IRR sensitivity"
 requires-python = ">=3.14"
 dependencies = [
     "numpy-financial>=1.0.0",
-    "orcaset==0.11.0",
+    "orcaset",
 ]
+
+[tool.uv.sources]
+orcaset = { workspace = true }

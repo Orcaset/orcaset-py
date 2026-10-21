@@ -55,12 +55,12 @@ NOWCAST_QUARTER = HISTORY[-1][0].from_end(QUARTER)
 def nowcast_windows() -> Effect[tuple[Period, Period]]:
     last_observation = yield from get(tsa_last_date)
     current = NOWCAST_QUARTER
-    if last_observation <= current.start or last_observation > current.end:
-        raise ValueError(f"last TSA date {last_observation.isoformat()} is not inside {current}")
+    if last_observation <= current.start:
+        raise ValueError(f"last TSA date {last_observation.isoformat()} is before {current}")
+    # Once TSA data runs past the nowcast quarter, compare the full quarters.
+    qtd_end = min(last_observation, current.end)
     prior = current.shift(-QUARTER)
-    return Period(current.start, last_observation), Period(
-        prior.start, prior.start + (last_observation - current.start)
-    )
+    return Period(current.start, qtd_end), Period(prior.start, prior.start + (qtd_end - current.start))
 
 
 passenger_history = Series.of(

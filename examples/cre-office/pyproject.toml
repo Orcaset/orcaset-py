@@ -1,0 +1,13 @@
+[project]
+name = "cre-office"
+version = "0.1.0"
+description = "Office acquisition pro forma with tenant leases and returns"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy-financial>=1.0.0",
+    "orcaset",
+]
+
+[tool.uv.sources]
+orcaset = { workspace = true }

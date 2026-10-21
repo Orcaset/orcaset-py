@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "numpy-financial>=1.0.0",
-    "orcaset==0.12.0",
+    "orcaset",
 ]
+
+[tool.uv.sources]
+orcaset = { workspace = true }
 
 [tool.ruff]
 line-length = 120

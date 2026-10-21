@@ -6,6 +6,7 @@ from datetime import date
 from enum import StrEnum
 
 from dateutil.relativedelta import relativedelta
+
 from orcaset import (
     YF,
     Effect,
@@ -88,11 +89,7 @@ def lease(
 
     def occupancy_window() -> Effect[tuple[tuple[Period, float], ...]]:
         begin = yield from get(start_date)
-        end = (
-            date.max
-            if extension_life is None
-            else (yield from get(expiry)) + extension_life
-        )
+        end = date.max if extension_life is None else (yield from get(expiry)) + extension_life
         return ((Period(begin, end), (yield from get(suite_rsf))),)
 
     occupied = Series[Period, float, Maybe[float]].of(
@@ -142,9 +139,9 @@ def lease(
             return None
         free_rent_period = Period(expiration_date, expiration_date + year_offset)
         probability = yield from get(renewal_probability)
-        months = (1.0 - probability) * (
-            yield from get(new_free_months)
-        ) + probability * (yield from get(renewal_free_months))
+        months = (1.0 - probability) * (yield from get(new_free_months)) + probability * (
+            yield from get(renewal_free_months)
+        )
         return (
             free_rent_period,
             maybe.mul_some((yield from get_at(rent, free_rent_period)), months / 12),
@@ -222,9 +219,7 @@ def lease(
             probability = yield from get(renewal_probability)
             return (
                 downtime_period,
-                maybe.mul_some(
-                    (yield from get_at(gross, downtime_period)), 1.0 - probability
-                ),
+                maybe.mul_some((yield from get_at(gross, downtime_period)), 1.0 - probability),
                 None,
             )
 
@@ -237,8 +232,8 @@ def lease(
 
     match lease_type:
         case LeaseType.FULL_SERVICE:
-            reimbursements = Series[Period, Maybe[float], Maybe[float]].of(
-                f"{name} reimbursements", query.accrue_drop(YF.cmonthly), ()
+            reimbursements = Series[Period, Maybe[float], Maybe[float]].empty(
+                f"{name} reimbursements", query.accrue_drop(YF.cmonthly)
             )
         case LeaseType.SINGLE_NET:
             reimbursements = reimbursed(property_taxes)

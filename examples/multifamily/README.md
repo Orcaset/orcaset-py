@@ -6,7 +6,7 @@ The model follows [`arcadia-gardens-outline.md`](arcadia-gardens-outline.md), wh
 
 ## Run the model
 
-This is a standalone uv project. Python 3.14+ is required. `numpy-financial` is used for IRR calculations and is installed automatically.
+This example is a uv workspace member, so `uv run` builds it against this checkout of orcaset. Python 3.14+ is required. `numpy-financial` is used for IRR calculations and is installed automatically.
 
 ```sh
 cd examples/multifamily

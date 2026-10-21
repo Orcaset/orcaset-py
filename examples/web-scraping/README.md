@@ -72,7 +72,7 @@ While this example fetches data over the web, a similar approach can be used to 
 
 ## Run
 
-Python 3.14+ and network access to `tsa.gov` are required.
+This example is a uv workspace member, so `uv run` builds it against this checkout of orcaset and installs its scraping dependencies automatically. Python 3.14+ and network access to `tsa.gov` are required.
 
 ```sh
 cd examples/web-scraping

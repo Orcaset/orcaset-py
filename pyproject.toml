@@ -18,6 +18,16 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 100
 
+# Examples with their own dependencies are workspace members that build against
+# this checkout of orcaset rather than a released version.
+[tool.uv.workspace]
+members = [
+    "examples/cre-office",
+    "examples/multifamily",
+    "examples/paper-lbo",
+    "examples/web-scraping",
+]
+
 [dependency-groups]
 dev = [
     "pyrefly>=1.2.0",
