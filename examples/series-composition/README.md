@@ -5,9 +5,9 @@ This example uses a small income model to demonstrate arithmetic composition wit
 ```py
 from orcaset import ops
 
-cogs = ops.scale("COGS", revenue, -0.5)
-gross_profit = ops.add("Gross Profit", revenue, cogs, merge_keys=period_union)
-income = ops.add("Income", gross_profit, rd, sga, merge_keys=period_union)
+cogs = ops.scale(revenue, -0.5, name="COGS")
+gross_profit = ops.add(revenue, cogs, merge_keys=period_union, name="Gross Profit")
+income = ops.add(gross_profit, rd, sga, merge_keys=period_union, name="Income")
 ```
 
 Arithmetic lives under `ops` by convention. Keeping it explicit gives every result a name and makes the domain-merging policy visible without restricting the generic `Series` type to numeric values.
@@ -27,20 +27,20 @@ The scalar helpers preserve the source domain and query behavior. For example, `
 ```py
 from orcaset import maybe
 
-cogs = ops.scale("COGS", revenue, -0.5)
+cogs = ops.scale(revenue, -0.5, name="COGS")
 
 # The underlying operation, written directly:
 cogs = ops.map(
-    "COGS",
     revenue,
     fn=maybe.map_some(lambda value: value * -0.5),
+    name="COGS",
 )
 ```
 
 Arithmetic propagates `Na` by default. If any source answers `Na`, `add`, `mul`, `sub`, and `div` return `Na`; `neg` and `scale` use `maybe.map_some`, which leaves `Na` unchanged. The series-to-series helpers also accept an explicit `fill` value when missing answers should be substituted instead:
 
 ```py
-total = ops.add("Total", actual, forecast, merge_keys=period_union, fill=0.0)
+total = ops.add(actual, forecast, merge_keys=period_union, fill=0.0, name="Total")
 ```
 
 `ops.mapn`, `ops.map2`, and `ops.map` remain available when a model needs a custom operation rather than one of these arithmetic conveniences.

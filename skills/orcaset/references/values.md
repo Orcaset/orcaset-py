@@ -44,21 +44,21 @@ from orcaset import Context, Maybe, Period, Series, maybe, ops, period_union, qu
 
 january = Period(date(2025, 12, 31), date(2026, 1, 31))
 usd_product: Series[Period, USD, Maybe[USD]] = Series.of(
-    "USD product revenue", query.exact, pairs=[(january, USD(100.0))]
+    query.exact, pairs=[(january, USD(100.0))], name="USD product revenue"
 )
 usd_services: Series[Period, USD, Maybe[USD]] = Series.of(
-    "USD services revenue", query.exact, pairs=[(january, USD(25.0))]
+    query.exact, pairs=[(january, USD(25.0))], name="USD services revenue"
 )
 eur_revenue: Series[Period, EUR, Maybe[EUR]] = Series.of(
-    "EUR revenue", query.exact, pairs=[(january, EUR(80.0))]
+    query.exact, pairs=[(january, EUR(80.0))], name="EUR revenue"
 )
 
 usd_total = ops.map2(
-    "USD total",
     usd_product,
     usd_services,
     fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
+    name="USD total",
 )
 
 if __name__ == "__main__":
@@ -118,7 +118,7 @@ sourced_revenue = CitedFloat(
 )
 
 
-@Series.define("Revenue", query.accrue(YF.cmonthly), seed=january)
+@Series.define(query.accrue(YF.cmonthly), seed=january, name="Revenue")
 def revenue(
     period: Period,
 ) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:

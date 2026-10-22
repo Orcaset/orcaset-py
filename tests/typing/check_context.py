@@ -7,9 +7,9 @@ from orcaset import YF, Context, DepNode, Period, Series, Val, ops
 from orcaset.query import accrue
 
 JAN = Period(date(2026, 1, 1), date(2026, 2, 1))
-revenue = Series.of("Revenue", accrue(YF.cmonthly), [(JAN, 100.0)])
-costs = ops.scale("Costs", revenue, -0.5)
-total = Val("total", 1.0)
+revenue = Series.of(accrue(YF.cmonthly), [(JAN, 100.0)], name="Revenue")
+costs = ops.scale(revenue, -0.5, name="Costs")
+total = Val(1.0, name="total")
 ctx = Context()
 
 assert_type(ctx.depends_on((costs, JAN), (revenue, JAN)), bool)

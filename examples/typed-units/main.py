@@ -50,24 +50,24 @@ class EUR:
 
 # ---- Define constant value series ----
 usd_product = Series.of(
-    "USD product revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(100.0)]))
+    query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(100.0)])), name="USD product revenue"
 )
 usd_services = Series.of(
-    "USD services revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(25.0)]))
+    query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [USD(25.0)])), name="USD services revenue"
 )
 eur_revenue = Series.of(
-    "EUR revenue", query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [EUR(80.0)]))
+    query.exact, pairs=list(zip(Period.seq(MODEL_START, MONTH), [EUR(80.0)])), name="EUR revenue"
 )
 
 # ---- Demonstrate type-aware composition ----
 
 # OK: same-currency total composes.
 usd_total = ops.map2(
-    "USD total",
     usd_product,
     usd_services,
     fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
+    name="USD total",
 )
 
 # ERROR: different-currency total is rejected where the series are
@@ -75,11 +75,11 @@ usd_total = ops.map2(
 # operands' value types, and evaluating it raises ``TypeError``.
 # Remove the type ignore comment to see the error.
 invalid_total = ops.map2(
-    "invalid total",
     usd_product,
     eur_revenue,
     fn=maybe.map2_some(operator.add),  # type: ignore
     merge_keys=period_union,
+    name="invalid total",
 )
 
 if __name__ == "__main__":

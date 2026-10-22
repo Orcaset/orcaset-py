@@ -31,7 +31,7 @@ from orcaset import YF, Period, Series, get_at, maybe, ops, period_union, query
 
 initial_period = Period(date(2026, 1, 1), date(2026, 2, 1))
 
-@Series.define("Revenue", query.accrue(YF.cmonthly), seed=initial_period)
+@Series.define(query.accrue(YF.cmonthly), seed=initial_period, name="Revenue")
 def revenue(period: Period):
     if period == initial_period:
         value = 100.0
@@ -42,8 +42,8 @@ def revenue(period: Period):
     return period, value, period.from_end(relativedelta(months=1))
 
 
-costs = ops.scale("Costs", revenue, -0.50)
-profit = ops.add("Profit", revenue, costs, merge_keys=period_union)
+costs = ops.scale(revenue, -0.50, name="Costs")
+profit = ops.add(revenue, costs, merge_keys=period_union, name="Profit")
 ```
 
 This code block is complete and can be run standalone. It builds a dynamic model with the structure:

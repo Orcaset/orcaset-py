@@ -36,14 +36,14 @@ FY19 = next(_FISCAL_YEARS)
 
 def _market_rent_series() -> Series[Period, float, Maybe[float]]:
     rent_growth = Series.of(
-        "Rent growth",
         exact,
         [(FY18, 0.035), (FY19, 0.035)],
+        name="Rent growth",
     )
 
     seed: Period | None = None
 
-    @Series.define("Market rent", exact, seed=seed)
+    @Series.define(exact, seed=seed, name="Market rent")
     def market_rent(p: Period | None):
         if p is None:
             return FY17, 1.777777778, FY18
@@ -70,7 +70,7 @@ def test_debt_recurrence():
     first_period = Period(MODEL_START, MODEL_START + MONTH)
     seed: Period | None = None
 
-    @Series.define("Debt", last, seed=seed)
+    @Series.define(last, seed=seed, name="Debt")
     def debt(p: Period | None):
         if p is None:
             return MODEL_START, 100.0, first_period
@@ -114,15 +114,15 @@ def test_keys_until():
     def poison() -> float:
         raise AssertionError("keys_until forced a cell value")
 
-    @Series.define("Poison", exact, seed=FY17)
+    @Series.define(exact, seed=FY17, name="Poison")
     def poison_step(p: Period):
         return p, Thunk(poison), p.shift(YEAR)
 
     market_rent = _market_rent_series()
     ctx = Context()
 
-    keys = ctx.get(Fn("probe", lambda: keys_until(market_rent.cells, FY19)))
-    poison_keys = ctx.get(Fn("poison probe", lambda: keys_until(poison_step.cells, FY19)))
+    keys = ctx.get(Fn(lambda: keys_until(market_rent.cells, FY19), name="probe"))
+    poison_keys = ctx.get(Fn(lambda: keys_until(poison_step.cells, FY19), name="poison probe"))
 
     assert keys == [FY17, FY18, FY19]
     assert poison_keys == [FY17, FY18, FY19]
@@ -131,7 +131,7 @@ def test_keys_until():
 def test_ascending_keys_enforced():
     key = date(2024, 1, 31)
 
-    @Series.define("Repeated", last, seed=0)
+    @Series.define(last, seed=0, name="Repeated")
     def repeated_step(state: int):
         return key, float(state), state + 1
 
@@ -143,7 +143,7 @@ def test_domain_cycle_is_terminal():
     k1 = date(2024, 1, 31)
     k2 = date(2024, 2, 29)
 
-    @Series.define("Domain cycle", exact, seed=0)
+    @Series.define(exact, seed=0, name="Domain cycle")
     def cycle_step(state: int):
         if state == 0:
             return k1, 1.0, 1
@@ -159,7 +159,7 @@ def test_domain_cycle_is_terminal():
 def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
     first = date(2024, 1, 31)
     second = date(2024, 2, 29)
-    start = Val("Start date", first)
+    start = Val(first, name="Start date")
 
     def initial():
         return (yield from get(start))
@@ -168,10 +168,10 @@ def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
         return day, 1.0, day + MONTH
 
     series = Series.unfold(
-        "Deferred seed",
         exact,
         seed=Thunk(initial),
         step=step,
+        name="Deferred seed",
     )
 
     first_context = Context()
@@ -196,10 +196,10 @@ def test_thunk_seed_is_lazy_until_head_is_demanded():
         return day, 1.0, day + MONTH
 
     series = Series.unfold(
-        "Lazy seed",
         exact,
         seed=Thunk(poison),
         step=step,
+        name="Lazy seed",
     )
 
     with pytest.raises(AssertionError, match="seed resolved"):
@@ -221,7 +221,7 @@ def test_next_state_is_not_resolved_as_a_seed():
         assert state is next_state
         return second, 2.0, 1
 
-    series = Series.unfold("Verbatim state", exact, seed=0, step=step)
+    series = Series.unfold(exact, seed=0, step=step, name="Verbatim state")
     assert Context().get_at(series, second) == 2.0
 
 
@@ -236,10 +236,10 @@ def test_self_demanding_thunk_seed_reports_head_cycle():
         return day, 1.0, day + MONTH
 
     series = Series.unfold(
-        "Seed cycle",
         exact,
         seed=Thunk(initial),
         step=step,
+        name="Seed cycle",
     )
 
     with pytest.raises(CycleError) as excinfo:
@@ -249,7 +249,7 @@ def test_self_demanding_thunk_seed_reports_head_cycle():
 
 
 def test_thunk_and_plain_values():
-    source = Val("source", 2.0)
+    source = Val(2.0, name="source")
 
     def deferred():
         value = yield from get(source)
@@ -257,13 +257,13 @@ def test_thunk_and_plain_values():
 
     callable_value = lambda: 7.0
     values = Series.of(
-        "Values",
         exact,
         [
             (date(2024, 1, 31), 1.0),
             (date(2024, 2, 29), Thunk(deferred)),
             (date(2024, 3, 31), callable_value),
         ],
+        name="Values",
     )
     ctx = Context()
 
@@ -280,10 +280,10 @@ def test_thunk_and_plain_values():
         return date(2024, 1, 31), live_generator(), state
 
     bad = Series.unfold(
-        "Generator value",
         exact,
         seed=None,
         step=bad_step,
+        name="Generator value",
     )
 
     with pytest.raises(TypeError, match="Thunk"):
@@ -300,8 +300,8 @@ def test_of_accepts_rule_pairs_updated_between_contexts():
         calls += 1
         return [(first, 1.0)]
 
-    pairs = Fn("Pairs", initial_pairs)
-    series = Series.of("Values", exact, pairs)
+    pairs = Fn(initial_pairs, name="Pairs")
+    series = Series.of(exact, pairs, name="Values")
     first_context = Context()
 
     assert calls == 0
@@ -324,7 +324,7 @@ def test_map_cells_preserves_keys_and_defers_source_values():
         forced.append(2.0)
         return 2.0
 
-    source = Series.of("Source", exact, [(MODEL_START, Thunk(source_value))])
+    source = Series.of(exact, [(MODEL_START, Thunk(source_value))], name="Source")
 
     def double(_key: date, cell: Rule[float]) -> Thunk[float]:
         def value():
@@ -332,17 +332,17 @@ def test_map_cells_preserves_keys_and_defers_source_values():
 
         return Thunk(value)
 
-    mapped = Series("Mapped", map_cells("Mapped", source.cells, double), exact)
+    mapped = Series(map_cells(source.cells, double, name="Mapped"), exact, name="Mapped")
     ctx = Context()
 
-    assert ctx.get(Fn("keys", lambda: keys_until(mapped.cells, MODEL_START))) == [MODEL_START]
+    assert ctx.get(Fn(lambda: keys_until(mapped.cells, MODEL_START), name="keys")) == [MODEL_START]
     assert forced == []
     assert ctx.get_at(mapped, MODEL_START) == 4.0
 
 
 def test_scan_cells_carries_structural_state():
     d1, d2 = date(2024, 1, 31), date(2024, 2, 29)
-    source = Series.of("Source", exact, [(d1, 10), (d2, 20)])
+    source = Series.of(exact, [(d1, 10), (d2, 20)], name="Source")
 
     def indexed(index: int, _key: date, cell: Rule[int]) -> tuple[Thunk[int], int]:
         def value():
@@ -351,9 +351,9 @@ def test_scan_cells_carries_structural_state():
         return Thunk(value), index + 1
 
     scanned = Series(
-        "Scanned",
-        scan_cells("Scanned", source.cells, seed=0, fn=indexed),
+        scan_cells(source.cells, seed=0, fn=indexed, name="Scanned"),
         exact,
+        name="Scanned",
     )
     ctx = Context()
 
@@ -363,16 +363,16 @@ def test_scan_cells_carries_structural_state():
 
 def test_scan_cells_resolves_thunk_accumulator_seed():
     day = date(2024, 1, 31)
-    offset = Val("Offset", 5)
-    source = Series.of("Source", exact, [(day, 10)])
+    offset = Val(5, name="Offset")
+    source = Series.of(exact, [(day, 10)], name="Source")
 
     def add_offset(acc: int, _key: date, cell: Rule[int]) -> tuple[Thunk[int], int]:
         return Thunk(lambda: (yield from get(cell)) + acc), acc
 
     scanned = Series(
-        "Scanned",
-        scan_cells("Scanned", source.cells, seed=Thunk(lambda: get(offset)), fn=add_offset),
+        scan_cells(source.cells, seed=Thunk(lambda: get(offset)), fn=add_offset, name="Scanned"),
         exact,
+        name="Scanned",
     )
     ctx = Context()
 
@@ -382,8 +382,8 @@ def test_scan_cells_resolves_thunk_accumulator_seed():
 
 def test_empty_series_has_no_cells_and_its_query_answers_every_key():
     q = Period(date(2025, 1, 31), date(2026, 1, 31))
-    dropped = Series[Period, float, Maybe[float]].empty("dropped", accrue_drop(YF.cmonthly))
-    strict = Series[Period, float, Maybe[float]].empty("strict", accrue(YF.cmonthly))
+    dropped = Series[Period, float, Maybe[float]].empty(accrue_drop(YF.cmonthly), name="dropped")
+    strict = Series[Period, float, Maybe[float]].empty(accrue(YF.cmonthly), name="strict")
     ctx = Context()
     assert ctx.get(dropped.cells) is None
     assert ctx.get_at(dropped, q) == 0.0

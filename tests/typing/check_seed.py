@@ -21,13 +21,15 @@ def step(index: int) -> tuple[date, float, int] | None:
 
 
 deferred: Series[date, float, Maybe[float]] = Series.unfold(
-    "deferred", exact, seed=Thunk(init), step=step
+    exact, seed=Thunk(init), step=step, name="deferred"
 )
 
-plain: Series[date, float, Maybe[float]] = Series.unfold("plain", exact, seed=0, step=step)
+plain: Series[date, float, Maybe[float]] = Series.unfold(exact, seed=0, step=step, name="plain")
 
-deferred_cells: Chain[date, float] = unfold_cells("deferred cells", seed=Thunk(init), step=step)
-plain_cells: Chain[date, float] = unfold_cells("plain cells", seed=0, step=step)
+deferred_cells: Chain[date, float] = unfold_cells(
+    seed=Thunk(init), step=step, name="deferred cells"
+)
+plain_cells: Chain[date, float] = unfold_cells(seed=0, step=step, name="plain cells")
 
 
 def scan(index: int, _key: date, _cell: Rule[float]) -> tuple[float, int]:
@@ -35,11 +37,11 @@ def scan(index: int, _key: date, _cell: Rule[float]) -> tuple[float, int]:
 
 
 scanned_deferred: Chain[date, float] = scan_cells(
-    "scanned deferred", deferred_cells, seed=Thunk(init), fn=scan
+    deferred_cells, seed=Thunk(init), fn=scan, name="scanned deferred"
 )
-scanned_plain: Chain[date, float] = scan_cells("scanned plain", plain_cells, seed=0, fn=scan)
+scanned_plain: Chain[date, float] = scan_cells(plain_cells, seed=0, fn=scan, name="scanned plain")
 
 define: Callable[[UnfoldStep[int, date, float]], Series[date, float, Maybe[float]]] = Series.define(
-    "defined", exact, seed=Thunk(init)
+    exact, seed=Thunk(init), name="defined"
 )
 defined = define(step)

@@ -32,12 +32,12 @@ operating_proforma = stmt.Group(
         m.pgr,
         [
             m.base_rent,
-            ops.neg("Less: turnover vacancy", m.turnover_vacancy),
-            ops.neg("Less: free rent", m.free_rent),
+            ops.neg(m.turnover_vacancy, name="Less: turnover vacancy"),
+            ops.neg(m.free_rent, name="Less: free rent"),
             m.reimbursements,
         ],
     ),
-    stmt.Total(m.egi, [m.pgr, ops.neg("Less: general vacancy", m.potential_vacant_rent)]),
+    stmt.Total(m.egi, [m.pgr, ops.neg(m.potential_vacant_rent, name="Less: general vacancy")]),
     stmt.Total(
         m.operating_expenses,
         [
@@ -49,18 +49,18 @@ operating_proforma = stmt.Group(
             m.management_fee,
         ],
     ),
-    stmt.Total(m.noi, [m.egi, ops.neg("Less: operating expenses", m.operating_expenses)]),
-    ops.scale("NOI margin (%)", m.noi_margin, 100.0),
+    stmt.Total(m.noi, [m.egi, ops.neg(m.operating_expenses, name="Less: operating expenses")]),
+    ops.scale(m.noi_margin, 100.0, name="NOI margin (%)"),
     stmt.Total(
         m.adjusted_noi,
         [
             m.noi,
-            ops.neg("Less: tenant improvements", m.tenant_improvements),
-            ops.neg("Less: leasing commissions", m.leasing_commissions),
+            ops.neg(m.tenant_improvements, name="Less: tenant improvements"),
+            ops.neg(m.leasing_commissions, name="Less: leasing commissions"),
             m.reserve_funded_capex,
         ],
     ),
-    ops.scale("Adjusted NOI margin (%)", m.adjusted_noi_margin, 100.0),
+    ops.scale(m.adjusted_noi_margin, 100.0, name="Adjusted NOI margin (%)"),
 )
 reserves = stmt.Group(m.reserve_balance, m.reserve_contributions, m.reserve_funded_capex)
 debt = stmt.Group(

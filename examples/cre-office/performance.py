@@ -33,14 +33,14 @@ from orcaset import (
 import operating_model as om
 
 # Acquisition and exit assumptions from 1201-broadway-outline.md.
-exit_date = Val("Exit date", date(2031, 12, 31))
-exit_cap_rate = Val("Exit capitalization rate", 0.06)
-selling_cost_pct = Val("Selling costs %", 0.015)
-acquisition_cost_pct = Val("Acquisition costs %", 0.01)
-loan_issuance_fee_pct = Val("Loan issuance fees %", 0.015)
+exit_date = Val(date(2031, 12, 31), name="Exit date")
+exit_cap_rate = Val(0.06, name="Exit capitalization rate")
+selling_cost_pct = Val(0.015, name="Selling costs %")
+acquisition_cost_pct = Val(0.01, name="Acquisition costs %")
+loan_issuance_fee_pct = Val(0.015, name="Loan issuance fees %")
 
 
-@Fn.define("Investment dates")
+@Fn.define(name="Investment dates")
 def investment_dates() -> Effect[tuple[date, ...]]:
     end = yield from get(exit_date)
     periods: list[Period] = (
@@ -53,7 +53,7 @@ def investment_dates() -> Effect[tuple[date, ...]]:
     return (om.acquisition_date, *(p.end for p in periods))
 
 
-@Fn.define("Gross sale price")
+@Fn.define(name="Gross sale price")
 def gross_sale_price() -> Effect[Maybe[float]]:
     end = yield from get(exit_date)
     cap_rate = yield from get(exit_cap_rate)
@@ -64,27 +64,26 @@ def gross_sale_price() -> Effect[Maybe[float]]:
 
 
 buying_costs = Fn(
-    "Buying costs",
     lambda: -(yield from get(om.acquisition_price)) * (yield from get(acquisition_cost_pct)),
+    name="Buying costs",
 )
 selling_costs = Fn(
-    "Selling costs",
     lambda: maybe.neg_some(
         maybe.mul_some((yield from get(gross_sale_price)), (yield from get(selling_cost_pct)))
     ),
+    name="Selling costs",
 )
 loan_fees = Fn(
-    "Loan issuance fees",
     lambda: -(yield from get(om.initial_debt)) * (yield from get(loan_issuance_fee_pct)),
+    name="Loan issuance fees",
 )
 
 
 sale_proceeds = Fn(
-    "Net sale proceeds",
     lambda: maybe.sum_some((yield from get(gross_sale_price)), (yield from get(selling_costs))),
+    name="Net sale proceeds",
 )
 going_in_cap_rate = Fn(
-    "Implied going-in capitalization rate",
     lambda: maybe.div_some(
         (
             yield from get_at(
@@ -93,17 +92,18 @@ going_in_cap_rate = Fn(
         ),
         (yield from get(om.acquisition_price)),
     ),
+    name="Implied going-in capitalization rate",
 )
 exit_value_psf = Fn(
-    "Exit value / RSF",
     lambda: maybe.div_some((yield from get(gross_sale_price)), (yield from get(om.rsf))),
+    name="Exit value / RSF",
 )
 
 
 def _year_end_flows[V](
     name: str, source: Series[Period, V, Maybe[float]]
 ) -> Series[date, Maybe[float], Maybe[float]]:
-    @Series[date, Maybe[float], Maybe[float]].define(name, query.exact, seed=0)
+    @Series[date, Maybe[float], Maybe[float]].define(query.exact, seed=0, name=name)
     def flows(index: int) -> Effect[tuple[date, Maybe[float], int] | None]:
         dates = yield from get(investment_dates)
         if index >= len(dates):
@@ -121,7 +121,7 @@ def _year_end_flows[V](
 def payoff_flow(
     name: str, balance: Series[Period, Maybe[float], Maybe[float]], maturity: Val[int]
 ) -> Series[date, Maybe[float], Maybe[float]]:
-    @Fn.define(f"{name} transaction")
+    @Fn.define(name=f"{name} transaction")
     def transaction() -> Effect[tuple[tuple[date, Maybe[float]], ...]]:
         end = min(
             (yield from get(exit_date)),
@@ -130,7 +130,7 @@ def payoff_flow(
         amount = yield from get_at(balance, Period(end - om.year_offset, end))
         return ((end, maybe.neg_some(amount)),)
 
-    return Series.of(name, query.exact, transaction)
+    return Series.of(query.exact, transaction, name=name)
 
 
 senior_payoff_flow = payoff_flow("Senior debt payoff", om.senior_ending, om.senior_maturity_years)
@@ -140,40 +140,40 @@ mezzanine_payoff_flow = payoff_flow(
 
 
 purchase_price_flow = Series.of(
-    "Purchase price",
     query.exact,
     ((om.acquisition_date, Thunk(lambda: -(yield from get(om.acquisition_price)))),),
+    name="Purchase price",
 )
 buying_cost_flow = Series.of(
-    "Buying costs", query.exact, ((om.acquisition_date, Thunk(lambda: get(buying_costs))),)
+    query.exact, ((om.acquisition_date, Thunk(lambda: get(buying_costs))),), name="Buying costs"
 )
 initial_reserve_flow = Series.of(
-    "Initial reserve funding",
     query.exact,
     ((om.acquisition_date, Thunk(lambda: -(yield from get(om.upfront_reserve_funding)))),),
+    name="Initial reserve funding",
 )
 unlevered_property_cash_flow = _year_end_flows("Unlevered property cash flow", om.adjusted_noi)
 sale_price_flow = Series.of(
-    "Sale price",
     query.exact,
     Fn(
-        "Sale price transaction",
         lambda: (((yield from get(exit_date)), Thunk(lambda: get(gross_sale_price))),),
+        name="Sale price transaction",
     ),
+    name="Sale price",
 )
 selling_cost_flow = Series.of(
-    "Selling costs",
     query.exact,
     Fn(
-        "Selling costs transaction",
         lambda: (((yield from get(exit_date)), Thunk(lambda: get(selling_costs))),),
+        name="Selling costs transaction",
     ),
+    name="Selling costs",
 )
 debt_draw_flow = Series.of(
-    "Debt draw", query.exact, ((om.acquisition_date, Thunk(lambda: get(om.initial_debt))),)
+    query.exact, ((om.acquisition_date, Thunk(lambda: get(om.initial_debt))),), name="Debt draw"
 )
 loan_fee_flow = Series.of(
-    "Loan issuance fees", query.exact, ((om.acquisition_date, Thunk(lambda: get(loan_fees))),)
+    query.exact, ((om.acquisition_date, Thunk(lambda: get(loan_fees))),), name="Loan issuance fees"
 )
 debt_service_flow = _year_end_flows("Debt service", om.debt_service)
 _unlevered_components = (
@@ -193,14 +193,14 @@ _debt_components = (
 )
 
 unlevered_investment_cash_flow = ops.add(
-    "Total unlevered cash flow", *_unlevered_components, merge_keys=date_union, fill=0.0
+    *_unlevered_components, merge_keys=date_union, fill=0.0, name="Total unlevered cash flow"
 )
 levered_investment_cash_flow = ops.add(
-    "Total levered cash flow to equity",
     unlevered_investment_cash_flow,
     *_debt_components,
     merge_keys=date_union,
     fill=0.0,
+    name="Total levered cash flow to equity",
 )
 
 
@@ -216,7 +216,7 @@ def _irr(name: str, cash_flows: Series[date, Maybe[float], Maybe[float]]) -> Fn[
         result = npf.irr(values)
         return result if isfinite(result) else Na
 
-    return Fn(name, calculate)
+    return Fn(calculate, name=name)
 
 
 unlevered_irr = _irr("Unlevered IRR", unlevered_investment_cash_flow)
@@ -237,18 +237,18 @@ def _cash_flow_sum(
             node = yield from get(node.tail)
         return total
 
-    return Fn(name, calculate)
+    return Fn(calculate, name=name)
 
 
 unlevered_initial_investment = Fn(
-    "Unlevered initial investment",
     lambda: maybe.neg_some(
         (yield from get_at(unlevered_investment_cash_flow, om.acquisition_date))
     ),
+    name="Unlevered initial investment",
 )
 levered_initial_investment = Fn(
-    "Levered initial investment",
     lambda: maybe.neg_some((yield from get_at(levered_investment_cash_flow, om.acquisition_date))),
+    name="Levered initial investment",
 )
 unlevered_total_return = _cash_flow_sum(
     "Unlevered total return", unlevered_investment_cash_flow, contributions=False
@@ -264,14 +264,14 @@ levered_total_investment = _cash_flow_sum(
 )
 
 
-@Fn.define("Unlevered MOIC")
+@Fn.define(name="Unlevered MOIC")
 def unlevered_moic() -> Effect[Maybe[float]]:
     returned = yield from get(unlevered_total_return)
     invested = yield from get(unlevered_total_investment)
     return Na if invested == 0.0 else maybe.div_some(returned, invested)
 
 
-@Fn.define("Levered MOIC")
+@Fn.define(name="Levered MOIC")
 def levered_moic() -> Effect[Maybe[float]]:
     returned = yield from get(levered_total_return)
     invested = yield from get(levered_total_investment)
@@ -288,7 +288,7 @@ levered_cash_flow_table = stmt.Stmt(
 
 
 debt_metrics = stmt.Stmt(
-    ops.scale("Debt yield (%)", om.debt_yield, 100.0),
+    ops.scale(om.debt_yield, 100.0, name="Debt yield (%)"),
     om.interest_coverage,
     om.adjusted_interest_coverage,
     om.dscr,
@@ -296,41 +296,41 @@ debt_metrics = stmt.Stmt(
 )
 
 
-buying_cost_amount = Fn("Buying costs", lambda: maybe.neg_some((yield from get(buying_costs))))
-loan_fee_amount = Fn("Loan issuance fees", lambda: maybe.neg_some((yield from get(loan_fees))))
+buying_cost_amount = Fn(lambda: maybe.neg_some((yield from get(buying_costs))), name="Buying costs")
+loan_fee_amount = Fn(lambda: maybe.neg_some((yield from get(loan_fees))), name="Loan issuance fees")
 total_uses = Fn(
-    "Total uses",
     lambda: maybe.sum_some(
         (yield from get(om.acquisition_price)),
         maybe.neg_some((yield from get(buying_costs))),
         maybe.neg_some((yield from get(loan_fees))),
         (yield from get(om.upfront_reserve_funding)),
     ),
+    name="Total uses",
 )
 equity_investment = Fn(
-    "Equity investment",
     lambda: maybe.sub_some((yield from get(total_uses)), (yield from get(om.initial_debt))),
+    name="Equity investment",
 )
 operating_partner_equity = Fn(
-    "Operating partner equity",
     lambda: maybe.mul_some(
         (yield from get(equity_investment)), (yield from get(om.operating_partner_pct))
     ),
+    name="Operating partner equity",
 )
 limited_partner_equity = Fn(
-    "Limited partner equity",
     lambda: maybe.sub_some(
         (yield from get(equity_investment)), (yield from get(operating_partner_equity))
     ),
+    name="Limited partner equity",
 )
 total_sources = Fn(
-    "Total sources",
     lambda: maybe.sum_some(
         (yield from get(om.senior_debt)),
         (yield from get(om.mezzanine_debt)),
         (yield from get(operating_partner_equity)),
         (yield from get(limited_partner_equity)),
     ),
+    name="Total sources",
 )
 
 

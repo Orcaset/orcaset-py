@@ -71,13 +71,13 @@ from orcaset import (
 )
 
 quarter = Period(date(2025, 12, 31), date(2026, 3, 31))
-revenue = Series.of("Revenue", query.covered, pairs=[(quarter, 100.0)])
-cost_ratio = Val("Signed cost ratio", -0.4)
-costs = ops.scale("Costs", revenue, cost_ratio)
-profit = ops.add("Profit", revenue, costs, merge_keys=period_union)
+revenue = Series.of(query.covered, pairs=[(quarter, 100.0)], name="Revenue")
+cost_ratio = Val(-0.4, name="Signed cost ratio")
+costs = ops.scale(revenue, cost_ratio, name="Costs")
+profit = ops.add(revenue, costs, merge_keys=period_union, name="Profit")
 
 
-@Fn.define("First-quarter profit")
+@Fn.define(name="First-quarter profit")
 def first_quarter_profit() -> Effect[Maybe[float]]:
     return (yield from get_at(profit, quarter))
 

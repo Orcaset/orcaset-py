@@ -79,7 +79,7 @@ def load_frame(url: str, frame: str) -> CitedFloat:
 
 
 # ---- Model definition ----
-@Series.define("SpaceX revenue", query.accrue(YF.cmonthly), seed=Q2_2026)
+@Series.define(query.accrue(YF.cmonthly), seed=Q2_2026, name="SpaceX revenue")
 def revenue(
     period: Period,
 ) -> Effect[tuple[Period, Maybe[float] | Thunk[Maybe[float]], Period]]:

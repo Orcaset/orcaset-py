@@ -29,7 +29,7 @@ accrue_monthly = query.accrue(YF.cmonthly)
 
 
 # ---- Model definition ----
-@Series.define("Revenue", accrue_monthly, seed=Period(START, START + MONTHLY))
+@Series.define(accrue_monthly, seed=Period(START, START + MONTHLY), name="Revenue")
 def revenue(period: Period) -> tuple[Period, Thunk[float], Period]:
     """Each cell is the prior period's answer grown by 1%; seed is 100."""
 
@@ -40,8 +40,8 @@ def revenue(period: Period) -> tuple[Period, Thunk[float], Period]:
     return period, Thunk(value), period.from_end(MONTHLY)
 
 
-cogs = ops.scale("COGS", revenue, -0.5)
-gross_profit = ops.add("Gross Profit", revenue, cogs, merge_keys=period_union)
+cogs = ops.scale(revenue, -0.5, name="COGS")
+gross_profit = ops.add(revenue, cogs, merge_keys=period_union, name="Gross Profit")
 
 
 def constant_series(name: str, value: float) -> Series[Period, Maybe[float], Maybe[float]]:
@@ -51,16 +51,16 @@ def constant_series(name: str, value: float) -> Series[Period, Maybe[float], May
         return period, value, period.from_end(MONTHLY)
 
     return Series.unfold(
-        name,
         accrue_monthly,
         seed=next(Period.seq(date(2026, 1, 1), MONTHLY)),
         step=step,
+        name=name,
     )
 
 
 rd = constant_series("R&D", -10.0)
 sga = constant_series("SGA", -10.0)
-income = ops.add("Income", gross_profit, rd, sga, merge_keys=period_union)
+income = ops.add(gross_profit, rd, sga, merge_keys=period_union, name="Income")
 
 
 # ---- Output ----

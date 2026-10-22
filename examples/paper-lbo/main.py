@@ -43,12 +43,14 @@ purchase_multiple = 5.0
 ltv = 0.6
 ACCRUE = query.accrue(YF.cmonthly)
 
-annual_revenue_growth = Val("Revenue growth rate", 0.1)
-exit_multiple = Val("Exit multiple", 5.0)
+annual_revenue_growth = Val(0.1, name="Revenue growth rate")
+exit_multiple = Val(5.0, name="Exit multiple")
 
 
 # ---- Model definitions ----
-@Series.define("Revenue", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+@Series.define(
+    ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset), name="Revenue"
+)
 def revenue(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     if period.start == acquisition_date:
         value: Maybe[float] = initial_revenue
@@ -59,17 +61,19 @@ def revenue(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     return period, value, period.from_end(year_offset)
 
 
-ebitda = ops.scale("EBITDA", revenue, ebitda_margin)
+ebitda = ops.scale(revenue, ebitda_margin, name="EBITDA")
 da = Series.unfold(
-    "D&A",
     ACCRUE,
     seed=Period(acquisition_date, acquisition_date + year_offset),
     step=lambda period: (period, annual_da, period.from_end(year_offset)),
+    name="D&A",
 )
-ebit = ops.add("EBIT", ebitda, da, merge_keys=period_union)
+ebit = ops.add(ebitda, da, merge_keys=period_union, name="EBIT")
 
 
-@Series.define("Interest", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+@Series.define(
+    ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset), name="Interest"
+)
 def interest(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | None]:
     if period.start >= acquisition_date + hold_period:
         return None
@@ -84,23 +88,23 @@ def interest(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | Non
     return period, value, period.from_end(year_offset)
 
 
-ebt = ops.add("EBT", ebit, interest, merge_keys=period_union)
-taxes = ops.scale("Taxes", ebt, -tax_rate)
-capex = ops.scale("Capex", revenue, -capex_pct_revenue)
+ebt = ops.add(ebit, interest, merge_keys=period_union, name="EBT")
+taxes = ops.scale(ebt, -tax_rate, name="Taxes")
+capex = ops.scale(revenue, -capex_pct_revenue, name="Capex")
 change_in_nwc = Series.unfold(
-    "Change in NWC",
     ACCRUE,
     seed=Period(acquisition_date, acquisition_date + year_offset),
     step=lambda period: (period, -annual_nwc_increase, period.from_end(year_offset)),
+    name="Change in NWC",
 )
 fcf = ops.add(
-    "FCF",
     ebitda,
     taxes,
     interest,
     capex,
     change_in_nwc,
     merge_keys=period_union,
+    name="FCF",
 )
 
 
@@ -110,13 +114,15 @@ def draw_value() -> Effect[Maybe[float]]:
 
 
 draws = Series[date, Maybe[float], Maybe[float]].of(
-    "Draws",
     query.exact_or(0.0),
     [(acquisition_date, Thunk(draw_value))],
+    name="Draws",
 )
 
 
-@Series.define("Cash sweep", ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset))
+@Series.define(
+    ACCRUE, seed=Period(acquisition_date, acquisition_date + year_offset), name="Cash sweep"
+)
 def debt_sweep(period: Period) -> Effect[tuple[Period, Maybe[float], Period] | None]:
     if period.start >= acquisition_date + hold_period:
         return None
@@ -136,9 +142,9 @@ def payment(period: Period) -> Effect[float]:
 
 sweep_periods = list(Period.seq(acquisition_date, year_offset, acquisition_date + hold_period))
 sweep_payments = Series[date, Maybe[float], Maybe[float]].of(
-    "Sweep payments",
     query.exact_or(0.0),
     [(period.end, Thunk(lambda period=period: payment(period))) for period in sweep_periods],
+    name="Sweep payments",
 )
 
 
@@ -158,16 +164,16 @@ def cumulate[V](
 
         return Thunk(value), day
 
-    balance = Series(name, scan_cells(name, flows.cells, seed=None, fn=scan), query.last)
+    balance = Series(scan_cells(flows.cells, seed=None, fn=scan, name=name), query.last, name=name)
     return balance
 
 
 pre_balloon_debt_flows = ops.add(
-    "Pre-balloon debt flows",
     draws,
     sweep_payments,
     merge_keys=date_union,
     fill=0.0,
+    name="Pre-balloon debt flows",
 )
 debt_before_balloon = cumulate("Debt before balloon", pre_balloon_debt_flows)
 
@@ -178,16 +184,16 @@ def balloon_value() -> Effect[float]:
 
 
 balloon_payment = Series[date, Maybe[float], Maybe[float]].of(
-    "Balloon payment",
     query.exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(balloon_value))],
+    name="Balloon payment",
 )
 debt_cash_flows = ops.add(
-    "Debt cash flows",
     pre_balloon_debt_flows,
     balloon_payment,
     merge_keys=date_union,
     fill=0.0,
+    name="Debt cash flows",
 )
 debt_balance = cumulate("Debt balance", debt_cash_flows)
 
@@ -200,9 +206,9 @@ def purchase_price_value() -> Effect[Maybe[float]]:
 
 
 purchase_price = Series[date, Maybe[float], Maybe[float]].of(
-    "Purchase price",
     query.exact_or(0.0),
     [(acquisition_date, Thunk(purchase_price_value))],
+    name="Purchase price",
 )
 
 
@@ -219,9 +225,9 @@ def exit_value_fn() -> Effect[Maybe[float]]:
 
 
 exit_value = Series[date, Maybe[float], Maybe[float]].of(
-    "Exit value",
     query.exact_or(0.0),
     [(acquisition_date + hold_period, Thunk(exit_value_fn))],
+    name="Exit value",
 )
 
 
@@ -230,18 +236,18 @@ def fcf_payment(period: Period) -> Effect[float]:
 
 
 year_end_fcf_payment = Series[date, Maybe[float], Maybe[float]].of(
-    "Year end fcf payment",
     query.exact_or(0.0),
     [(period.end, Thunk(lambda period=period: fcf_payment(period))) for period in sweep_periods],
+    name="Year end fcf payment",
 )
 levered_cash_flow = ops.add(
-    "Levered cash flow",
     purchase_price,
     exit_value,
     year_end_fcf_payment,
     debt_cash_flows,
     merge_keys=date_union,
     fill=0.0,
+    name="Levered cash flow",
 )
 
 statement = stmt.Stmt(

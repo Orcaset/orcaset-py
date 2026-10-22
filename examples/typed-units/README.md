@@ -12,11 +12,11 @@ The `usd_total` series sums the two USD revenue sub-series. The `operator.add` f
 
 ```py
 usd_total = ops.map2(
-    "USD total",
     usd_product,  # USD
     usd_services,  # USD
     fn=maybe.map2_some(operator.add),
     merge_keys=period_union,
+    name="USD total",
 )
 ```
 
@@ -26,11 +26,11 @@ Attempting to added series with incompatible value types raises errors.
 
 ```py
 invalid_total = ops.map2(
-    "invalid total",
     usd_product,  # USD
     eur_revenue,  # EUR
     fn=maybe.map2_some(operator.add),  # static type error here
     merge_keys=period_union,
+    name="invalid total",
 )
 ```
 In this example, `pyrefly` will raise an error at the `operator.add` location noting that it USD and EUR are incompatible operands.

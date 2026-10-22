@@ -11,7 +11,7 @@ The TSA publishes daily checkpoint volume at [https://www.tsa.gov/travel/passeng
 In `scrape.py`, `checkpoint_step` is a lazy cell fetches data from `tsa.gov`, parses it, and builds a `Cons[Period, float]` over the daily checkpoint volume when forced. `tsa_passengers` wraps the checkpoint data into a `Series` that can be queried.
 
 ```py
-@Fn.define("Fetch and parse TSA checkpoints")
+@Fn.define(name="Fetch and parse TSA checkpoints")
 def checkpoint_step() -> Effect[Cons[Period, float] | None]:
     """Fetch the current-year page only when the series' first node is demanded."""
     html = fetch_html(TSA_URL)
@@ -24,11 +24,11 @@ def checkpoint_step() -> Effect[Cons[Period, float] | None]:
         period = Period(travel_date - timedelta(days=1), travel_date)
         return period, count, index + 1
 
-    daily = unfold_cells("TSA checkpoint daily rows", seed=0, step=step)
+    daily = unfold_cells(seed=0, step=step, name="TSA checkpoint daily rows")
     return (yield from get(daily))
 
 
-tsa_passengers = Series("TSA checkpoint passengers", checkpoint_step, _BY_DAYS)
+tsa_passengers = Series(checkpoint_step, _BY_DAYS, name="TSA checkpoint passengers")
 ```
 
 The data retrievel is inert until forced. It does not fetch any data when the file is loaded or the series is created. It is only fetched the first time `tsa_passengers` is queried.
@@ -40,7 +40,7 @@ The passenger history is directly incorporated into the revenue forecast.
 The first time a passenger revenue forecast period is requested, the series demand the applicable checkpoint volume from `tsa_passengers`. The data retrieval is cached inside the evaluation context, so future queries will not trigger additional data requests to `tsa.gov`.
 
 ```py
-@Series.define("Passenger forecast", ACCRUE, seed=NOWCAST_QUARTER)
+@Series.define(ACCRUE, seed=NOWCAST_QUARTER, name="Passenger forecast")
 def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     # If the current period is the nowcast quarter, calculate the QtQ change in
     # checkpoint traffic volume
@@ -64,7 +64,7 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
 
 # Extend the historical passenger revenue with the forecast
 passenger = Series.extend(
-    "Passenger", ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells
+    ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells, name="Passenger"
 )
 ```
 

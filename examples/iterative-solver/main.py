@@ -29,7 +29,7 @@ OPENING_DEBT = 100.0
 seed_date: date | None = None
 
 
-@Series.define("Debt", query.last, seed=seed_date)
+@Series.define(query.last, seed=seed_date, name="Debt")
 def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     if prior_date is None:
         return START_DATE, OPENING_DEBT, START_DATE
@@ -41,7 +41,7 @@ def debt(prior_date: date | None) -> Effect[tuple[date, Maybe[float], date]]:
     return current_date, maybe.sum_some(begin, interest_amt), current_date
 
 
-@Series.define("Interest", query.accrue_drop(YF.act360), seed=FIRST_MONTH)
+@Series.define(query.accrue_drop(YF.act360), seed=FIRST_MONTH, name="Interest")
 def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     begin = yield from get_at(debt, period.start)
 

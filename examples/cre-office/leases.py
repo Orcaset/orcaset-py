@@ -37,15 +37,15 @@ class LeaseType(StrEnum):
     TRIPLE_NET = "NNN"
 
 
-renewal_probability = Val("Renewal probability", 0.70)
-downtime_months = Val("Non-renewal downtime months", 6.0)
-new_free_months = Val("New lease free rent months", 6.0)
-renewal_free_months = Val("Renewal free rent months", 3.0)
-new_ti_psf = Val("New lease TI / RSF", 10.0)
-renewal_ti_psf = Val("Renewal TI / RSF", 3.0)
-new_lc_pct = Val("New lease commission %", 0.03)
-renewal_lc_pct = Val("Renewal commission %", 0.01)
-lease_term = Val("New and renewal lease term", 10)
+renewal_probability = Val(0.70, name="Renewal probability")
+downtime_months = Val(6.0, name="Non-renewal downtime months")
+new_free_months = Val(6.0, name="New lease free rent months")
+renewal_free_months = Val(3.0, name="Renewal free rent months")
+new_ti_psf = Val(10.0, name="New lease TI / RSF")
+renewal_ti_psf = Val(3.0, name="Renewal TI / RSF")
+new_lc_pct = Val(0.03, name="New lease commission %")
+renewal_lc_pct = Val(0.01, name="Renewal commission %")
+lease_term = Val(10, name="New and renewal lease term")
 
 
 @dataclass(frozen=True)
@@ -83,9 +83,9 @@ def lease(
     growing_line: GrowingLine,
 ) -> Lease:
     """Occupancy covers ``start`` to expiration plus ``extension_life``, or ``date.max`` if omitted."""
-    suite_rsf = Val(f"{name} RSF", area)
-    start_date = Val(f"{name} start", start)
-    expiry = Val(f"{name} lease expiration", expiration)
+    suite_rsf = Val(area, name=f"{name} RSF")
+    start_date = Val(start, name=f"{name} start")
+    expiry = Val(expiration, name=f"{name} lease expiration")
 
     def occupancy_window() -> Effect[tuple[tuple[Period, float], ...]]:
         begin = yield from get(start_date)
@@ -93,22 +93,22 @@ def lease(
         return ((Period(begin, end), (yield from get(suite_rsf))),)
 
     occupied = Series[Period, float, Maybe[float]].of(
-        f"{name} occupied RSF",
         query.avg_fill(YF.cmonthly, fill=0.0),
-        Fn(f"{name} occupancy window", occupancy_window),
+        Fn(occupancy_window, name=f"{name} occupancy window"),
+        name=f"{name} occupied RSF",
     )
     rent_psf = growing_line(
-        f"{name} rent / RSF", Val(f"{name} FY25 rent / RSF", initial_rent), rent_growth
+        f"{name} rent / RSF", Val(initial_rent, name=f"{name} FY25 rent / RSF"), rent_growth
     )
-    rent = ops.mul(f"{name} rent", rent_psf, occupied, merge_keys=period_union)
+    rent = ops.mul(rent_psf, occupied, merge_keys=period_union, name=f"{name} rent")
 
     def expiration_seed() -> Effect[date | None]:
         return (yield from get(expiry))
 
     @Series[Period, Maybe[float], Maybe[float]].define(
-        f"{name} turnover vacancy",
         query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
+        name=f"{name} turnover vacancy",
     )
     def vacancy(
         expiration_date: date | None,
@@ -128,9 +128,9 @@ def lease(
         )
 
     @Series[Period, Maybe[float], Maybe[float]].define(
-        f"{name} free rent",
         query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
+        name=f"{name} free rent",
     )
     def free_rent(
         expiration_date: date | None,
@@ -149,9 +149,9 @@ def lease(
         )
 
     @Series[Period, Maybe[float], Maybe[float]].define(
-        f"{name} tenant improvements",
         query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
+        name=f"{name} tenant improvements",
     )
     def improvements(
         expiration_date: date | None,
@@ -166,9 +166,9 @@ def lease(
         return improvement_period, cost * (yield from get(suite_rsf)), None
 
     @Series[Period, Maybe[float], Maybe[float]].define(
-        f"{name} leasing commissions",
         query.accrue_drop(YF.cmonthly),
         seed=Thunk(expiration_seed),
+        name=f"{name} leasing commissions",
     )
     def commissions(
         expiration_date: date | None,
@@ -191,21 +191,21 @@ def lease(
 
     def reimbursed(expenses: Amount) -> Amount:
         share = ops.scale(
-            f"{name} occupied share",
             occupied,
-            Fn(f"{name} / property RSF", lambda: 1.0 / (yield from get(rsf))),
+            Fn(lambda: 1.0 / (yield from get(rsf)), name=f"{name} / property RSF"),
+            name=f"{name} occupied share",
         )
         gross = ops.mul(
-            f"{name} reimbursements before downtime",
             expenses,
             share,
             merge_keys=period_union,
+            name=f"{name} reimbursements before downtime",
         )
 
         @Series[Period, Maybe[float], Maybe[float]].define(
-            f"{name} reimbursement downtime",
             query.accrue_drop(YF.cmonthly),
             seed=Thunk(expiration_seed),
+            name=f"{name} reimbursement downtime",
         )
         def downtime_loss(
             expiration_date: date | None,
@@ -224,16 +224,16 @@ def lease(
             )
 
         return ops.sub(
-            f"{name} reimbursements",
             gross,
             downtime_loss,
             merge_keys=period_union,
+            name=f"{name} reimbursements",
         )
 
     match lease_type:
         case LeaseType.FULL_SERVICE:
             reimbursements = Series[Period, Maybe[float], Maybe[float]].empty(
-                f"{name} reimbursements", query.accrue_drop(YF.cmonthly)
+                query.accrue_drop(YF.cmonthly), name=f"{name} reimbursements"
             )
         case LeaseType.SINGLE_NET:
             reimbursements = reimbursed(property_taxes)

@@ -100,7 +100,7 @@ pro_forma = stmt.Group(
         noi,
         [
             egi,
-            ops.neg("Less: Operating expenses", total_operating_expenses),
+            ops.neg(total_operating_expenses, name="Less: Operating expenses"),
         ],
     ),
     noi_margin,

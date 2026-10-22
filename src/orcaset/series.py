@@ -10,7 +10,18 @@ from typing import Any, Protocol, Self, cast, overload
 
 from orcaset.maybe import Maybe, Na
 from orcaset.period import Period
-from orcaset.rule import Effect, Fn, KeyedRule, Rule, get, get_at
+from orcaset.rule import (
+    AutoName,
+    Effect,
+    Fn,
+    KeyedRule,
+    Rule,
+    _fn_name,
+    auto_name,
+    derived_name,
+    get,
+    get_at,
+)
 
 
 class Key(Hashable, Protocol):
@@ -87,10 +98,13 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     """A queryable series backed by an effectful cons-list built by unfold.
 
     ``K`` is both the cell key type and the query type. ``V`` is the cell
-    value type and ``W`` the query answer type.
+    value type and ``W`` the query answer type. ``name`` is optional; the
+    constructors derive one when it is omitted.
     """
 
-    def __init__(self, name: str, cells: Chain[K, V], query: QueryFn[K, V, W]) -> None:
+    def __init__(
+        self, cells: Chain[K, V], query: QueryFn[K, V, W], *, name: str | None = None
+    ) -> None:
         super().__init__(name)
         self._cells = cells
         self._query = query
@@ -107,57 +121,59 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     @overload
     def unfold[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: Thunk[S],
         step: UnfoldStep[S, K, V],
+        name: str | None = None,
     ) -> Series[K, V, W]: ...
     @classmethod
     @overload
     def unfold[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: S,
         step: UnfoldStep[S, K, V],
+        name: str | None = None,
     ) -> Series[K, V, W]: ...
     @classmethod
     def unfold[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: S | Thunk[S],
         step: UnfoldStep[S, K, V],
+        name: str | None = None,
     ) -> Series[K, V, W]:
         """Build a series by repeatedly applying ``step`` to an evolving state.
 
         A ``Thunk`` seed is resolved once by the head node before the first step.
         """
-        return cls(name, unfold_cells(name, seed=seed, step=step), query)
+        name = _resolve_name(name, cls.__name__)
+        return cls(unfold_cells(seed=seed, step=step, name=name), query, name=name)
 
     @classmethod
     def extend(
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         base: Chain[K, V],
         cont: Continuation[K, V],
+        name: str | None = None,
     ) -> Series[K, V, W]:
         """Build a series that continues ``base`` lazily at its frontier."""
-        return cls(name, extend_cells(name, base, cont), query)
+        name = _resolve_name(name, cls.__name__)
+        return cls(extend_cells(base, cont, name=name), query, name=name)
 
     @classmethod
     def flatten(
         cls,
-        name: str,
         components: Chain[int, Series[K, Any, W]],
         *,
         query: QueryFn[K, W, W],
         split_keys: KeySplit[K],
+        name: str | None = None,
     ) -> Series[K, W, W]:
         """Flatten a lazy chain of series, preserving each component's query.
 
@@ -186,6 +202,7 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         (as with other ordered scans); an infinite prefix of empty components
         or keys that never advance past a query cannot produce an answer.
         """
+        name = _resolve_name(name, cls.__name__)
         owners = _flatten_owners(name, components, split_keys)
 
         def answer(key: K, owner: Rule[_Component[K, W]]) -> Effect[W]:
@@ -221,20 +238,21 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
                 node, owner = following, next_owner
 
         def compute(q: K, _cells: Chain[K, W]) -> Effect[W]:
-            parts = unfold_cells(f"{name}.parts@{q}", seed=(q, owners), step=part)
+            parts = unfold_cells(seed=(q, owners), step=part, name=f"{name}.parts@{q}")
             head = yield from get(parts)
             if head is not None and head.key == q:
                 return (yield from get(head.value))
             return (yield from _as_effect(query(q, parts)))
 
-        return cls(name, map_cells(name, owners, value), compute)
+        return cls(map_cells(owners, value, name=name), compute, name=name)
 
     @classmethod
     def of(
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         pairs: Pairs[K, V] | Rule[Pairs[K, V]],
+        *,
+        name: str | None = None,
     ) -> Series[K, V, W]:
         """Build a series from a sequence of pairs or a rule resolving one."""
 
@@ -252,55 +270,58 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
             def initial() -> Effect[tuple[Pairs[K, V], int]]:
                 return (yield from get(pairs)), 0
 
-            return cls.unfold(name, query, seed=Thunk(initial), step=step)
-        return cls.unfold(name, query, seed=(pairs, 0), step=step)
+            return cls.unfold(query, seed=Thunk(initial), step=step, name=name)
+        return cls.unfold(query, seed=(pairs, 0), step=step, name=name)
 
     @classmethod
-    def empty(cls, name: str, query: QueryFn[K, V, W]) -> Series[K, V, W]:
+    def empty(cls, query: QueryFn[K, V, W], *, name: str | None = None) -> Series[K, V, W]:
         """Build a series with no cells; ``query`` answers every key over the empty chain.
 
         With no cells to infer from, give the types explicitly, e.g.
-        ``Series[Period, float, Maybe[float]].empty(name, query.accrue_drop(YF.cmonthly))``.
+        ``Series[Period, float, Maybe[float]].empty(query.accrue_drop(YF.cmonthly))``.
         """
 
         def step(_state: None) -> None:
             return None
 
-        return cls.unfold(name, query, seed=None, step=step)
+        return cls.unfold(query, seed=None, step=step, name=name)
 
     @classmethod
     @overload
     def define[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: Thunk[S],
+        name: str | None = None,
     ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]: ...
     @classmethod
     @overload
     def define[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: S,
+        name: str | None = None,
     ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]: ...
     @classmethod
     def define[S](
         cls,
-        name: str,
         query: QueryFn[K, V, W],
         *,
         seed: S | Thunk[S],
+        name: str | None = None,
     ) -> Callable[[UnfoldStep[S, K, V]], Series[K, V, W]]:
         """Decorator form of ``unfold`` for self-referential series bodies.
 
         A ``Thunk`` seed is resolved once by the head node before the first step.
+        Without a ``name``, the series is named after the decorated function.
         """
 
         def decorator(step: UnfoldStep[S, K, V]) -> Series[K, V, W]:
-            return cls.unfold(name, query, seed=seed, step=step)
+            step_name = _fn_name(step)
+            label = name if name is not None or step_name is None else AutoName(step_name)
+            return cls.unfold(query, seed=seed, step=step, name=label)
 
         return decorator
 
@@ -338,42 +359,43 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
             )
         return Cons(
             key,
-            Fn(f"{self._series_name}@{key}", _cell_fn(value), structural=True),
+            Fn(_cell_fn(value), name=f"{self._series_name}@{key}", structural=True),
             _UnfoldRule(self._series_name, key, next_state, self._unfold_step),
         )
 
 
 @overload
 def unfold_cells[S, K: Key, V](
-    name: str,
     *,
     seed: Thunk[S],
     step: UnfoldStep[S, K, V],
+    name: str | None = None,
 ) -> Chain[K, V]: ...
 @overload
 def unfold_cells[S, K: Key, V](
-    name: str,
     *,
     seed: S,
     step: UnfoldStep[S, K, V],
+    name: str | None = None,
 ) -> Chain[K, V]: ...
 def unfold_cells[S, K: Key, V](
-    name: str,
     *,
     seed: S | Thunk[S],
     step: UnfoldStep[S, K, V],
+    name: str | None = None,
 ) -> Chain[K, V]:
     """Build a standalone cell chain, e.g. for an ``extend_cells`` continuation.
 
     A ``Thunk`` seed is resolved once by the head node before the first step.
     """
-    return _UnfoldRule(name, None, seed, step)
+    return _UnfoldRule(_resolve_name(name, "unfold_cells"), None, seed, step)
 
 
 def map_cells[K: Key, A, B](
-    name: str,
     source: Chain[K, A],
     fn: Callable[[K, Rule[A]], B | Thunk[B]],
+    *,
+    name: str | None = None,
 ) -> Chain[K, B]:
     """Map cells one-for-one without forcing their values."""
 
@@ -383,33 +405,34 @@ def map_cells[K: Key, A, B](
             return None
         return node.key, fn(node.key, node.value), node.tail
 
-    return unfold_cells(name, seed=source, step=step)
+    return unfold_cells(seed=source, step=step, name=_resolve_name(name, "map_cells"))
 
 
 @overload
 def scan_cells[K: Key, A, S, B](
-    name: str,
     source: Chain[K, A],
     *,
     seed: Thunk[S],
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+    name: str | None = None,
 ) -> Chain[K, B]: ...
 @overload
 def scan_cells[K: Key, A, S, B](
-    name: str,
     source: Chain[K, A],
     *,
     seed: S,
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+    name: str | None = None,
 ) -> Chain[K, B]: ...
 def scan_cells[K: Key, A, S, B](
-    name: str,
     source: Chain[K, A],
     *,
     seed: S | Thunk[S],
     fn: Callable[[S, K, Rule[A]], tuple[B | Thunk[B], S]],
+    name: str | None = None,
 ) -> Chain[K, B]:
     """Map cells one-for-one while carrying structural accumulator state."""
+    name = _resolve_name(name, "scan_cells")
 
     def step(
         state: tuple[Chain[K, A], S],
@@ -426,14 +449,15 @@ def scan_cells[K: Key, A, S, B](
         def head_seed() -> Effect[tuple[Chain[K, A], S]]:
             return source, (yield from _as_effect(seed.fn()))
 
-        return unfold_cells(name, seed=Thunk[tuple[Chain[K, A], S]](head_seed), step=step)
-    return unfold_cells(name, seed=(source, seed), step=step)
+        return unfold_cells(seed=Thunk[tuple[Chain[K, A], S]](head_seed), step=step, name=name)
+    return unfold_cells(seed=(source, seed), step=step, name=name)
 
 
 def extend_cells[K: Key, V](
-    name: str,
     base: Chain[K, V],
     cont: Continuation[K, V],
+    *,
+    name: str | None = None,
 ) -> Chain[K, V]:
     """Continue ``base`` lazily with a chain built from its last node.
 
@@ -449,6 +473,7 @@ def extend_cells[K: Key, V](
     first key is not entirely after the last base key raises ``ValueError``
     without forcing any cell.
     """
+    name = _resolve_name(name, "extend_cells")
 
     def wrap(prev: Cons[K, V] | None, tail: Chain[K, V]) -> Chain[K, V]:
         def compute() -> Effect[Cons[K, V] | None]:
@@ -463,12 +488,14 @@ def extend_cells[K: Key, V](
             return node
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
-        return Fn(label, compute, structural=True)
+        return Fn(compute, name=label, structural=True)
 
     return wrap(None, base)
 
 
-def concat_cells[J: Key, K: Key, V](name: str, outer: Chain[J, Chain[K, V]]) -> Chain[K, V]:
+def concat_cells[J: Key, K: Key, V](
+    outer: Chain[J, Chain[K, V]], *, name: str | None = None
+) -> Chain[K, V]:
     """Concatenate a chain of chains in outer order; outer keys are discarded.
 
     Inner nodes pass through with their own value rules. An outer value is read
@@ -480,6 +507,7 @@ def concat_cells[J: Key, K: Key, V](name: str, outer: Chain[J, Chain[K, V]]) -> 
     ``ValueError`` when the walk reaches it. Gaps are allowed and are answered
     by the query of the series built over the result.
     """
+    name = _resolve_name(name, "concat_cells")
 
     def walk(
         prev: Cons[K, V] | None, rest: Chain[J, Chain[K, V]], inner: Chain[K, V] | None
@@ -504,21 +532,23 @@ def concat_cells[J: Key, K: Key, V](name: str, outer: Chain[J, Chain[K, V]]) -> 
                 return Cons(node.key, node.value, walk(node, remaining, node.tail))
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
-        return Fn(label, compute, structural=True)
+        return Fn(compute, name=label, structural=True)
 
     return walk(None, outer, None)
 
 
 def flat_map_cells[J: Key, A, K: Key, V](
-    name: str,
     outer: Chain[J, A],
     fn: Callable[[A], Chain[K, V]],
+    *,
+    name: str | None = None,
 ) -> Chain[K, V]:
     """Map each outer value to a chain and concatenate them: ``concat ∘ map``.
 
     ``fn`` receives the resolved value, since the resulting structure depends on
     it. See ``concat_cells`` for laziness and key ordering.
     """
+    name = _resolve_name(name, "flat_map_cells")
 
     def chain(_key: J, value: Rule[A]) -> Thunk[Chain[K, V]]:
         def build() -> Effect[Chain[K, V]]:
@@ -526,7 +556,7 @@ def flat_map_cells[J: Key, A, K: Key, V](
 
         return Thunk(build)
 
-    return concat_cells(name, map_cells(f"{name}.chains", outer, chain))
+    return concat_cells(map_cells(outer, chain, name=f"{name}.chains"), name=name)
 
 
 def _clip_period(key: Period, start: date | None, end: date | None) -> Period | None:
@@ -537,10 +567,11 @@ def _clip_period(key: Period, start: date | None, end: date | None) -> Period | 
 
 
 def clip_periods[V, W](
-    name: str,
     source: Series[Period, V, W],
     start: date | None = None,
     end: date | None = None,
+    *,
+    name: str | None = None,
 ) -> Series[Period, W, Maybe[W]]:
     """``source`` within ``(start, end]``; either bound may be open.
 
@@ -551,6 +582,7 @@ def clip_periods[V, W](
     are skipped and the walk stops at the first cell starting at or after ``end``,
     reading keys only.
     """
+    name = name if name is not None else derived_name("clip_periods", source)
 
     def answer(key: Period) -> Thunk[W]:
         return Thunk(lambda: get_at(source, key))
@@ -574,14 +606,15 @@ def clip_periods[V, W](
             return Na
         return (yield from get_at(source, inside))
 
-    return Series(name, unfold_cells(name, seed=source.cells, step=step), compute)
+    return Series(unfold_cells(seed=source.cells, step=step, name=name), compute, name=name)
 
 
 def clip_dates[V, W](
-    name: str,
     source: Series[date, V, W],
     start: date | None = None,
     end: date | None = None,
+    *,
+    name: str | None = None,
 ) -> Series[date, V, Maybe[W]]:
     """``source`` within ``(start, end]``; either bound may be open.
 
@@ -591,6 +624,7 @@ def clip_dates[V, W](
     ``start``; a query outside the bounds is ``Na``. Cells before ``start`` are
     skipped and the walk stops at the first cell after ``end``, reading keys only.
     """
+    name = name if name is not None else derived_name("clip_dates", source)
 
     def inside(key: date) -> bool:
         return (start is None or start < key) and (end is None or key <= end)
@@ -605,20 +639,21 @@ def clip_dates[V, W](
             return Cons(node.key, node.value, walk(node.key, node.tail))
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev}"
-        return Fn(label, compute, structural=True)
+        return Fn(compute, name=label, structural=True)
 
     def query(q: date, cells: Chain[date, V]) -> Effect[Maybe[W]]:
         if not inside(q):
             return Na
         return (yield from _as_effect(source._query(q, cells)))
 
-    return Series(name, walk(None, source.cells), query)
+    return Series(walk(None, source.cells), query, name=name)
 
 
 def continue_series[K: Key, V, W](
-    name: str,
     base: Series[K, V, W],
     cont: Callable[[Cons[K, V] | None], Series[K, Any, W]],
+    *,
+    name: str | None = None,
 ) -> Chain[int, Series[K, Any, W]]:
     """Build ``[base, lazy cont(last)]`` for ``Series.flatten``.
 
@@ -644,7 +679,8 @@ def continue_series[K: Key, V, W](
             node = yield from get(node.tail)
         return 1, Thunk(lambda: cont(last)), 2
 
-    return unfold_cells(name, seed=0, step=step)
+    name = name if name is not None else derived_name("continue_series", base)
+    return unfold_cells(seed=0, step=step, name=name)
 
 
 type _Component[K: Key, W] = Cons[int, Series[K, Any, W]]
@@ -686,7 +722,7 @@ def _flatten_owners[K: Key, W](
             if key is not None:
                 return key, owner, (outer, owner, inner, key)
 
-    return unfold_cells(f"{name}.owners", seed=(components, None, None, None), step=step)
+    return unfold_cells(seed=(components, None, None, None), step=step, name=f"{name}.owners")
 
 
 type _Frontier[K: Key] = tuple[K | None, Chain[K, Any] | None]
@@ -695,10 +731,11 @@ chain. ``(None, tail)`` needs a refill; ``(None, None)`` is exhausted."""
 
 
 def merge_cells[K: Key, V](
-    name: str,
     chains: Sequence[Chain[K, Any]],
     merge: KeyMerge[K],
     cell: Callable[[K], V | Thunk[V]],
+    *,
+    name: str | None = None,
 ) -> Chain[K, V]:
     """Merge ascending chains into one chain whose keys re-tile their union.
 
@@ -750,7 +787,12 @@ def merge_cells[K: Key, V](
         return piece, cell(piece), tuple(advanced)
 
     seed: tuple[_Frontier[K], ...] = tuple((None, chain) for chain in chains)
-    return unfold_cells(name, seed=seed, step=step)
+    return unfold_cells(seed=seed, step=step, name=_resolve_name(name, "merge_cells"))
+
+
+def _resolve_name(name: str | None, kind: str) -> str:
+    """``name`` if given, else a fresh ``kind#n`` label for structural rules to extend."""
+    return name if name is not None else auto_name(kind)
 
 
 def _cell_fn[V](value: V | Thunk[V]) -> Callable[[], Effect[V] | V]:

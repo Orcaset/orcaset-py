@@ -29,12 +29,12 @@ Q1 = Period(date(2026, 1, 1), date(2026, 4, 1))
 
 
 def _literal_model():
-    rev = Series.of("Revenue", accrue(YF.cmonthly), [(JAN, 100.0), (FEB, 110.0), (MAR, 121.0)])
-    return rev, ops.scale("Costs", rev, -0.5)
+    rev = Series.of(accrue(YF.cmonthly), [(JAN, 100.0), (FEB, 110.0), (MAR, 121.0)], name="Revenue")
+    return rev, ops.scale(rev, -0.5, name="Costs")
 
 
 def _recurrence_model():
-    @Series.define("Revenue", accrue(YF.cmonthly), seed=JAN)
+    @Series.define(accrue(YF.cmonthly), seed=JAN, name="Revenue")
     def rev(period: Period):
         if period == JAN:
             value = 100.0
@@ -43,7 +43,7 @@ def _recurrence_model():
             value = maybe.mul_some(prior, 1.10)
         return period, value, period.from_end(MONTH)
 
-    return rev, ops.scale("Costs", rev, -0.5)
+    return rev, ops.scale(rev, -0.5, name="Costs")
 
 
 def _labels(path: tuple[DepNode, ...]) -> tuple[tuple[str, object], ...]:
@@ -75,7 +75,7 @@ def test_same_key_depends_on_query_cell():
 
 def test_direction_and_unrelated_cells():
     rev, costs = _literal_model()
-    other = Series.of("Other", accrue(YF.cmonthly), [(JAN, 1.0)])
+    other = Series.of(accrue(YF.cmonthly), [(JAN, 1.0)], name="Other")
     ctx = Context()
     assert not ctx.depends_on((rev, JAN), (costs, JAN))
     assert ctx.path_to((rev, JAN), (costs, JAN)) is None
@@ -101,15 +101,15 @@ def test_materializes_source_on_fresh_context():
 def test_unkeyed_rules_as_source_and_target():
     rev, costs = _literal_model()
 
-    @Fn.define("total")
+    @Fn.define(name="total")
     def total():
         return (yield from get_at(costs, Q1))
 
-    @Fn.define("leaf")
+    @Fn.define(name="leaf")
     def leaf():
         return 1.0
 
-    @Fn.define("via leaf")
+    @Fn.define(name="via leaf")
     def via_leaf():
         return ((yield from get(leaf)), (yield from get(total)))
 
@@ -129,16 +129,16 @@ def test_unkeyed_rules_as_source_and_target():
 
 
 def test_reflexive_only_through_a_cycle():
-    @Fn.define("a")
+    @Fn.define(name="a")
     def a():
         b_ = yield from get(b, seed=0.0, distance=abs_distance)
         return 0.5 * b_ + 1.0
 
-    @Fn.define("b")
+    @Fn.define(name="b")
     def b():
         return 0.5 * (yield from get(a))
 
-    @Fn.define("leaf")
+    @Fn.define(name="leaf")
     def leaf():
         return 1.0
 

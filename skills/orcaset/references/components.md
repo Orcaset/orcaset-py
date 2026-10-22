@@ -66,7 +66,7 @@ class Contract:
 - Each line is its own `Series` with its own cell grid and query, so a level and a flow on the same component need not share keys.
 - Fields that determine structure (dates, terms, which successor comes next) are plain Python values, not rules. A successor reads `prior.term.end` directly.
 - The record holds only what the instance is. Assumptions about what happens after it belong to the succession policy, not the record.
-- A component that has no line of some kind still gets that field, as an empty series: `Series[K, V, W].empty(name, query)`. Give the type parameters explicitly, since there are no cells to infer from. Choose its query so aggregation treats it correctly (usually `accrue_drop` for a flow, so it answers `0.0`).
+- A component that has no line of some kind still gets that field, as an empty series: `Series[K, V, W].empty(query, name=...)`. Give the type parameters explicitly, since there are no cells to infer from. Choose its query so aggregation treats it correctly (usually `accrue_drop` for a flow, so it answers `0.0`).
 
 ## Shared assumptions are a bundle of rules
 
@@ -95,11 +95,11 @@ class Pricing:
         )
 
 
-price_year_one = Val("Price / unit, year one", 120.0)
-price_growth = Val("Price growth", 0.03)
+price_year_one = Val(120.0, name="Price / unit, year one")
+price_growth = Val(0.03, name="Price growth")
 
 
-@Series.define("Price / unit", query.avg(YF.cmonthly), seed=Period(opening, opening + year))
+@Series.define(query.avg(YF.cmonthly), seed=Period(opening, opening + year), name="Price / unit")
 def price(period: Period) -> Effect[tuple[Period, float, Period]]:
     years = YF.cmonthly(opening, period.start)
     base = yield from get(price_year_one)
@@ -109,11 +109,11 @@ def price(period: Period) -> Effect[tuple[Period, float, Period]]:
 
 pricing = Pricing(
     annual_price=price,
-    escalator=Val("Annual escalator", 0.02),
-    discount_share=Val("Renewal discount share", 1.0),
-    renews=Val("Contracts renew", True),
-    term_years=Val("Renewal term years", 3),
-    discount_months=Val("Renewal discount months", 2),
+    escalator=Val(0.02, name="Annual escalator"),
+    discount_share=Val(1.0, name="Renewal discount share"),
+    renews=Val(True, name="Contracts renew"),
+    term_years=Val(3, name="Renewal term years"),
+    discount_months=Val(2, name="Renewal discount months"),
 )
 ```
 
@@ -126,7 +126,7 @@ pricing = Pricing(
 
 ```py
 def no_amount(name: str) -> Line:
-    return Series[Period, Maybe[float], Maybe[float]].empty(name, query.accrue_drop(YF.cmonthly))
+    return Series[Period, Maybe[float], Maybe[float]].empty(query.accrue_drop(YF.cmonthly), name=name)
 
 
 def discount(name: str, revenue: Line, start: date, months: int, share: Rule[float]) -> Line:
@@ -134,9 +134,9 @@ def discount(name: str, revenue: Line, start: date, months: int, share: Rule[flo
     if months == 0:
         return no_amount(name)
     window = clip_periods(
-        f"{name} basis", revenue, start, start + relativedelta(months=months, day=31)
+        revenue, start, start + relativedelta(months=months, day=31), name=f"{name} basis"
     )
-    return ops.neg(name, ops.scale(f"{name} share", window, share))
+    return ops.neg(ops.scale(window, share, name=f"{name} share"), name=name)
 
 
 def signed_contract(name: str, term: Period, units: float, annual_price: float) -> Contract:
@@ -145,8 +145,8 @@ def signed_contract(name: str, term: Period, units: float, annual_price: float) 
     return Contract(
         name=name,
         term=term,
-        units=Series.of(f"{name} units", query.avg(YF.cmonthly), [(term, units)]),
-        revenue=Series.of(f"{name} revenue", query.accrue(YF.cmonthly), revenue_cells),
+        units=Series.of(query.avg(YF.cmonthly), [(term, units)], name=f"{name} units"),
+        revenue=Series.of(query.accrue(YF.cmonthly), revenue_cells, name=f"{name} revenue"),
         discount=no_amount(f"{name} discount"),
     )
 
@@ -165,14 +165,14 @@ def renewal(name: str, start: date, units: float, pricing: Pricing, terms: Terms
 
     periods = Period.list(start, year, term.end)
     revenue = Series.of(
-        f"{name} revenue",
         query.accrue(YF.cmonthly),
         [(period, year_amount(index, period)) for index, period in enumerate(periods)],
+        name=f"{name} revenue",
     )
     return Contract(
         name=name,
         term=term,
-        units=Series.of(f"{name} units", query.avg(YF.cmonthly), [(term, units)]),
+        units=Series.of(query.avg(YF.cmonthly), [(term, units)], name=f"{name} units"),
         revenue=revenue,
         discount=discount(
             f"{name} discount", revenue, start, terms.discount_months, pricing.discount_share
@@ -209,7 +209,7 @@ def contract_chain(
             return None
         return index, contract, (index + 1, contract)
 
-    return unfold_cells(f"{account} contracts", seed=(0, None), step=step)
+    return unfold_cells(seed=(0, None), step=step, name=f"{account} contracts")
 
 
 def renew_at_market(pricing: Pricing) -> Successor:
@@ -297,25 +297,25 @@ def account_line(
     def cells(contract: Contract) -> Chain[Period, Maybe[float]]:
         return line(contract).cells
 
-    return Series(label, flat_map_cells(label, account.contracts, cells), over)
+    return Series(flat_map_cells(account.contracts, cells, name=label), over, name=label)
 
 
 flow = query.accrue_drop(YF.cmonthly)  # Time outside every contract accrues nothing.
 revenue_by_account = [account_line(a, "revenue", lambda c: c.revenue, flow) for a in accounts]
-gross_revenue = ops.add("Gross revenue", *revenue_by_account, merge_keys=period_union)
+gross_revenue = ops.add(*revenue_by_account, merge_keys=period_union, name="Gross revenue")
 discounts = ops.add(
-    "Discounts",
     *(account_line(a, "discount", lambda c: c.discount, flow) for a in accounts),
     merge_keys=period_union,
+    name="Discounts",
 )
-net_revenue = ops.add("Net revenue", gross_revenue, discounts, merge_keys=period_union)
+net_revenue = ops.add(gross_revenue, discounts, merge_keys=period_union, name="Net revenue")
 active_units = ops.add(
-    "Active units",
     *(
         account_line(a, "units", lambda c: c.units, query.avg_fill(YF.cmonthly, fill=0.0))
         for a in accounts
     ),
     merge_keys=period_union,
+    name="Active units",
 )
 ```
 

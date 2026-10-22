@@ -51,7 +51,7 @@ NOWCAST_QUARTER = HISTORY[-1][0].from_end(QUARTER)
 
 
 # ---- Model definitions ----
-@Fn.define("TSA nowcast windows")
+@Fn.define(name="TSA nowcast windows")
 def nowcast_windows() -> Effect[tuple[Period, Period]]:
     last_observation = yield from get(tsa_last_date)
     current = NOWCAST_QUARTER
@@ -64,19 +64,19 @@ def nowcast_windows() -> Effect[tuple[Period, Period]]:
 
 
 passenger_history = Series.of(
-    "Passenger history",
     ACCRUE,
     [(period, values["passenger_revenue"]) for period, values in HISTORY],
+    name="Passenger history",
 )
 freight_history = Series.of(
-    "Freight history", ACCRUE, [(period, values["freight"]) for period, values in HISTORY]
+    ACCRUE, [(period, values["freight"]) for period, values in HISTORY], name="Freight history"
 )
 other_history = Series.of(
-    "Other history", ACCRUE, [(period, values["other"]) for period, values in HISTORY]
+    ACCRUE, [(period, values["other"]) for period, values in HISTORY], name="Other history"
 )
 
 
-@Series.define("Passenger forecast", ACCRUE, seed=NOWCAST_QUARTER)
+@Series.define(ACCRUE, seed=NOWCAST_QUARTER, name="Passenger forecast")
 def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     if period == NOWCAST_QUARTER:
         prior_rev = yield from get_at(passenger_history, period.shift(-QUARTER))
@@ -94,7 +94,7 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
 
 
 passenger = Series.extend(
-    "Passenger", ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells
+    ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells, name="Passenger"
 )
 
 
@@ -102,20 +102,20 @@ def constant_forecast(last: Cons[Period, float] | None) -> Chain[Period, float]:
     if last is None:
         raise ValueError("missing revenue history")
     return unfold_cells(
-        "Held forecast",
         seed=last.key.from_end(QUARTER),
         step=lambda period: (period, Thunk(lambda: get(last.value)), period.from_end(QUARTER)),
+        name="Held forecast",
     )
 
 
-freight = Series.extend("Freight", ACCRUE, base=freight_history.cells, cont=constant_forecast)
-other = Series.extend("Other", ACCRUE, base=other_history.cells, cont=constant_forecast)
+freight = Series.extend(ACCRUE, base=freight_history.cells, cont=constant_forecast, name="Freight")
+other = Series.extend(ACCRUE, base=other_history.cells, cont=constant_forecast, name="Other")
 total_operating_revenue = ops.add(
-    "Total operating revenue",
     passenger,
     freight,
     other,
     merge_keys=period_union,
+    name="Total operating revenue",
 )
 
 # ---- Statement definition ----

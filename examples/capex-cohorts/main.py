@@ -37,10 +37,10 @@ def capex_step(period: Period) -> tuple[Period, float, Period]:
 
 
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
-    "capex",
     by_days,
     seed=next(Period.seq(START, YEAR)),
     step=capex_step,
+    name="capex",
 )
 
 type Cohort = Series[Period, float, Maybe[float]]
@@ -59,20 +59,20 @@ def build_cohort(source_key: Period) -> Cohort:
         return spend / 2
 
     return Series.of(
-        f"Depreciation@{source_key.end}",
         by_days,
         [(period, Thunk(depreciation)) for period in periods],
+        name=f"Depreciation@{source_key.end}",
     )
 
 
 cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    "cohort_schedules",
     map_cells(
-        "cohort_schedules",
         capex.cells,
         lambda source_key, _cell: build_cohort(source_key),
+        name="cohort_schedules",
     ),
     query.exact,
+    name="cohort_schedules",
 )
 
 
@@ -97,14 +97,14 @@ def rollup(
 
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
-    "total_depreciation",
     scan_cells(
-        "total_depreciation",
         cohort_schedules.cells,
         seed=(),
         fn=rollup,
+        name="total_depreciation",
     ),
     by_days,
+    name="total_depreciation",
 )
 
 

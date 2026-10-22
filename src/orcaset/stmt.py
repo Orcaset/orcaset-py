@@ -127,10 +127,18 @@ class Group:
 
 
 class Stmt:
+    """A statement layout.
+
+    Every line item and total must have an explicit name, since it labels a
+    row; a series with a derived name raises ``ValueError``.
+    """
+
     __slots__ = ("items",)
 
     def __init__(self, *items: StmtItem) -> None:
         self.items = tuple(items)
+        for item in self.items:
+            _require_names(item)
 
     def values(
         self,
@@ -150,6 +158,29 @@ class Stmt:
         key_tuple = tuple(keys)
         rows = tuple(_row(ctx, item, key_tuple) for item in self.items)
         return StatementResult(rows=rows, keys=key_tuple)
+
+
+def _require_names(item: StmtItem) -> None:
+    match item:
+        case Total():
+            _require_named(item.series)
+            for child in item.items:
+                _require_names(child)
+        case Group():
+            for child in item.items:
+                _require_names(child)
+        case Series():
+            _require_named(item)
+        case _:
+            pass
+
+
+def _require_named(series: StmtSeries) -> None:
+    if not series.named:
+        raise ValueError(
+            f"statement rows need an explicit name; series {series.name!r} has a derived "
+            "name, pass name=... where it is built"
+        )
 
 
 def _row(

@@ -14,16 +14,16 @@ The actuals and explicit projections are defined from lists of period-float pair
 historical = [(Q3, 300.0)]
 projected = [(Q3, 0.0), (OCT, 110.0), (NOV, Na), (DEC, 121.0)]
 
-actuals = Series.of("Actuals", covered, historical)  # `covered` query function
-projections = Series.of("Projections", accrue_monthly, projected)  # `accrue_monthly` query function
+actuals = Series.of(covered, historical, name="Actuals")  # `covered` query function
+projections = Series.of(accrue_monthly, projected, name="Projections")  # `accrue_monthly` query function
 ```
 
 First, define an outer `components` series that holds each segment. The outer series uses integer indices as keys and segment series as values.
 
 ```python
-components = Series.of("Revenue components", exact, [(0, actuals), (1, projections)])
+components = Series.of(exact, [(0, actuals), (1, projections)], name="Revenue components")
 base = Series.flatten(
-    "Actuals and projections", components.cells, query=covered, split_keys=period_split
+    components.cells, query=covered, split_keys=period_split, name="Actuals and projections"
 )
 ```
 
@@ -73,11 +73,11 @@ def terminal_revenue(
     """Grow revenue each month at a 2% annual rate after the prior series ends."""
     # If there is no prior node (e.g., the prior series is empty), return an empty series.
     if last_node is None:
-        return Series[Period, Maybe[float], Maybe[float]].empty("Terminal growth", accrue_monthly)
+        return Series[Period, Maybe[float], Maybe[float]].empty(accrue_monthly, name="Terminal growth")
 
     # Otherwise, grow revenue each month at a 2% annual rate after the prior series ends.
     # Note that this series is lazily bound to `revenue`.
-    @Series.define("Terminal growth", accrue_monthly, seed=last_node.key)
+    @Series.define(accrue_monthly, seed=last_node.key, name="Terminal growth")
     def growth(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         prior_month = yield from get_at(revenue, period)
         value = maybe.mul_some(prior_month, (1 + 0.02 * YF.cmonthly(*period)))
@@ -87,10 +87,10 @@ def terminal_revenue(
 
 
 revenue = Series.flatten(
-    "Revenue",
-    continue_series("Revenue components", base, terminal_revenue),
+    continue_series(base, terminal_revenue, name="Revenue components"),
     query=covered,
     split_keys=period_split,
+    name="Revenue",
 )
 ```
 

@@ -20,10 +20,10 @@ from orcaset import YF, Effect, Period, Series, Val, get, query
 opening = date(2025, 12, 31)
 month = relativedelta(months=1, day=31)
 first_month = Period(opening, opening + month)
-monthly_amt = Val("Monthly amount", 2.0)
+monthly_amt = Val(2.0, name="Monthly amount")
 
 
-@Series.define("Line A", query.accrue(YF.cmonthly), seed=first_month)
+@Series.define(query.accrue(YF.cmonthly), seed=first_month, name="Line A")
 def line_a(period: Period) -> Effect[tuple[Period, float, Period]]:
     amount = yield from get(monthly_amt)
     return period, amount, period.from_end(month)
@@ -46,11 +46,11 @@ from orcaset import YF, Effect, Period, Series, Val, get, get_at, isna, query
 opening = date(2025, 12, 31)
 quarter = relativedelta(months=3, day=31)
 first_quarter = Period(opening, opening + quarter)
-initial_annualized_amt = Val("Initial annualized amount", 200.0)
-annual_growth = Val("Annual growth", 0.01)
+initial_annualized_amt = Val(200.0, name="Initial annualized amount")
+annual_growth = Val(0.01, name="Annual growth")
 
 
-@Series.define("Line A", query.accrue(YF.cmonthly), seed=first_quarter)
+@Series.define(query.accrue(YF.cmonthly), seed=first_quarter, name="Line A")
 def line_a(period: Period) -> Effect[tuple[Period, float, Period]]:
     if period == first_quarter:
         annual = yield from get(initial_annualized_amt)
@@ -100,25 +100,25 @@ q3 = Period(date(2025, 6, 30), date(2025, 9, 30))
 october = q3.from_end(month)
 november = october.from_end(month)
 december = november.from_end(month)
-annual_terminal_growth = Val("Annual terminal growth", 0.02)
+annual_terminal_growth = Val(0.02, name="Annual terminal growth")
 
-actuals = Series.of("Actuals", query.covered, pairs=[(q3, 300.0)])
+actuals = Series.of(query.covered, pairs=[(q3, 300.0)], name="Actuals")
 projections = Series.of(
-    "Projections",
     query.accrue(YF.cmonthly),
     pairs=[(q3, 0.0), (october, 110.0), (november, Na), (december, 121.0)],
+    name="Projections",
 )
 
 type Segment = Series[Period, Any, Maybe[float]]
 
 components: Series[int, Segment, Maybe[Segment]] = Series.of(
-    "Revenue components", query.exact, pairs=[(0, actuals), (1, projections)]
+    query.exact, pairs=[(0, actuals), (1, projections)], name="Revenue components"
 )
 base = Series.flatten(
-    "Actuals and projections",
     components.cells,
     query=query.covered,
     split_keys=period_split,
+    name="Actuals and projections",
 )
 ```
 
@@ -138,9 +138,9 @@ def terminal_revenue(
     last_node: Cons[Period, Maybe[float]] | None,
 ) -> Series[Period, Maybe[float], Maybe[float]]:
     if last_node is None:
-        return Series.of("Terminal growth", query.accrue(YF.cmonthly), pairs=[])
+        return Series.of(query.accrue(YF.cmonthly), pairs=[], name="Terminal growth")
 
-    @Series.define("Terminal growth", query.accrue(YF.cmonthly), seed=last_node.key)
+    @Series.define(query.accrue(YF.cmonthly), seed=last_node.key, name="Terminal growth")
     def growth(prior_period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         period = prior_period.from_end(month)
         prior = yield from get_at(revenue, prior_period)
@@ -152,10 +152,10 @@ def terminal_revenue(
 
 
 revenue = Series.flatten(
-    "Revenue",
-    continue_series("Revenue continuation", base, terminal_revenue),
+    continue_series(base, terminal_revenue, name="Revenue continuation"),
     query=query.covered,
     split_keys=period_split,
+    name="Revenue",
 )
 ```
 
@@ -163,11 +163,11 @@ The continuation's state is the prior period; its emitted key is the next period
 
 Do not exhaust the base to find its last value before constructing the combined series. `continue_series` discovers the frontier lazily; an infinite base never invokes its continuation. Handle an empty base according to the model's intended behavior, and let a missing terminal amount propagate unless an explicit replacement is justified.
 
-For raw cells sharing one query policy, `Series.extend(name, query, base=base.cells, cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
+For raw cells sharing one query policy, `Series.extend(query, base=base.cells, cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
 
 ## Joining chains of chains
 
-`concat_cells(name, outer)` joins a chain whose values are cell chains into one chain, in outer order; the outer keys are discarded. `flat_map_cells(name, outer, fn)` maps each outer value to a chain first (`concat_cells` after a map); `fn` receives the resolved value because the resulting structure depends on it. Put one query over the result with `Series(name, cells, query)`.
+`concat_cells(outer)` joins a chain whose values are cell chains into one chain, in outer order; the outer keys are discarded. `flat_map_cells(outer, fn)` maps each outer value to a chain first (`concat_cells` after a map); `fn` receives the resolved value because the resulting structure depends on it. Put one query over the result with `Series(cells, query, name=...)`.
 
 ```py
 from datetime import date
@@ -179,15 +179,15 @@ midyear = date(2026, 6, 30)
 year_end = date(2026, 12, 31)
 
 first: Series[Period, float, Maybe[float]] = Series.of(
-    "First", query.accrue(YF.cmonthly), [(Period(opening, midyear), 1.0)]
+    query.accrue(YF.cmonthly), [(Period(opening, midyear), 1.0)], name="First"
 )
 second: Series[Period, float, Maybe[float]] = Series.of(
-    "Second", query.accrue(YF.cmonthly), [(Period(midyear, year_end), 2.0)]
+    query.accrue(YF.cmonthly), [(Period(midyear, year_end), 2.0)], name="Second"
 )
 segments: Series[int, Chain[Period, float], Maybe[Chain[Period, float]]] = Series.of(
-    "Segments", query.exact, [(0, first.cells), (1, second.cells)]
+    query.exact, [(0, first.cells), (1, second.cells)], name="Segments"
 )
-joined = Series("Joined", concat_cells("Joined", segments.cells), query.accrue_drop(YF.cmonthly))
+joined = Series(concat_cells(segments.cells, name="Joined"), query.accrue_drop(YF.cmonthly), name="Joined")
 # Context().get_at(joined, Period(opening, year_end)) == 3.0
 ```
 
@@ -208,30 +208,30 @@ Choose the join by how the pieces relate:
 
 ## Clipping a series to a window
 
-`clip_periods(name, series, start, end)` restricts a period-keyed series to `(start, end]`; `clip_dates` does the same for a date-keyed series. Either bound may be `None`. Use them to take part of an existing line, such as a share of a flow over an abatement, waiver, or ramp window, instead of rebuilding its cells.
+`clip_periods(series, start, end)` restricts a period-keyed series to `(start, end]`; `clip_dates` does the same for a date-keyed series. Either bound may be `None`. Use them to take part of an existing line, such as a share of a flow over an abatement, waiver, or ramp window, instead of rebuilding its cells.
 
 ```py
 from orcaset import Val, clip_dates, clip_periods, ops
 
 fee = Series.of(
-    "Fee",
     query.accrue(YF.cmonthly),
     [(Period(opening, midyear), 600.0), (Period(midyear, year_end), 900.0)],
+    name="Fee",
 )
-waiver_share = Val("Waiver share", 0.5)
-waived = clip_periods("Waived fee basis", fee, date(2026, 3, 31), date(2026, 9, 30))
-waiver = ops.neg("Fee waiver", ops.scale("Waived fee", waived, waiver_share))
+waiver_share = Val(0.5, name="Waiver share")
+waived = clip_periods(fee, date(2026, 3, 31), date(2026, 9, 30), name="Waived fee basis")
+waiver = ops.neg(ops.scale(waived, waiver_share, name="Waived fee"), name="Fee waiver")
 # Year: -(300 * 0.5 + 450 * 0.5) == -375.0
 
-balance = Series.of("Balance", query.last, [(opening, 10.0), (midyear, 20.0)])
-balance_after_close = clip_dates("Balance after close", balance, start=date(2026, 3, 31))
+balance = Series.of(query.last, [(opening, 10.0), (midyear, 20.0)], name="Balance")
+balance_after_close = clip_dates(balance, start=date(2026, 3, 31), name="Balance after close")
 # 2026-04-30: Na, since the earlier cell is outside the window; 2026-07-31: 20.0
 ```
 
 - `clip_periods` trims each query to the window and forwards it to the source, so a window crossing a step in the source values each side at its own amount. Its cells are the source cells trimmed to the window, each valued by the source's query, so they agree with direct queries. A query entirely outside is `Na`; the result type is `Series[Period, W, Maybe[W]]`.
 - `clip_dates` passes cells inside the window through unchanged and answers queries inside with the source's query over those cells only, so a look-back query like `query.last` cannot reach a cell before `start`. Queries outside are `Na`.
 - Clipped series are views: they follow scenario changes to the source and record it as a dependency.
-- A zero-length window should be an empty series (`Series[...].empty(name, query.accrue_drop(yf))`) when the caller expects a flow that answers `0.0`, rather than a clip whose answers are all `Na`.
+- A zero-length window should be an empty series (`Series[...].empty(query.accrue_drop(yf))`) when the caller expects a flow that answers `0.0`, rather than a clip whose answers are all `Na`.
 
 ## Cyclic value dependency
 
@@ -261,13 +261,13 @@ from orcaset import (
 opening = date(2025, 12, 31)
 month = relativedelta(months=1, day=31)
 first_month = Period(opening, opening + month)
-opening_debt = Val("Opening revolver", 0.0)
-monthly_deficit = Val("Cash deficit before interest", 100.0)
-annual_rate = Val("Annual revolver rate", 0.12)
+opening_debt = Val(0.0, name="Opening revolver")
+monthly_deficit = Val(100.0, name="Cash deficit before interest")
+annual_rate = Val(0.12, name="Annual revolver rate")
 seed_date: date | None = None
 
 
-@Series.define("Revolver", query.last, seed=seed_date)
+@Series.define(query.last, seed=seed_date, name="Revolver")
 def revolver(prior_date: date | None) -> Effect[tuple[date, float, date]]:
     if prior_date is None:
         return opening, (yield from get(opening_debt)), opening
@@ -280,7 +280,7 @@ def revolver(prior_date: date | None) -> Effect[tuple[date, float, date]]:
     return end_date, max(0.0, begin + deficit + interest_amount), end_date
 
 
-@Series.define("Revolver interest", query.accrue(YF.cmonthly), seed=first_month)
+@Series.define(query.accrue(YF.cmonthly), seed=first_month, name="Revolver interest")
 def interest(period: Period) -> Effect[tuple[Period, float, Period]]:
     begin = yield from get_at(revolver, period.start)
     end: Maybe[float] = yield from get_at(
@@ -334,11 +334,11 @@ from orcaset import (
 opening = date(2025, 12, 31)
 year = relativedelta(years=1, day=31)
 first_year = Period(opening, opening + year)
-annual_capex = Val("Annual capex", 100.0)
+annual_capex = Val(100.0, name="Annual capex")
 by_days = query.accrue(lambda start, end: (end - start).days)
 
 
-@Series.define("Capex", by_days, seed=first_year)
+@Series.define(by_days, seed=first_year, name="Capex")
 def capex(period: Period) -> Effect[tuple[Period, float, Period]]:
     spend = yield from get(annual_capex)
     return period, spend, period.from_end(year)
@@ -358,20 +358,20 @@ def build_cohort(source_key: Period) -> Cohort:
         return spend / 2.0
 
     return Series.of(
-        f"Depreciation@{source_key.end}",
         by_days,
         pairs=[(period, Thunk(depreciation)) for period in periods],
+        name=f"Depreciation@{source_key.end}",
     )
 
 
 cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    "Depreciation cohorts",
     map_cells(
-        "Depreciation cohorts",
         capex.cells,
         lambda source_key, _cell: build_cohort(source_key),
+        name="Depreciation cohorts",
     ),
     query.exact,
+    name="Depreciation cohorts",
 )
 
 
@@ -395,9 +395,9 @@ def rollup(
 
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
-    "Total depreciation",
-    scan_cells("Total depreciation", cohort_schedules.cells, seed=(), fn=rollup),
+    scan_cells(cohort_schedules.cells, seed=(), fn=rollup, name="Total depreciation"),
     by_days,
+    name="Total depreciation",
 )
 ```
 

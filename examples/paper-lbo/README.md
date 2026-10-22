@@ -23,8 +23,8 @@ class Val:
 When the value from the rule is needed, it is returned and stored in the context. The rule *object* doesn't change, only its value. This gives the rest of the model a stable object to reference while the underlying value updates.
 
 ```py
-annual_revenue_growth = Val("Revenue growth rate", 0.1)
-exit_multiple = Val("Exit multiple", 5.0)
+annual_revenue_growth = Val(0.1, name="Revenue growth rate")
+exit_multiple = Val(5.0, name="Exit multiple")
 ```
 
 Evaluating the sensitivity is simply a matter of (nested) iterations over the assumption values, resolving the output in a *fresh* context each time.
@@ -65,7 +65,7 @@ Orcaset natively handles cyclic dependencies. The only requirement is to define 
 This model defines the initial seed value and distance function in the `interest` definition, specifically in the getter for ending debt.
 
 ```py
-@Series.define("Interest", ...)
+@Series.define(..., name="Interest")
 def interest(period: Period):
     if period.start >= acquisition_date + hold_period:
         return None

@@ -51,12 +51,12 @@ def test_stmt_types_are_exported_only_from_stmt_module():
 
 def test_stmt_values_uses_series_name_for_line_items():
     revenue = Series.of(
-        "Revenue",
         exact,
         [
             (Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0),
             (Period(date(2025, 2, 1), date(2025, 3, 1)), 200.0),
         ],
+        name="Revenue",
     )
 
     ctx = Context()
@@ -87,16 +87,16 @@ def test_stmt_values_uses_series_name_for_line_items():
 
 def test_stmt_total_uses_real_series_and_nests_children():
     revenue = Series.of(
-        "Revenue",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0)],
+        name="Revenue",
     )
     costs = Series.of(
-        "Costs",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), -40.0)],
+        name="Costs",
     )
-    income = ops.add("Income", revenue, costs, merge_keys=period_union)
+    income = ops.add(revenue, costs, merge_keys=period_union, name="Income")
 
     ctx = Context()
     result_rows = rows(
@@ -121,14 +121,14 @@ def test_stmt_total_uses_real_series_and_nests_children():
 
 def test_stmt_group_wraps_rows_with_group_row():
     revenue = Series.of(
-        "Revenue",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0)],
+        name="Revenue",
     )
     costs = Series.of(
-        "Costs",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), -40.0)],
+        name="Costs",
     )
 
     ctx = Context()
@@ -150,14 +150,14 @@ def test_stmt_group_wraps_rows_with_group_row():
 
 def test_stmt_group_optional_label_is_copied_to_group_row():
     revenue = Series.of(
-        "Revenue",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0)],
+        name="Revenue",
     )
     costs = Series.of(
-        "Costs",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), -40.0)],
+        name="Costs",
     )
 
     ctx = Context()
@@ -179,9 +179,9 @@ def test_stmt_group_optional_label_is_copied_to_group_row():
 
 def test_stmt_group_optional_label_is_copied_on_date_query():
     balance = Series.of(
-        "Balance",
         exact,
         [(date(2025, 1, 1), 100.0)],
+        name="Balance",
     )
 
     ctx = Context()
@@ -198,15 +198,15 @@ def test_stmt_group_optional_label_is_copied_on_date_query():
 
 
 def test_stmt_period_query_evaluates_date_series_at_period_ends():
-    cash = Series.of("Cash Flow", exact, [])
+    cash = Series.of(exact, [], name="Cash Flow")
     balance = Series.of(
-        "Balance",
         exact,
         [
             (date(2025, 1, 1), 10.0),
             (date(2025, 4, 1), 20.0),
             (date(2025, 7, 1), 30.0),
         ],
+        name="Balance",
     )
     q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
     q2 = Period(date(2025, 4, 1), date(2025, 7, 1))
@@ -229,15 +229,15 @@ def test_stmt_period_query_keeps_input_order_gaps_overlap_and_nesting():
     q2 = Period(date(2025, 4, 1), date(2025, 7, 1))
     q4 = Period(date(2025, 10, 1), date(2026, 1, 1))
     h1 = Period(date(2025, 1, 1), date(2025, 7, 1))
-    revenue = Series.of("Revenue", accrue(YF.act360), [(q1, 1.0), (q2, 2.0), (q4, 4.0)])
+    revenue = Series.of(accrue(YF.act360), [(q1, 1.0), (q2, 2.0), (q4, 4.0)], name="Revenue")
     balance = Series.of(
-        "Balance",
         exact,
         [
             (date(2025, 4, 1), 20.0),
             (date(2025, 7, 1), 30.0),
             (date(2026, 1, 1), 50.0),
         ],
+        name="Balance",
     )
     periods = [q4, q2, q1, h1]
 
@@ -260,14 +260,14 @@ def test_stmt_period_query_keeps_input_order_gaps_overlap_and_nesting():
 
 
 def test_stmt_values_accepts_dates():
-    revenue = Series.of("Revenue", exact, [(Period(date(2025, 1, 1), date(2025, 4, 1)), 5.0)])
+    revenue = Series.of(exact, [(Period(date(2025, 1, 1), date(2025, 4, 1)), 5.0)], name="Revenue")
     balance = Series.of(
-        "Balance",
         exact,
         [
             (date(2025, 1, 1), 100.0),
             (date(2025, 4, 1), 120.0),
         ],
+        name="Balance",
     )
 
     ctx = Context()
@@ -291,15 +291,15 @@ def test_stmt_values_accepts_dates():
 def test_stmt_values_accepts_mixed_periods_and_dates_in_input_order():
     q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
     q2 = Period(date(2025, 4, 1), date(2025, 7, 1))
-    revenue = Series.of("Revenue", exact, [(q1, 5.0), (q2, 6.0)])
+    revenue = Series.of(exact, [(q1, 5.0), (q2, 6.0)], name="Revenue")
     balance = Series.of(
-        "Balance",
         exact,
         [
             (date(2025, 1, 1), 100.0),
             (date(2025, 4, 1), 120.0),
             (date(2025, 7, 1), 130.0),
         ],
+        name="Balance",
     )
     opening = date(2025, 1, 1)
 
@@ -325,14 +325,14 @@ def test_stmt_values_accepts_mixed_periods_and_dates_in_input_order():
 
 
 def test_stmt_date_query_evaluates_dates_and_returns_none_for_period_series():
-    revenue = Series.of("Revenue", exact, [])
+    revenue = Series.of(exact, [], name="Revenue")
     balance = Series.of(
-        "Balance",
         exact,
         [
             (date(2025, 1, 1), 100.0),
             (date(2025, 4, 1), 120.0),
         ],
+        name="Balance",
     )
 
     ctx = Context()
@@ -352,9 +352,9 @@ def test_stmt_date_query_evaluates_dates_and_returns_none_for_period_series():
 
 def test_stmt_converts_na_answers_to_none():
     revenue = Series.of(
-        "Revenue",
         exact,
         [(Period(date(2025, 1, 1), date(2025, 2, 1)), 100.0)],
+        name="Revenue",
     )
 
     ctx = Context()
@@ -386,7 +386,7 @@ def test_stmt_value_keeps_model_value_unchanged():
     cited = Cited(100.0)
     cited.source = "10-K"
     q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
-    revenue = Series.of("Revenue", exact, [(q1, cited)])
+    revenue = Series.of(exact, [(q1, cited)], name="Revenue")
 
     (row,) = rows(stmt.Stmt(revenue).values(Context(), [q1]))
 

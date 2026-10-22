@@ -48,7 +48,7 @@ def parse_checkpoint_rows(html: str, url: str) -> list[tuple[date, float]]:
     return parsed
 
 
-@Fn.define("Fetch and parse TSA checkpoints")
+@Fn.define(name="Fetch and parse TSA checkpoints")
 def checkpoint_step() -> Effect[Cons[Period, float] | None]:
     """Fetch the current-year page only when the series' first node is demanded."""
     html = fetch_html(TSA_URL)
@@ -61,14 +61,14 @@ def checkpoint_step() -> Effect[Cons[Period, float] | None]:
         period = Period(travel_date - timedelta(days=1), travel_date)
         return period, count, index + 1
 
-    daily = unfold_cells("TSA checkpoint daily rows", seed=0, step=step)
+    daily = unfold_cells(seed=0, step=step, name="TSA checkpoint daily rows")
     return (yield from get(daily))
 
 
-tsa_passengers = Series("TSA checkpoint passengers", checkpoint_step, _BY_DAYS)
+tsa_passengers = Series(checkpoint_step, _BY_DAYS, name="TSA checkpoint passengers")
 
 
-@Fn.define("TSA checkpoint last date")
+@Fn.define(name="TSA checkpoint last date")
 def tsa_last_date() -> Effect[date]:
     node = yield from get(tsa_passengers.cells)
     if node is None:

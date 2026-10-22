@@ -29,13 +29,13 @@ FY20 = next(_FISCAL_YEARS)
 
 
 def test_extend_two_literal_series():
-    first = Series.of("First", exact, [(FY17, 1.0), (FY18, 2.0)])
-    then = Series.of("Then", exact, [(FY19, 3.0), (FY20, 4.0)])
+    first = Series.of(exact, [(FY17, 1.0), (FY18, 2.0)], name="First")
+    then = Series.of(exact, [(FY19, 3.0), (FY20, 4.0)], name="Then")
     series = Series.extend(
-        "Extended",
         exact,
         base=first.cells,
         cont=lambda _: then.cells,
+        name="Extended",
     )
     ctx = Context()
 
@@ -45,7 +45,7 @@ def test_extend_two_literal_series():
         3.0,
         4.0,
     ]
-    assert ctx.get(Fn("keys", lambda: keys_until(series.cells, FY20))) == [
+    assert ctx.get(Fn(lambda: keys_until(series.cells, FY20), name="keys")) == [
         FY17,
         FY18,
         FY19,
@@ -54,7 +54,7 @@ def test_extend_two_literal_series():
 
 
 def test_extend_lazy_continuation():
-    base = Series.of("Base", exact, [(FY17, 1.0)])
+    base = Series.of(exact, [(FY17, 1.0)], name="Base")
     calls: list[Period | None] = []
 
     def cont(last: Cons[Period, float] | None):
@@ -64,9 +64,9 @@ def test_extend_lazy_continuation():
         def step(period: Period) -> tuple[Period, float, Period]:
             return period, float(period.end.year), period.shift(YEAR)
 
-        return unfold_cells("Continuation", seed=FY18, step=step)
+        return unfold_cells(seed=FY18, step=step, name="Continuation")
 
-    series = Series.extend("Extended", exact, base=base.cells, cont=cont)
+    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY17) == 1.0
@@ -84,17 +84,17 @@ def test_extend_rejects_overlapping_continuation():
         forced.append(True)
         raise AssertionError("overlapping continuation cell was forced")
 
-    base = Series.of("Base", exact, [(FY17, 1.0)])
+    base = Series.of(exact, [(FY17, 1.0)], name="Base")
     continuation = Series.of(
-        "Continuation",
         exact,
         [(FY17, Thunk(poison)), (FY18, 2.0), (FY19, 3.0)],
+        name="Continuation",
     )
     series = Series.extend(
-        "Extended",
         exact,
         base=base.cells,
         cont=lambda _last: continuation.cells,
+        name="Extended",
     )
     ctx = Context()
 
@@ -105,15 +105,15 @@ def test_extend_rejects_overlapping_continuation():
 
 
 def test_extend_empty_base():
-    base = Series.of("Empty", exact, [])
-    continuation = Series.of("Continuation", exact, [(FY17, 1.0), (FY18, 2.0)])
+    base = Series.of(exact, [], name="Empty")
+    continuation = Series.of(exact, [(FY17, 1.0), (FY18, 2.0)], name="Continuation")
     calls: list[Cons[Period, float] | None] = []
 
     def cont(last: Cons[Period, float] | None):
         calls.append(last)
         return continuation.cells
 
-    series = Series.extend("Extended", exact, base=base.cells, cont=cont)
+    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY17) == 1.0
@@ -122,8 +122,8 @@ def test_extend_empty_base():
 
 
 def test_extend_self_referential_compounding():
-    base = Series.of("Base rent", exact, [(FY17, some(1.777777778))])
-    growth = Series.of("Growth", exact, [(FY18, 0.035), (FY19, 0.035)])
+    base = Series.of(exact, [(FY17, some(1.777777778))], name="Base rent")
+    growth = Series.of(exact, [(FY18, 0.035), (FY19, 0.035)], name="Growth")
 
     def cont(last: Cons[Period, Maybe[float]] | None):
         assert last is not None
@@ -139,16 +139,16 @@ def test_extend_self_referential_compounding():
             return p, Thunk(cell), p.shift(YEAR)
 
         return unfold_cells(
-            "Market rent continuation",
             seed=last.key.shift(YEAR),
             step=step,
+            name="Market rent continuation",
         )
 
     market_rent: Series[Period, Maybe[float], Maybe[float]] = Series.extend(
-        "Market rent",
         exact,
         base=base.cells,
         cont=cont,
+        name="Market rent",
     )
     ctx = Context()
 
@@ -168,7 +168,7 @@ def test_extend_continuation_reads_last_cell():
 
         return Thunk(cell)
 
-    base = Series.of("Base", exact, [(FY17, observed(FY17, 2.0)), (FY18, observed(FY18, 3.0))])
+    base = Series.of(exact, [(FY17, observed(FY17, 2.0)), (FY18, observed(FY18, 3.0))], name="Base")
 
     def cont(last: Cons[Period, float] | None) -> Chain[Period, float]:
         assert last is not None
@@ -182,12 +182,12 @@ def test_extend_continuation_reads_last_cell():
             )
 
         return unfold_cells(
-            "Continuation",
             seed=last.key.shift(YEAR),
             step=step,
+            name="Continuation",
         )
 
-    series = Series.extend("Extended", exact, base=base.cells, cont=cont)
+    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY19) == 30.0
@@ -207,7 +207,7 @@ def test_extend_base_tail_may_depend_on_extended_series():
                 return None
         return period, float(period.start.year - 2015), (period.shift(YEAR), period)
 
-    actuals = unfold_cells("Actuals", seed=(FY17, None), step=actuals_step)
+    actuals = unfold_cells(seed=(FY17, None), step=actuals_step, name="Actuals")
 
     def cont(last: Cons[Period, float] | None) -> Chain[Period, float]:
         assert last is not None
@@ -216,13 +216,13 @@ def test_extend_base_tail_may_depend_on_extended_series():
             return period, 100.0, period.shift(YEAR)
 
         return unfold_cells(
-            "Continuation",
             seed=last.key.shift(YEAR),
             step=step,
+            name="Continuation",
         )
 
     extended: Series[Period, float, Maybe[float]] = Series.extend(
-        "Extended", exact, base=actuals, cont=cont
+        exact, base=actuals, cont=cont, name="Extended"
     )
     ctx = Context()
 

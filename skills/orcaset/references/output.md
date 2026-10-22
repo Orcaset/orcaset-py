@@ -12,7 +12,7 @@ Use `orcaset.stmt` to arrange line items and `orcaset.formatter` to render the r
 | `stmt.Total(series, items)` | Display an existing total series below its component rows |
 | `stmt.Group(*items, label=None)` | Group rows under an optional label without calculating a total |
 
-`Total` does not sum its children or verify that they reconcile. Define the total as a model series, then reference that same series in the statement. Nest totals to show intermediate subtotals. Row names come from the underlying series `name` attribute. Group labels describe sections.
+`Total` does not sum its children or verify that they reconcile. Define the total as a model series, then reference that same series in the statement. Nest totals to show intermediate subtotals. Row names come from the underlying series `name`, which must be given explicitly; `Stmt` rejects a series with a derived name. Group labels describe sections.
 
 This complete example reports two historical monthly observations:
 
@@ -24,10 +24,10 @@ from orcaset import Period, Series, ops, period_union, query
 january = Period(date(2025, 12, 31), date(2026, 1, 31))
 february = Period(date(2026, 1, 31), date(2026, 2, 28))
 revenue = Series.of(
-    "Revenue", query.covered, pairs=[(january, 100.0), (february, 120.0)]
+    query.covered, pairs=[(january, 100.0), (february, 120.0)], name="Revenue"
 )
-costs = ops.scale("Costs", revenue, -0.4)
-profit = ops.add("Profit", revenue, costs, merge_keys=period_union)
+costs = ops.scale(revenue, -0.4, name="Costs")
+profit = ops.add(revenue, costs, merge_keys=period_union, name="Profit")
 
 
 if __name__ == "__main__":

@@ -44,10 +44,46 @@ def maybe_abs_distance(a: Maybe[float], b: Maybe[float]) -> float:
     return abs(a - b)
 
 
-class _Identity:
-    """Shared id/name for ``Rule`` and ``KeyedRule``."""
+class AutoName(str):
+    """A rule name derived by the library because none was given.
 
-    def __init__(self, name: str, *, structural: bool = False) -> None:
+    Behaves as a plain ``str``; the type only marks that the name was not
+    chosen by the user, e.g. so statements can insist on explicit names.
+    """
+
+
+def auto_name(kind: str) -> AutoName:
+    """A fresh ``kind#n`` name for a rule that has nothing better to show."""
+    return AutoName(f"{kind}#{next_id()}")
+
+
+def derived_name(op: str, *operands: _Identity | str) -> AutoName:
+    """Name a combinator result after its operation and operands.
+
+    Explicitly named operands appear by name. Operands with derived names of
+    the form ``op(...)`` collapse to ``op(…)`` so nesting stays short. Only
+    stored names are read; no rule is evaluated.
+    """
+    return AutoName(f"{op}({', '.join(_operand_label(operand) for operand in operands)})")
+
+
+def _operand_label(operand: _Identity | str) -> str:
+    if isinstance(operand, str):
+        return operand
+    name = operand.name
+    if isinstance(name, AutoName) and "(" in name:
+        return f"{name[: name.index('(')]}(…)"
+    return name
+
+
+class _Identity:
+    """Shared id/name for ``Rule`` and ``KeyedRule``.
+
+    ``name`` is optional. Without one, ``default_name`` supplies a derived
+    name the first time it is read. Reading a name never evaluates a rule.
+    """
+
+    def __init__(self, name: str | None = None, *, structural: bool = False) -> None:
         self._name = name
         self._id = next_id()
         self._structural = structural
@@ -58,7 +94,23 @@ class _Identity:
 
     @property
     def name(self) -> str:
+        if self._name is None:
+            self._name = AutoName(self.default_name())
         return self._name
+
+    @property
+    def named(self) -> bool:
+        """Whether this target was given an explicit name."""
+        return self._name is not None and not isinstance(self._name, AutoName)
+
+    def default_name(self) -> str:
+        """The name used when none was given.
+
+        Override to derive a more descriptive name. Implementations must only
+        read construction-time data (types, functions, other rules' names),
+        never evaluate rules.
+        """
+        return f"{type(self).__name__}#{self._id}"
 
     @property
     def structural(self) -> bool:
@@ -222,17 +274,26 @@ class KeyedRule[K: Hashable, V](_Identity, ABC):
         ...
 
 
+_VAL_NAME_WIDTH = 24
+
+
+def _fn_name(fn: Callable[..., Any]) -> str | None:
+    name = getattr(fn, "__name__", None)
+    return name if isinstance(name, str) and name.isidentifier() else None
+
+
 class Fn[V](Rule[V]):
     """Unkeyed rule whose ``compute`` delegates to a zero-arg function.
 
     Use to lift a zero-arg function to a rule, which may yield demands for other rules.
+    Without a ``name``, the function's ``__name__`` is used (``Fn#n`` for lambdas).
     """
 
     def __init__(
         self,
-        name: str,
         fn: Callable[[], Effect[V] | V],
         *,
+        name: str | None = None,
         structural: bool = False,
     ) -> None:
         super().__init__(name, structural=structural)
@@ -241,60 +302,103 @@ class Fn[V](Rule[V]):
     def compute(self) -> Effect[V] | V:
         return self._fn()
 
+    def default_name(self) -> str:
+        return _fn_name(self._fn) or super().default_name()
+
     @classmethod
-    def define[V2](cls, name: str) -> Callable[[Callable[[], Effect[V2] | V2]], Fn[V2]]:
+    @overload
+    def define[V2](cls, fn: Callable[[], Effect[V2] | V2], /) -> Fn[V2]: ...
+    @classmethod
+    @overload
+    def define[V2](
+        cls, *, name: str | None = None
+    ) -> Callable[[Callable[[], Effect[V2] | V2]], Fn[V2]]: ...
+    @classmethod
+    def define[V2](
+        cls,
+        fn: Callable[[], Effect[V2] | V2] | None = None,
+        /,
+        *,
+        name: str | None = None,
+    ) -> Fn[V2] | Callable[[Callable[[], Effect[V2] | V2]], Fn[V2]]:
         """Decorator: build an ``Fn`` from a zero-arg compute function.
 
-        The decorated function becomes the rule.
+        The decorated function becomes the rule. Use bare (``@Fn.define``) to
+        name the rule after the function, or ``@Fn.define(name=...)``.
         """
 
         def decorator(fn: Callable[[], Effect[V2] | V2]) -> Fn[V2]:
-            return cls(name, fn)
+            return cls(fn, name=name)
 
-        return decorator
+        return decorator if fn is None else decorator(fn)
 
 
 class KeyedFn[K: Hashable, V](KeyedRule[K, V]):
     """Keyed rule whose ``compute`` delegates to a one-arg function.
 
     Use to lift a one-arg function to a keyed rule, which may yield demands for other rules.
+    Without a ``name``, the function's ``__name__`` is used (``KeyedFn#n`` for lambdas).
     """
 
-    def __init__(self, name: str, fn: Callable[[K], Effect[V] | V]) -> None:
+    def __init__(self, fn: Callable[[K], Effect[V] | V], *, name: str | None = None) -> None:
         super().__init__(name)
         self._fn = fn
 
     def compute(self, key: K, /) -> Effect[V] | V:
         return self._fn(key)
 
+    def default_name(self) -> str:
+        return _fn_name(self._fn) or super().default_name()
+
+    @classmethod
+    @overload
+    def define[K2: Hashable, V2](
+        cls, fn: Callable[[K2], Effect[V2] | V2], /
+    ) -> KeyedFn[K2, V2]: ...
+    @classmethod
+    @overload
+    def define[K2: Hashable, V2](
+        cls, *, name: str | None = None
+    ) -> Callable[[Callable[[K2], Effect[V2] | V2]], KeyedFn[K2, V2]]: ...
     @classmethod
     def define[K2: Hashable, V2](
         cls,
-        name: str,
-    ) -> Callable[[Callable[[K2], Effect[V2] | V2]], KeyedFn[K2, V2]]:
+        fn: Callable[[K2], Effect[V2] | V2] | None = None,
+        /,
+        *,
+        name: str | None = None,
+    ) -> KeyedFn[K2, V2] | Callable[[Callable[[K2], Effect[V2] | V2]], KeyedFn[K2, V2]]:
         """Decorator: build a ``KeyedFn`` from a keyed compute function.
 
-        The decorated function becomes the rule.
+        The decorated function becomes the rule. Use bare (``@KeyedFn.define``)
+        to name the rule after the function, or ``@KeyedFn.define(name=...)``.
         """
 
         def decorator(fn: Callable[[K2], Effect[V2] | V2]) -> KeyedFn[K2, V2]:
-            return cls(name, fn)
+            return cls(fn, name=name)
 
-        return decorator
+        return decorator if fn is None else decorator(fn)
 
 
 class Val[V](Rule[V]):
     """Unkeyed rule holding a plain value.
 
-    Use to lift a plain value to a rule.
+    Use to lift a plain value to a rule. Without a ``name``, a short ``repr``
+    of the value is used.
     """
 
-    def __init__(self, name: str, value: V) -> None:
+    def __init__(self, value: V, *, name: str | None = None) -> None:
         super().__init__(name)
         self.value = value
 
     def compute(self) -> Effect[V]:
         return self.value  # type: ignore[return-value]
+
+    def default_name(self) -> str:
+        text = repr(self.value)
+        if len(text) > _VAL_NAME_WIDTH:
+            text = f"{text[: _VAL_NAME_WIDTH - 1]}…"
+        return text
 
 
 class KeyedVal[K: Hashable, V](KeyedRule[K, V]):
@@ -303,7 +407,7 @@ class KeyedVal[K: Hashable, V](KeyedRule[K, V]):
     Use to lift a ``Mapping`` of plain values to a keyed rule. A missing key raises ``KeyError``.
     """
 
-    def __init__(self, name: str, values: Mapping[K, V]) -> None:
+    def __init__(self, values: Mapping[K, V], *, name: str | None = None) -> None:
         super().__init__(name)
         self.values = values
 

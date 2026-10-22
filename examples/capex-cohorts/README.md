@@ -10,10 +10,10 @@ The capex series generates 100.0 of spend each year. Its query function uses day
 
 ```py
 capex: Series[Period, float, Maybe[float]] = Series.unfold(
-    "capex",
     by_days,
     seed=next(Period.seq(START, YEAR)),
     step=lambda period: (period, 100.0, period.from_end(YEAR)),
+    name="capex",
 )
 ```
 Each cohort starts when its source capex period ends and depreciates half the spend in each of the following two years. `build_cohort` creates the schedule with `Series.of` and uses the same accrual function for partial-period queries.
@@ -35,9 +35,9 @@ def build_cohort(source_key: Period) -> Cohort:
         return spend / 2
 
     return Series.of(
-        f"Depreciation@{source_key.end}",
         by_days,
         [(period, Thunk(depreciation)) for period in periods],
+        name=f"Depreciation@{source_key.end}",
     )
 ```
 The `Thunk` defers reading capex until a depreciation value is requested. The `get_at` call keeps the dependency from each cohort value to its source spend.
@@ -46,13 +46,13 @@ The outer `cohort_schedules` series maps each capex key to a child schedule. `ma
 
 ```py
 cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    "cohort_schedules",
     map_cells(
-        "cohort_schedules",
         capex.cells,
         lambda source_key, _cell: build_cohort(source_key),
+        name="cohort_schedules",
     ),
     exact,
+    name="cohort_schedules",
 )
 ```
 ## Rolling up cohorts
@@ -85,14 +85,14 @@ def rollup(
 
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
-    "total_depreciation",
     scan_cells(
-        "total_depreciation",
         cohort_schedules.cells,
         seed=(),
         fn=rollup,
+        name="total_depreciation",
     ),
     by_days,
+    name="total_depreciation",
 )
 ```
 The source connection is explicit: `scan_cells` receives `cohort_schedules.cells`, and `sum_cohorts` receives the accumulated rules. Building the scan does not evaluate the schedules. Querying an annual total resolves each captured cohort and sums its answer, skipping `Na` for periods outside the schedule.

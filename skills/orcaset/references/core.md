@@ -99,13 +99,13 @@ Models are build around unkeyed and keyed effect handlers that resolve values, t
 from orcaset import Effect, Fn, Val, get
 
 # lift a value into an unkeyed rule
-growth_rate = Val("Growth rate", value=0.05)
+growth_rate = Val(value=0.05, name="Growth rate")
 # create a new unkeyed rule that depends on the growth rate
-shocked_growth_rate = Fn("Shocked rate", fn=lambda: (yield from get(growth_rate)) * 0.5)
+shocked_growth_rate = Fn(fn=lambda: (yield from get(growth_rate)) * 0.5, name="Shocked rate")
 
 
 # created an Fn unkeyed rule by decorating a function that can't fit in a lambda
-@Fn.define("Contingent rate")
+@Fn.define(name="Contingent rate")
 def contingent_rate() -> Effect[float]:
     base_rate = yield from get(growth_rate)
     if base_rate > 0.1:
@@ -113,6 +113,8 @@ def contingent_rate() -> Effect[float]:
     else:
         return base_rate
 ```
+
+Every rule takes an optional keyword-only `name`, used to label it in dependency traces and statement rows. Name the rules a reader will look for: statement lines, assumptions, and key results. Leave intermediate rules unnamed; they get a short derived name instead. Decorated functions use the function's name (`@Fn.define` with no arguments names the rule `contingent_rate`), `Val` uses a short `repr` of its value, `ops` combinators describe their inputs (`add(Revenue, COGS)`, `scale(COGS, 0.3)`), and anything else gets `Kind#n` (e.g. `Series#12`). Statement rows require an explicit `name`. Reading a name never evaluates a rule.
 
 Values are resolved with a context. Each context caches all rule values, so they are NEVER recalculated within a context. For example, resolving `contingent_rate` only prints `Calculating contingent rate` the first time it is queried.
 
@@ -144,15 +146,15 @@ from orcaset import Chain, Cons, Series
 
 cons_tail = Cons(
     key=date(2026, 3, 31),
-    value=Val("Constant", value=200.0),
-    tail=Val("Cons end", None),
+    value=Val(value=200.0, name="Constant"),
+    tail=Val(None, name="Cons end"),
 )
 cons_head = Cons(
     key=date(2025, 12, 31),
-    value=Val("Constant", value=100.0),
-    tail=Val("Cons tail", cons_tail),
+    value=Val(value=100.0, name="Constant"),
+    tail=Val(cons_tail, name="Cons tail"),
 )
-chain: Chain[date, float] = Val("Chain", value=cons_head)
+chain: Chain[date, float] = Val(value=cons_head, name="Chain")
 
 
 def last(key: date, chain: Chain[date, float]) -> Effect[Maybe[float]]:
@@ -168,7 +170,7 @@ def last(key: date, chain: Chain[date, float]) -> Effect[Maybe[float]]:
     return (yield from get(head.value))
 
 
-series: Series[date, float, Maybe[float]] = Series("Constant", chain, last)
+series: Series[date, float, Maybe[float]] = Series(chain, last, name="Constant")
 
 ctx = Context()
 print(ctx.get_at(series, date(2024, 12, 31)))  # before the first period
@@ -193,7 +195,7 @@ initial_value = 100.0
 annual_growth_rate = 0.1
 
 
-@Series.define("Line A", query.accrue(YF.cmonthly), seed=initial_year)
+@Series.define(query.accrue(YF.cmonthly), seed=initial_year, name="Line A")
 def line_a(period: Period) -> Effect[tuple[Period, float, Period]]:
     if period == initial_year:
         amount = initial_value
@@ -208,15 +210,15 @@ def line_a(period: Period) -> Effect[tuple[Period, float, Period]]:
     return period, amount, period.from_end(quarter_offset)
 
 
-line_b: Series[Period, Maybe[float], Maybe[float]] = ops.scale("Line B", line_a, -0.4)
+line_b: Series[Period, Maybe[float], Maybe[float]] = ops.scale(line_a, -0.4, name="Line B")
 line_c: Series[Period, Maybe[float], Maybe[float]] = ops.add(
-    "Line C", line_a, line_b, merge_keys=period_union
+    line_a, line_b, merge_keys=period_union, name="Line C"
 )
 ```
 
 `ops` has combinators for `map`, `map2`, `mapn`, `add`, `mul`, `neg`, `scale`, `sub` and `div`.
 
-Other constructors: `Series.of(name, query, pairs)` builds a series from a list of `(key, value)` pairs (values may be `Thunk`s). `Series.empty(name, query)` builds a series with no cells, answered entirely by its query; give the type parameters explicitly, e.g. `Series[Period, float, Maybe[float]].empty(name, query.accrue_drop(YF.cmonthly))`. `clip_periods` and `clip_dates` restrict a series to a window, and `concat_cells` and `flat_map_cells` join chains of chains; see [patterns.md](patterns.md).
+Other constructors: `Series.of(query, pairs)` builds a series from a list of `(key, value)` pairs (values may be `Thunk`s). `Series.empty(query)` builds a series with no cells, answered entirely by its query; give the type parameters explicitly, e.g. `Series[Period, float, Maybe[float]].empty(query.accrue_drop(YF.cmonthly))`. `clip_periods` and `clip_dates` restrict a series to a window, and `concat_cells` and `flat_map_cells` join chains of chains; see [patterns.md](patterns.md).
 Use `orcaset.date_union` as the key merge function for date-keyed series.
 
 The `query` module holds functions for querying over cell chains.

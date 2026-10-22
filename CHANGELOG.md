@@ -9,6 +9,24 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** rule names are optional and keyword-only. Every constructor and
+  combinator that took a leading `name` now takes `name=` last, e.g.
+  `ops.add(a, b, merge_keys=period_union, name="Profit")`,
+  `Series.of(query, pairs, name="Revenue")`, `Val(0.05, name="Growth")`.
+- Unnamed rules get a short derived name. `Fn.define`, `KeyedFn.define`, and
+  `Series.define` use the decorated function's name, `Val` a short `repr` of
+  its value, `ops` combinators their operation and inputs (`add(Revenue, COGS)`),
+  and anything else `Kind#n`. Deriving a name never evaluates a rule.
+- `Fn.define` and `KeyedFn.define` can be used bare (`@Fn.define`).
+- `Stmt` raises `ValueError` for a line item or total without an explicit name.
+
+### Added
+
+- `Rule.named` / `KeyedRule.named` report whether a name was given explicitly,
+  and `default_name()` can be overridden by subclasses to derive a better one.
+
 ## [0.14.0] - 2026-10-14
 
 ### Added

@@ -26,45 +26,44 @@ from orcaset import (
 
 # Assumptions
 initial_period = Period(date(2016, 12, 31), date(2017, 12, 31))
-initial_monthly_market_rent = Val("Market rent", 1.777777778)
+initial_monthly_market_rent = Val(1.777777778, name="Market rent")
 initial_annual_market_rent_psf = Fn(
-    "Initial annual market rent PSF",
     lambda: (yield from get(initial_monthly_market_rent)) * 12,
+    name="Initial annual market rent PSF",
 )
-initial_monthly_in_place_rent = Val("In-place rent", 1.60)
-units = Val("Units", 76.0)
-avg_rsf_per_unit = Val("Average RSF per unit", 573.0)
-rsf = Fn("RSF", lambda: (yield from get(units)) * (yield from get(avg_rsf_per_unit)))
-parking_spaces_per_unit = Val("Parking spaces per unit", 1.13)
-monthly_parking_fee = Val("Monthly parking fee", 50.0)
-monthly_utility_cost_per_unit = Val("Monthly utility cost per unit", 85.0)
+initial_monthly_in_place_rent = Val(1.60, name="In-place rent")
+units = Val(76.0, name="Units")
+avg_rsf_per_unit = Val(573.0, name="Average RSF per unit")
+rsf = Fn(lambda: (yield from get(units)) * (yield from get(avg_rsf_per_unit)), name="RSF")
+parking_spaces_per_unit = Val(1.13, name="Parking spaces per unit")
+monthly_parking_fee = Val(50.0, name="Monthly parking fee")
+monthly_utility_cost_per_unit = Val(85.0, name="Monthly utility cost per unit")
 
-acquisition_price = Val("Acquisition price", 9_775_000.0)
-rentable_to_gross_ratio = Val("Rentable to gross ratio", 0.80)
+acquisition_price = Val(9_775_000.0, name="Acquisition price")
+rentable_to_gross_ratio = Val(0.80, name="Rentable to gross ratio")
 gsf = Fn(
-    "Gross square feet",
     lambda: (yield from get(rsf)) / (yield from get(rentable_to_gross_ratio)),
+    name="Gross square feet",
 )
-annual_insurance_rate_per_gsf = Val("Annual insurance rate per GSF", 0.40)
+annual_insurance_rate_per_gsf = Val(0.40, name="Annual insurance rate per GSF")
 initial_annual_insurance = Fn(
-    "Initial annual insurance",
     lambda: (yield from get(gsf)) * (yield from get(annual_insurance_rate_per_gsf)),
+    name="Initial annual insurance",
 )
-annual_replacement_reserve_per_unit = Val("Replacement reserve per unit", 250.0)
+annual_replacement_reserve_per_unit = Val(250.0, name="Replacement reserve per unit")
 initial_annual_replacement_reserves = Fn(
-    "Initial annual replacement reserves",
     lambda: (yield from get(units)) * (yield from get(annual_replacement_reserve_per_unit)),
+    name="Initial annual replacement reserves",
 )
-property_tax_rate = Val("Property tax rate", 0.0068)
+property_tax_rate = Val(0.0068, name="Property tax rate")
 initial_annual_property_taxes = Fn(
-    "Initial annual property taxes",
     lambda: (yield from get(acquisition_price)) * (yield from get(property_tax_rate)),
+    name="Initial annual property taxes",
 )
-property_management_fee_pct = Val("Property management fee %", 0.03)
+property_management_fee_pct = Val(0.03, name="Property management fee %")
 
 
 growth_assumptions = Val(
-    "Rent growth assumptions",
     (
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 0.035),
         (Period(date(2018, 12, 31), date(2019, 12, 31)), 0.035),
@@ -73,6 +72,7 @@ growth_assumptions = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 0.03),
         (Period(date(2022, 12, 31), date.max), 0.03),
     ),
+    name="Rent growth assumptions",
 )
 
 
@@ -90,10 +90,9 @@ def _pct_loss_to_lease_pairs() -> Effect[tuple[tuple[Period, float], ...]]:
     )
 
 
-pct_loss_to_lease_assumption = Fn("Pct loss to lease", _pct_loss_to_lease_pairs)
+pct_loss_to_lease_assumption = Fn(_pct_loss_to_lease_pairs, name="Pct loss to lease")
 
 bad_debt_concessions_assumption = Val(
-    "Bad debt and concessions",
     (
         (initial_period, -0.03),
         (Period(date(2017, 12, 31), date(2018, 12, 31)), -0.03),
@@ -103,10 +102,10 @@ bad_debt_concessions_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), -0.01),
         (Period(date(2022, 12, 31), date.max), -0.01),
     ),
+    name="Bad debt and concessions",
 )
 
 utility_reimbursement_assumption = Val(
-    "Utility reimbursement percentage",
     (
         (initial_period, 0.80),
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 0.83),
@@ -116,10 +115,10 @@ utility_reimbursement_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 0.95),
         (Period(date(2022, 12, 31), date.max), 0.95),
     ),
+    name="Utility reimbursement percentage",
 )
 
 vacancy_assumption = Val(
-    "General vacancy",
     (
         (initial_period, 0.0),
         (Period(date(2017, 12, 31), date(2018, 12, 31)), -0.01),
@@ -129,18 +128,20 @@ vacancy_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), -0.03),
         (Period(date(2022, 12, 31), date.max), -0.03),
     ),
+    name="General vacancy",
 )
 
 
-rent_growth = Series[Period, float, Maybe[float]].of("Rent growth", query.avg(YF.cmonthly), growth_assumptions)
-bad_debt_concessions = Series.of("Bad debt and concessions", query.avg(YF.cmonthly), bad_debt_concessions_assumption)
+rent_growth = Series[Period, float, Maybe[float]].of(query.avg(YF.cmonthly), growth_assumptions, name="Rent growth")
+bad_debt_concessions = Series.of(
+    query.avg(YF.cmonthly), bad_debt_concessions_assumption, name="Bad debt and concessions"
+)
 utility_reimbursement_pct = Series.of(
-    "Utility reimbursement percentage", query.avg(YF.cmonthly), utility_reimbursement_assumption
+    query.avg(YF.cmonthly), utility_reimbursement_assumption, name="Utility reimbursement percentage"
 )
-vacancy = Series.of("General vacancy", query.avg(YF.cmonthly), vacancy_assumption)
+vacancy = Series.of(query.avg(YF.cmonthly), vacancy_assumption, name="General vacancy")
 
 operating_expense_growth = Val(
-    "Operating expense growth",
     (
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 0.03),
         (Period(date(2018, 12, 31), date(2019, 12, 31)), 0.03),
@@ -149,12 +150,12 @@ operating_expense_growth = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 0.03),
         (Period(date(2022, 12, 31), date.max), 0.03),
     ),
+    name="Operating expense growth",
 )
 
-opex_growth = Series.of("Operating expense growth", query.avg(YF.cmonthly), operating_expense_growth)
+opex_growth = Series.of(query.avg(YF.cmonthly), operating_expense_growth, name="Operating expense growth")
 
 property_tax_growth_assumption = Val(
-    "Property tax growth",
     (
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 0.02),
         (Period(date(2018, 12, 31), date(2019, 12, 31)), 0.02),
@@ -163,11 +164,11 @@ property_tax_growth_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 0.02),
         (Period(date(2022, 12, 31), date.max), 0.02),
     ),
+    name="Property tax growth",
 )
-property_tax_growth = Series.of("Property tax growth", query.avg(YF.cmonthly), property_tax_growth_assumption)
+property_tax_growth = Series.of(query.avg(YF.cmonthly), property_tax_growth_assumption, name="Property tax growth")
 
 sales_marketing_admin_assumption = Val(
-    "Sales, marketing, and administrative %",
     (
         (initial_period, 0.19),
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 0.192),
@@ -177,11 +178,12 @@ sales_marketing_admin_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 0.20),
         (Period(date(2022, 12, 31), date.max), 0.20),
     ),
+    name="Sales, marketing, and administrative %",
 )
 sales_marketing_admin_pct = Series.of(
-    "Sales, marketing, and administrative %",
     query.avg(YF.cmonthly),
     sales_marketing_admin_assumption,
+    name="Sales, marketing, and administrative %",
 )
 
 
@@ -197,7 +199,7 @@ def growing_line(
     q: QueryFn[Period, Maybe[float], Maybe[float]],
     step: relativedelta = year_offset,
 ) -> Series[Period, Maybe[float], Maybe[float]]:
-    @Series[Period, Maybe[float], Maybe[float]].define(name, q, seed=initial_period)
+    @Series[Period, Maybe[float], Maybe[float]].define(q, seed=initial_period, name=name)
     def line(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
         if period == initial_period:
             return period, (yield from get(initial)), period.from_end(step)
@@ -238,28 +240,31 @@ def accrued_balance[V](
 market_rent_psf = growing_line(
     "Market rent PSF", initial_annual_market_rent_psf, rent_growth, query.accrue(YF.cmonthly)
 )
-market_rent = ops.scale("Market rent", market_rent_psf, rsf)
-pct_loss_to_lease = Series.of("Pct loss to lease", query.avg(YF.cmonthly), pct_loss_to_lease_assumption)
-loss_to_lease = ops.mul("Loss to lease", market_rent, pct_loss_to_lease, merge_keys=period_union)
+market_rent = ops.scale(market_rent_psf, rsf, name="Market rent")
+pct_loss_to_lease = Series.of(query.avg(YF.cmonthly), pct_loss_to_lease_assumption, name="Pct loss to lease")
+loss_to_lease = ops.mul(market_rent, pct_loss_to_lease, merge_keys=period_union, name="Loss to lease")
 total_parking_spaces = Fn(
-    "Total parking spaces", lambda: (yield from get(units)) * (yield from get(parking_spaces_per_unit))
+    lambda: (yield from get(units)) * (yield from get(parking_spaces_per_unit)), name="Total parking spaces"
 )
 monthly_parking_income = Fn(
-    "Monthly parking income", lambda: (yield from get(total_parking_spaces)) * (yield from get(monthly_parking_fee))
+    lambda: (yield from get(total_parking_spaces)) * (yield from get(monthly_parking_fee)),
+    name="Monthly parking income",
 )
 initial_annual_parking_income = Fn(
-    "Initial annual parking income", lambda: (yield from get(monthly_parking_income)) * 12.0
+    lambda: (yield from get(monthly_parking_income)) * 12.0, name="Initial annual parking income"
 )
 annual_parking_income = growing_line(
     "Annual parking income", initial_annual_parking_income, rent_growth, query.accrue(YF.cmonthly)
 )
 monthly_utility_expense = Fn(
-    "Monthly utility expense", lambda: (yield from get(units)) * (yield from get(monthly_utility_cost_per_unit))
+    lambda: (yield from get(units)) * (yield from get(monthly_utility_cost_per_unit)), name="Monthly utility expense"
 )
-annual_utility_expense_cell = Fn("Annual utility expense", lambda: (yield from get(monthly_utility_expense)) * 12.0)
+annual_utility_expense_cell = Fn(
+    lambda: (yield from get(monthly_utility_expense)) * 12.0, name="Annual utility expense"
+)
 utility_expense = growing_line("Utility expense", annual_utility_expense_cell, opex_growth, query.accrue(YF.cmonthly))
 utility_reimbursements = ops.mul(
-    "Utility reimbursements", utility_expense, utility_reimbursement_pct, merge_keys=period_union
+    utility_expense, utility_reimbursement_pct, merge_keys=period_union, name="Utility reimbursements"
 )
 annual_insurance = growing_line("Insurance", initial_annual_insurance, opex_growth, query.accrue(YF.cmonthly))
 annual_replacement_reserves = growing_line(
@@ -268,30 +273,29 @@ annual_replacement_reserves = growing_line(
 property_taxes = growing_line(
     "Property taxes", initial_annual_property_taxes, property_tax_growth, query.accrue(YF.cmonthly)
 )
-effective_rent = ops.add("Effective rent", market_rent, loss_to_lease, merge_keys=period_union)
+effective_rent = ops.add(market_rent, loss_to_lease, merge_keys=period_union, name="Effective rent")
 bad_debt_concessions_amount = ops.mul(
-    "Bad debt and concessions amount", effective_rent, bad_debt_concessions, merge_keys=period_union
+    effective_rent, bad_debt_concessions, merge_keys=period_union, name="Bad debt and concessions amount"
 )
 pgr = ops.add(
-    "Potential Gross Revenue",
     market_rent,
     loss_to_lease,
     bad_debt_concessions_amount,
     annual_parking_income,
     utility_reimbursements,
     merge_keys=period_union,
+    name="Potential Gross Revenue",
 )
-vacancy_amount = ops.mul("Vacancy amount", pgr, vacancy, merge_keys=period_union)
-egi = ops.add("Effective Gross Revenue", pgr, vacancy_amount, merge_keys=period_union)
+vacancy_amount = ops.mul(pgr, vacancy, merge_keys=period_union, name="Vacancy amount")
+egi = ops.add(pgr, vacancy_amount, merge_keys=period_union, name="Effective Gross Revenue")
 sales_marketing_admin = ops.mul(
-    "Sales, marketing, and administrative",
     egi,
     sales_marketing_admin_pct,
     merge_keys=period_union,
+    name="Sales, marketing, and administrative",
 )
-management_fee = ops.scale("Property management fee", egi, property_management_fee_pct)
+management_fee = ops.scale(egi, property_management_fee_pct, name="Property management fee")
 total_operating_expenses = ops.add(
-    "Total operating expenses",
     annual_insurance,
     utility_expense,
     annual_replacement_reserves,
@@ -299,26 +303,26 @@ total_operating_expenses = ops.add(
     property_taxes,
     management_fee,
     merge_keys=period_union,
+    name="Total operating expenses",
 )
-noi = ops.sub("Net Operating Income", egi, total_operating_expenses, merge_keys=period_union)
-noi_margin = ops.div("NOI margin", noi, egi, merge_keys=period_union)
+noi = ops.sub(egi, total_operating_expenses, merge_keys=period_union, name="Net Operating Income")
+noi_margin = ops.div(noi, egi, merge_keys=period_union, name="NOI margin")
 
 
 # Acquisition, reserves, and debt assumptions
 acquisition_date = date(2017, 12, 31)
 acquisition_period = Period(acquisition_date, acquisition_date + year_offset)
-loan_to_value = Val("Acquisition LTV", 0.65)
+loan_to_value = Val(0.65, name="Acquisition LTV")
 senior_debt = Fn(
-    "Senior debt",
     lambda: (yield from get(acquisition_price)) * (yield from get(loan_to_value)),
+    name="Senior debt",
 )
-loan_interest_rate = Val("Loan interest rate", 0.05)
-loan_amortization_years = Val("Loan amortization years", 30.0)
-loan_maturity_years = Val("Loan maturity years", 5)
-upfront_reserve_funding = Val("Upfront reserve funding", 19_000.0)
+loan_interest_rate = Val(0.05, name="Loan interest rate")
+loan_amortization_years = Val(30.0, name="Loan amortization years")
+loan_maturity_years = Val(5, name="Loan maturity years")
+upfront_reserve_funding = Val(19_000.0, name="Upfront reserve funding")
 
 capex_per_unit_assumption = Val(
-    "Capital expenditures per unit",
     (
         (Period(date(2017, 12, 31), date(2018, 12, 31)), 500.0),
         (Period(date(2018, 12, 31), date(2019, 12, 31)), 1_000.0),
@@ -327,12 +331,13 @@ capex_per_unit_assumption = Val(
         (Period(date(2021, 12, 31), date(2022, 12, 31)), 200.0),
         (Period(date(2022, 12, 31), date.max), 0.0),
     ),
+    name="Capital expenditures per unit",
 )
-capex_per_unit = Series.of("Capital expenditures per unit", query.accrue(YF.cmonthly), capex_per_unit_assumption)
-capex = ops.neg("Capital expenditures", ops.scale("Gross capital expenditures", capex_per_unit, units))
+capex_per_unit = Series.of(query.accrue(YF.cmonthly), capex_per_unit_assumption, name="Capital expenditures per unit")
+capex = ops.neg(ops.scale(capex_per_unit, units, name="Gross capital expenditures"), name="Capital expenditures")
 
 
-@Series.define("Capex funded by reserves", query.accrue(YF.cmonthly), seed=acquisition_period)
+@Series.define(query.accrue(YF.cmonthly), seed=acquisition_period, name="Capex funded by reserves")
 def capex_funded_by_reserves(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     """Capex paid from the reserve, capped at the beginning balance plus the period's contributions."""
     beginning = yield from get_at(reserve_balance, period.start)
@@ -347,23 +352,25 @@ def capex_funded_by_reserves(period: Period) -> Effect[tuple[Period, Maybe[float
 
 
 reserve_funding = Series[date, Maybe[float], Maybe[float]].of(
-    "Upfront reserve funding",
     query.exact_or(0.0),
     [(acquisition_date, Thunk(lambda: get(upfront_reserve_funding)))],
+    name="Upfront reserve funding",
 )
 
 
-@Series.define("Reserve draws", query.exact_or(maybe.some(0.0)), seed=acquisition_period)
+@Series.define(query.exact_or(maybe.some(0.0)), seed=acquisition_period, name="Reserve draws")
 def reserve_draws(period: Period) -> Effect[tuple[date, Maybe[float], Period]]:
     """Post each period's reserve-funded capex as a negative flow on the period end."""
     funded = yield from get_at(capex_funded_by_reserves, period)
     return period.end, maybe.neg_some(funded), period.from_end(year_offset)
 
 
-reserve_flows = ops.add("Reserve flows", reserve_funding, reserve_draws, merge_keys=date_union)
+reserve_flows = ops.add(reserve_funding, reserve_draws, merge_keys=date_union, name="Reserve flows")
 
 
-@Series.define("Replacement reserve balance", accrued_balance(annual_replacement_reserves), seed=acquisition_period)
+@Series.define(
+    accrued_balance(annual_replacement_reserves), seed=acquisition_period, name="Replacement reserve balance"
+)
 def reserve_balance(period: Period) -> Effect[tuple[date, Maybe[float], Period]]:
     """Post the balance at ``period.start``, rolled forward from the prior period."""
     if period == acquisition_period:
@@ -377,11 +384,11 @@ def reserve_balance(period: Period) -> Effect[tuple[date, Maybe[float], Period]]
     return period.start, balance, period.from_end(year_offset)
 
 
-adjusted_noi = ops.add("Adjusted NOI", noi, capex, capex_funded_by_reserves, merge_keys=period_union)
+adjusted_noi = ops.add(noi, capex, capex_funded_by_reserves, merge_keys=period_union, name="Adjusted NOI")
 
 
 # Debt schedule and levered cash flow
-@Fn.define("Monthly debt service")
+@Fn.define(name="Monthly debt service")
 def monthly_debt_service() -> Effect[float]:
     principal = yield from get(senior_debt)
     annual_rate = yield from get(loan_interest_rate)
@@ -394,7 +401,7 @@ def monthly_debt_service() -> Effect[float]:
 first_loan_month = Period(acquisition_date, acquisition_date + month_offset)
 
 
-@Series.define("Loan balance", query.last, seed=first_loan_month)
+@Series.define(query.last, seed=first_loan_month, name="Loan balance")
 def loan_balance(period: Period) -> Effect[tuple[date, Maybe[float], Period]]:
     """Post the balance at ``period.start``; carry it until payment, with zero at maturity."""
     maturity = yield from get(loan_maturity_years)
@@ -413,7 +420,7 @@ def loan_balance(period: Period) -> Effect[tuple[date, Maybe[float], Period]]:
     return period.start, maybe.map2_some(amortize)(prior, interest), period.from_end(month_offset)
 
 
-@Series.define("Debt service", query.accrue(YF.cmonthly), seed=first_loan_month)
+@Series.define(query.accrue(YF.cmonthly), seed=first_loan_month, name="Debt service")
 def debt_service(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     """One monthly P&I payment while the loan is outstanding, as a negative cash flow."""
     balance = yield from get_at(loan_balance, period.start)
@@ -425,7 +432,7 @@ def debt_service(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     return period, maybe.map_some(cash_flow)(balance), period.from_end(month_offset)
 
 
-@Series.define("Interest expense", query.accrue(YF.cmonthly), seed=first_loan_month)
+@Series.define(query.accrue(YF.cmonthly), seed=first_loan_month, name="Interest expense")
 def interest_expense(period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
     """One month of 30/360 interest on the beginning balance."""
     balance = yield from get_at(loan_balance, period.start)
@@ -433,6 +440,6 @@ def interest_expense(period: Period) -> Effect[tuple[Period, Maybe[float], Perio
     return period, maybe.mul_some(balance, rate * 1 / 12), period.from_end(month_offset)
 
 
-debt_pi = ops.neg("Debt P&I", debt_service)
-principal_paid = ops.sub("Principal payments", debt_pi, interest_expense, merge_keys=period_union)
-levered_cash_flow = ops.add("Levered cash flow", adjusted_noi, debt_service, merge_keys=period_union)
+debt_pi = ops.neg(debt_service, name="Debt P&I")
+principal_paid = ops.sub(debt_pi, interest_expense, merge_keys=period_union, name="Principal payments")
+levered_cash_flow = ops.add(adjusted_noi, debt_service, merge_keys=period_union, name="Levered cash flow")
