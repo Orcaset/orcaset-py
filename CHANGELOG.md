@@ -38,6 +38,10 @@ change between minor releases.
   series' query answers at each key. Values are not forced by walking.
 - `clip_periods` and `clip_dates` take `outside=`, the answer for a query
   entirely outside the window (default `Na`).
+- `continue_series(base, *conts)` takes any number of continuations, each
+  called with the last walk node of the components before it:
+  `continue_series(actuals, renewal, reabsorption)`. Calls with one
+  continuation are unchanged.
 - `of_cells(pairs)` builds a standalone cell chain from `(key, value)` pairs,
   e.g. for `Series.flatten` components.
 - `Rule.named` / `KeyedRule.named` report whether a name was given explicitly,

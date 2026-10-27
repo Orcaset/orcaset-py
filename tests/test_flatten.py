@@ -371,6 +371,88 @@ def test_continuation_returning_none_ends_the_chain_after_base():
     assert len(calls) == 1
 
 
+def test_each_continuation_receives_the_last_node_of_the_component_before_it():
+    base = Series.of(covered, [(OCT, 100.0)], name="base")
+    calls: list[tuple[str, Period | None]] = []
+
+    def after(label: str, period: Period, value: float):
+        def cont(
+            last_node: Cons[Period, Maybe[float]] | None,
+        ) -> Series[Period, float, Maybe[float]]:
+            calls.append((label, None if last_node is None else last_node.key))
+            return Series.of(covered, [(period, value)], name=label)
+
+        return cont
+
+    chain = continue_series(
+        base, after("nov", NOV, 110.0), after("dec", DEC, 120.0), name="components"
+    )
+    revenue = Series.flatten(chain, query=covered, split_keys=period_split, name="revenue")
+    ctx = Context()
+    assert ctx.get_at(revenue, OCT) == 100.0
+    assert calls == []
+    assert ctx.get_at(revenue, Period(OCT.start, DEC.end)) == 330.0
+    assert calls == [("nov", OCT), ("dec", NOV)]
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), DEC), name="keys")) == [OCT, NOV, DEC]
+    assert len(calls) == 2
+
+
+def test_an_empty_continuation_passes_on_the_last_node_before_it():
+    base = Series.of(covered, [(OCT, 100.0)], name="base")
+    seen: list[Period | None] = []
+
+    def empty(last_node: Cons[Period, Maybe[float]] | None) -> Series[Period, float, Maybe[float]]:
+        return Series.of(covered, [], name="empty")
+
+    def terminal(
+        last_node: Cons[Period, Maybe[float]] | None,
+    ) -> Series[Period, float, Maybe[float]]:
+        seen.append(None if last_node is None else last_node.key)
+        return Series.of(covered, [(NOV, 110.0)], name="terminal")
+
+    chain = continue_series(base, empty, terminal, name="components")
+    revenue = Series.flatten(chain, query=covered, split_keys=period_split, name="revenue")
+    assert Context().get_at(revenue, NOV) == 110.0
+    assert seen == [OCT]
+
+
+def test_none_ends_the_chain_before_later_continuations():
+    base = Series.of(covered, [(OCT, 100.0)], name="base")
+
+    def forbidden(
+        last_node: Cons[Period, Maybe[float]] | None,
+    ) -> Series[Period, float, Maybe[float]]:
+        raise AssertionError("continuation after None was called")
+
+    chain = continue_series(base, lambda _: None, forbidden, name="components")
+    ctx = Context()
+    head = ctx.get(chain)
+    assert head is not None and ctx.get(head.tail) is None
+
+
+def test_infinite_continuation_never_invokes_the_ones_after_it():
+    base = Series.of(exact, [(0, 0.0)], name="base")
+
+    def endless(last_node: Cons[int, Maybe[float]] | None) -> Series[int, float, Maybe[float]]:
+        assert last_node is not None
+
+        def step(i: int) -> tuple[int, float, int]:
+            return i, float(i), i + 1
+
+        return Series.unfold(exact, seed=last_node.key + 1, step=step, name="endless")
+
+    def forbidden(last_node: Cons[int, Maybe[float]] | None) -> Series[int, float, Maybe[float]]:
+        raise AssertionError("continuation after an infinite component was called")
+
+    revenue = Series.flatten(
+        continue_series(base, endless, forbidden, name="components"),
+        query=exact,
+        split_keys=int_split,
+        name="revenue",
+    )
+    assert Context().get_at(revenue, 50) == 50.0
+
+
 def test_empty_base_with_no_continuation_flattens_to_no_cells():
     base: Series[Period, float, Maybe[float]] = Series.of(covered, [], name="empty")
     chain = continue_series(base, lambda _: None, name="components")

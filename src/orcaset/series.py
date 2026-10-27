@@ -680,42 +680,53 @@ def clip_dates[V, W](
     return Series(walk(None, source._cells), query, name=name)
 
 
+type _Continued[K: Key, W] = tuple[int, Series[K, Any, W] | None, Cons[K, W] | None]
+"""Next outer index, the component just emitted (``None`` before ``base``), and
+the last walk node seen so far across emitted components."""
+
+
 def continue_series[K: Key, W](
     base: Series[K, Any, W],
-    cont: Callable[[Cons[K, W] | None], Series[K, Any, W] | None],
-    *,
+    *conts: Callable[[Cons[K, W] | None], Series[K, Any, W] | None],
     name: str | None = None,
 ) -> Chain[int, Series[K, Any, W]]:
-    """Build ``[base, cont(last)]`` for ``Series.flatten``.
+    """Build ``[base, conts[0](last), conts[1](last), ...]`` for ``Series.flatten``.
 
-    ``cont`` receives the last node of ``base.walk()``, whose value is the
-    base's answer at its last key, or ``None`` if empty. It returns the next
-    series, or ``None`` to end the chain after ``base``. It runs when the
-    outer tail is requested and is memoized per context; reading the first
-    outer node does not inspect the base. Flatten only requests the outer
-    tail after the base ends, so an infinite base never invokes its
-    continuation. Direct callers must obey the same discipline: requesting
-    this outer tail itself exhausts the base, whose end may depend on other
-    rules.
+    Each continuation receives the last walk node so far: the last node of
+    the previous component's ``walk()``, whose value is that component's
+    answer at its last key. An empty component passes on the node before it,
+    so ``None`` means every earlier component, ``base`` included, was empty.
+    A continuation returns the next series, or ``None`` to end the chain
+    there; later continuations are then never called.
+
+    A continuation runs when its outer node is requested and is memoized per
+    context; reading the first outer node does not inspect the base, and the
+    tail after the last continuation ends without walking anything. Flatten
+    only requests an outer tail after the preceding component ends, so an
+    infinite component never invokes the continuations after it. Direct
+    callers must obey the same discipline: requesting an outer tail itself
+    exhausts the component before it, whose end may depend on other rules.
     """
 
-    def step(index: int) -> Effect[tuple[int, Series[K, Any, W], int] | None]:
-        if index == 0:
-            return 0, base, 1
-        if index != 1:
+    def step(
+        state: _Continued[K, W],
+    ) -> Effect[tuple[int, Series[K, Any, W], _Continued[K, W]] | None]:
+        index, prior, last = state
+        if prior is None:
+            return 0, base, (1, base, None)
+        if index > len(conts):
             return None
-        last: Cons[K, W] | None = None
-        node = yield from get(base.walk())
+        node = yield from get(prior.walk())
         while node is not None:
             last = node
             node = yield from get(node.tail)
-        following = cont(last)
+        following = conts[index - 1](last)
         if following is None:
             return None
-        return 1, following, 2
+        return index, following, (index + 1, following, last)
 
     name = name if name is not None else derived_name("continue_series", base)
-    return unfold_cells(seed=0, step=step, name=name)
+    return unfold_cells(seed=(0, None, None), step=step, name=name)
 
 
 type _Component[K: Key, W] = Cons[int, Series[K, Any, W]]

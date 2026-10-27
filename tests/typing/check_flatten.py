@@ -67,6 +67,11 @@ assert_type(
     continue_series(actuals, lambda _: None, name="ended"),
     Chain[int, Series[Period, Any, Maybe[float]]],
 )
+assert_type(
+    continue_series(actuals, continuation, lambda _: flat, name="two continuations"),
+    Chain[int, Series[Period, Any, Maybe[float]]],
+)
+continue_series(actuals, continuation, lambda _: dates, name="bad second keys")  # pyrefly: ignore[bad-argument-type]
 
 
 # Wrong answer-node type must not be hidden by the continuation's existential V.

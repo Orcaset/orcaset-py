@@ -163,6 +163,8 @@ revenue = Series.flatten(
 
 The continuation's state is the prior period; its emitted key is the next period. This avoids duplicating the terminal base key. Its reference to the combined `revenue` is resolved lazily, so January can depend on December's projection. This example follows the extend-series example's simple prorated growth: January is `121 * (1 + 0.02 / 12)`. The callback and nested series are part of the lazy continuation mechanism, not a generic builder for unrelated line items.
 
+Pass several continuations to build several segments in one call: `continue_series(base, renewal, reabsorption)`. Each receives the last walk node of the segments before it (an empty segment passes on the node before it), and a continuation returning `None` ends the chain there, so later ones are never called.
+
 Do not exhaust the base to find its last value before constructing the combined series. `continue_series` discovers the frontier lazily; an infinite base never invokes its continuation. Handle an empty base according to the model's intended behavior: return `None` when nothing should follow, rather than an empty series, so code walking the components sees the chain end. Let a missing terminal amount propagate unless an explicit replacement is justified.
 
 For segments sharing one query policy, `Series.extend(query, base=base.walk(), cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
