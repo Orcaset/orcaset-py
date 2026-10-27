@@ -65,14 +65,14 @@ def build_cohort(source_key: Period) -> Cohort:
     )
 
 
-cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    map_cells(
-        capex.cells,
-        lambda source_key, _cell: build_cohort(source_key),
-        name="cohort_schedules",
-    ),
-    query.exact,
+# The cohort chain is built here, so both the schedule lookup and the rollup can share it.
+cohort_cells = map_cells(
+    capex.walk(),
+    lambda source_key, _cell: build_cohort(source_key),
     name="cohort_schedules",
+)
+cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
+    cohort_cells, query.exact, name="cohort_schedules"
 )
 
 
@@ -98,7 +98,7 @@ def rollup(
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
     scan_cells(
-        cohort_schedules.cells,
+        cohort_cells,
         seed=(),
         fn=rollup,
         name="total_depreciation",

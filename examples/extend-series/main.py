@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
+    Chain,
     Cons,
     Context,
     Effect,
@@ -21,6 +22,7 @@ from orcaset import (
     formatter,
     get_at,
     maybe,
+    of_cells,
     period_split,
     query,
     stmt,
@@ -48,13 +50,11 @@ projections = Series.of(
 
 def terminal_revenue(
     last_node: Cons[Period, Maybe[float]] | None,
-) -> Series[Period, Maybe[float], Maybe[float]]:
+) -> Series[Period, Maybe[float], Maybe[float]] | None:
     """Grow revenue each month at a 2% annual rate after prior series ends."""
-    # If there is no prior node (e.g., the prior series is empty), return an empty series.
+    # If there is no prior node (e.g., the prior series is empty), nothing follows it.
     if last_node is None:
-        return Series[Period, Maybe[float], Maybe[float]].empty(
-            accrue_monthly, name="Terminal growth"
-        )
+        return None
 
     # Otherwise, grow revenue each month at a 2% annual rate after the prior series ends.
     # Note that this series is lazily bound to `revenue`
@@ -70,11 +70,11 @@ def terminal_revenue(
 # ---- Series composition ----
 type Segment = Series[Period, Any, Maybe[float]]
 
-components: Series[int, Segment, Maybe[Segment]] = Series.of(
-    query.exact, [(0, actuals), (1, projections)], name="Revenue components"
+components: Chain[int, Segment] = of_cells(
+    [(0, actuals), (1, projections)], name="Revenue components"
 )
 base: Series[Period, Maybe[float], Maybe[float]] = Series.flatten(
-    components.cells,
+    components,
     query=query.covered,
     split_keys=period_split,
     name="Actuals and projections",

@@ -17,6 +17,7 @@ from orcaset import (
     date_split,
     flat_map_cells,
     get,
+    of_cells,
     period_split,
 )
 from orcaset.maybe import Maybe, Na, isna
@@ -33,10 +34,10 @@ maybe_forecast: Series[Period, Maybe[float], Maybe[float]] = Series.of(
     accrue(YF.cmonthly), [(Q2, Na)], name="maybe forecast"
 )
 
-outer = Series.of(exact, [(0, actuals), (1, forecast)], name="components")
-flat = Series.flatten(outer.cells, query=covered, split_keys=period_split, name="flat")
+outer = of_cells([(0, actuals), (1, forecast)], name="components")
+flat = Series.flatten(outer, query=covered, split_keys=period_split, name="flat")
 assert_type(flat, Series[Period, Maybe[float], Maybe[float]])
-assert_type(flat.cells, Chain[Period, Maybe[float]])
+assert_type(flat.walk(), Chain[Period, Maybe[float]])
 
 
 def from_text(q: Period, cells: Chain[Period, str]) -> Effect[Maybe[float]]:
@@ -47,7 +48,7 @@ def from_text(q: Period, cells: Chain[Period, str]) -> Effect[Maybe[float]]:
 text_forecast = Series.of(from_text, [(Q2, "200")], name="text forecast")
 
 
-def continuation(last: Cons[Period, float] | None) -> Series[Period, str, Maybe[float]]:
+def continuation(last: Cons[Period, Maybe[float]] | None) -> Series[Period, str, Maybe[float]]:
     return text_forecast
 
 
@@ -56,15 +57,19 @@ assert_type(chain, Chain[int, Series[Period, Any, Maybe[float]]])
 mixed = Series.flatten(chain, query=covered, split_keys=period_split, name="mixed")
 assert_type(mixed, Series[Period, Maybe[float], Maybe[float]])
 
-nested = Series.of(exact, [(0, actuals), (1, mixed)], name="nested")
+nested = of_cells([(0, actuals), (1, mixed)], name="nested")
 assert_type(
-    Series.flatten(nested.cells, query=covered, split_keys=period_split, name="nested"),
+    Series.flatten(nested, query=covered, split_keys=period_split, name="nested"),
     Series[Period, Maybe[float], Maybe[float]],
 )
 continue_series(mixed, lambda _: flat, name="nested continuation")
+assert_type(
+    continue_series(actuals, lambda _: None, name="ended"),
+    Chain[int, Series[Period, Any, Maybe[float]]],
+)
 
 
-# Wrong raw-node type must not be hidden by the continuation's existential V.
+# Wrong answer-node type must not be hidden by the continuation's existential V.
 def wrong_anchor(last: Cons[Period, str] | None) -> Series[Period, str, Maybe[float]]:
     return text_forecast
 
@@ -74,17 +79,17 @@ continue_series(actuals, wrong_anchor, name="bad anchor")  # pyrefly: ignore[bad
 # Output W remains constrained even though components may have any raw V.
 labels = Series.of(exact, [(Q2, "forecast")], name="labels")
 continue_series(actuals, lambda _: labels, name="bad answers")  # pyrefly: ignore[bad-argument-type]
-label_components = Series.of(exact, [(0, labels)], name="label components")
-Series.flatten(label_components.cells, query=covered, split_keys=period_split, name="bad fold")  # pyrefly: ignore[bad-argument-type]
+label_components = of_cells([(0, labels)], name="label components")
+Series.flatten(label_components, query=covered, split_keys=period_split, name="bad fold")  # pyrefly: ignore[bad-argument-type]
 
 # Components and query splitting must agree on K.
-Series.flatten(outer.cells, query=covered, split_keys=date_split, name="bad split")  # pyrefly: ignore[bad-argument-type]
+Series.flatten(outer, query=covered, split_keys=date_split, name="bad split")  # pyrefly: ignore[bad-argument-type]
 dates = Series.of(exact, [(date(2025, 1, 1), 100.0)], name="dates")
 continue_series(actuals, lambda _: dates, name="bad keys")  # pyrefly: ignore[bad-argument-type]
 
 # The outer chain's keys are positions, not component domain keys.
-period_outer = Series.of(exact, [(Q1, actuals)], name="bad outer")
-Series.flatten(period_outer.cells, query=covered, split_keys=period_split, name="bad outer")  # pyrefly: ignore[bad-argument-type]
+period_outer = of_cells([(Q1, actuals)], name="bad outer")
+Series.flatten(period_outer, query=covered, split_keys=period_split, name="bad outer")  # pyrefly: ignore[bad-argument-type]
 
 
 def plain_sum(q: Period, cells: Chain[Period, float]) -> Effect[float]:
@@ -97,45 +102,45 @@ def plain_sum(q: Period, cells: Chain[Period, float]) -> Effect[float]:
 
 
 plain = Series.of(plain_sum, [(Q1, 1.0)], name="plain answers")
-plain_outer = Series.of(exact, [(0, plain)], name="plain components")
+plain_outer = of_cells([(0, plain)], name="plain components")
 assert_type(
-    Series.flatten(plain_outer.cells, query=plain_sum, split_keys=period_split, name="plain"),
+    Series.flatten(plain_outer, query=plain_sum, split_keys=period_split, name="plain"),
     Series[Period, float, float],
 )
 
 # concat_cells joins a chain of chains; outer keys of any type are discarded.
-chains = Series.of(exact, [(Q1, actuals.cells), (Q2, forecast.cells)], name="chains")
-assert_type(concat_cells(chains.cells, name="joined"), Chain[Period, float])
+chains = of_cells([(Q1, actuals.walk()), (Q2, forecast.walk())], name="chains")
+assert_type(concat_cells(chains, name="joined"), Chain[Period, Maybe[float]])
 
 # flat_map_cells is concat after mapping resolved outer values to chains.
-pairs = Series.of(exact, [(0, (actuals, forecast))], name="pairs")
+pairs = of_cells([(0, (actuals, forecast))], name="pairs")
 assert_type(
-    flat_map_cells(pairs.cells, lambda pair: pair[1].cells, name="cells"), Chain[Period, float]
+    flat_map_cells(pairs, lambda pair: pair[1].walk(), name="cells"), Chain[Period, Maybe[float]]
 )
 
 
-def actual_cells(source: Series[Period, float, Maybe[float]]) -> Chain[Period, float]:
-    return source.cells
+def actual_cells(source: Series[Period, float, Maybe[float]]) -> Chain[Period, Maybe[float]]:
+    return source.walk()
 
 
 assert_type(
-    flat_map_cells(period_outer.cells, actual_cells, name="period outer"), Chain[Period, float]
+    flat_map_cells(period_outer, actual_cells, name="period outer"), Chain[Period, Maybe[float]]
 )
-labelled = Series.of(exact, [("actuals", actuals)], name="labelled")
-assert_type(flat_map_cells(labelled.cells, actual_cells, name="str outer"), Chain[Period, float])
+labelled = of_cells([("actuals", actuals)], name="labelled")
+assert_type(flat_map_cells(labelled, actual_cells, name="str outer"), Chain[Period, Maybe[float]])
 
 # The concatenated cell type follows the inner chains.
-assert_type(flat_map_cells(pairs.cells, lambda _: labels.cells, name="labels"), Chain[Period, str])
+assert_type(flat_map_cells(pairs, lambda _: labels.walk(), name="labels"), Chain[Period, Maybe[str]])
 
-# An empty series takes its cell type from the class subscript, not from cells.
+# An empty series takes its types from the class subscript, not from cells.
 empty = Series[Period, float, Maybe[float]].empty(accrue(YF.cmonthly), name="empty")
 assert_type(empty, Series[Period, float, Maybe[float]])
 assert_type(
     concat_cells(
-        Series.of(exact, [(0, empty.cells), (1, actuals.cells)], name="chains").cells,
+        of_cells([(0, empty.walk()), (1, actuals.walk())], name="chains"),
         name="with empty",
     ),
-    Chain[Period, float],
+    Chain[Period, Maybe[float]],
 )
 
 # Clipping keeps the key type; trimmed period cells hold the source's answers.

@@ -155,7 +155,7 @@ def cumulate[V](
     def scan(
         previous: date | None,
         day: date,
-        _flow: Rule[V],
+        _flow: Rule[Maybe[float]],
     ) -> tuple[Thunk[Maybe[float]], date]:
         def value() -> Effect[Maybe[float]]:
             prior = 0.0 if previous is None else (yield from get_at(balance, previous))
@@ -164,7 +164,7 @@ def cumulate[V](
 
         return Thunk(value), day
 
-    balance = Series(scan_cells(flows.cells, seed=None, fn=scan, name=name), query.last, name=name)
+    balance = Series(scan_cells(flows.walk(), seed=None, fn=scan, name=name), query.last, name=name)
     return balance
 
 

@@ -224,7 +224,7 @@ def _cash_flow_sum(
 ) -> Fn[Maybe[float]]:
     def calculate() -> Effect[Maybe[float]]:
         total = 0.0
-        node = yield from get(cash_flows.cells)
+        node = yield from get(cash_flows.walk())
         while node is not None:
             value = yield from get(node.value)
             if isna(value):

@@ -70,7 +70,7 @@ tsa_passengers = Series(checkpoint_step, _BY_DAYS, name="TSA checkpoint passenge
 
 @Fn.define(name="TSA checkpoint last date")
 def tsa_last_date() -> Effect[date]:
-    node = yield from get(tsa_passengers.cells)
+    node = yield from get(tsa_passengers.walk())
     if node is None:
         raise RuntimeError("TSA checkpoint series is empty")
     while True:

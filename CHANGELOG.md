@@ -21,9 +21,25 @@ change between minor releases.
   and anything else `Kind#n`. Deriving a name never evaluates a rule.
 - `Fn.define` and `KeyedFn.define` can be used bare (`@Fn.define`).
 - `Stmt` raises `ValueError` for a line item or total without an explicit name.
+- **Breaking:** `Series.cells` is no longer public. Read a series' values only
+  through its query: `get_at` at any key, or the new `Series.walk()` along its
+  keys. Pass `series.walk()` where `series.cells` was passed to `map_cells`,
+  `scan_cells`, `Series.extend` or `concat_cells`.
+- **Breaking:** `continue_series` passes its continuation the last node of
+  `base.walk()` (the base's answer at its last key) instead of the last raw
+  cell.
+- `continue_series`'s continuation may return `None` to end the chain after
+  the base. It now runs when the outer tail is requested rather than when the
+  second component's value is read.
 
 ### Added
 
+- `Series.walk()` returns the series' keys as a lazy chain whose values are the
+  series' query answers at each key. Values are not forced by walking.
+- `clip_periods` and `clip_dates` take `outside=`, the answer for a query
+  entirely outside the window (default `Na`).
+- `of_cells(pairs)` builds a standalone cell chain from `(key, value)` pairs,
+  e.g. for `Series.flatten` components.
 - `Rule.named` / `KeyedRule.named` report whether a name was given explicitly,
   and `default_name()` can be overridden by subclasses to derive a better one.
 

@@ -13,9 +13,10 @@ from orcaset import (
     clip_dates,
     clip_periods,
     concat_cells,
+    of_cells,
     unfold_cells,
 )
-from orcaset.maybe import Maybe, isna
+from orcaset.maybe import Maybe, Na, isna
 from orcaset.query import accrue, accrue_drop, exact, last
 
 MONTH = relativedelta(months=1, day=31)
@@ -39,7 +40,7 @@ def items[K: Key, V](ctx: Context, cells: Chain[K, V]) -> list[tuple[K, V]]:
 def test_clip_periods_trims_cells_and_values_them_by_the_source():
     basis = clip_periods(rent, FREE.start, FREE.end, name="basis")
     ctx = Context()
-    assert items(ctx, basis.cells) == [
+    assert items(ctx, basis._cells) == [
         (Period(FREE.start, Y2026.end), 25.0),
         (Period(Y2027.start, FREE.end), 27.5),
     ]
@@ -55,14 +56,27 @@ def test_clip_periods_forwards_trimmed_queries_and_is_na_outside():
     assert isna(ctx.get_at(basis, Y2028))
 
 
+def test_clip_periods_answers_outside_only_for_queries_entirely_outside():
+    gappy = Series.of(accrue(YF.cmonthly), [(Y2026, 100.0), (Y2028, Na)], name="gappy")
+    basis = clip_periods(gappy, Y2026.start, Y2028.end, outside=0.0, name="basis")
+    ctx = Context()
+    assert ctx.get_at(basis, Period(Y2028.end, Y2028.end + relativedelta(years=1))) == 0.0
+    assert ctx.get_at(basis, Period(Y2026.start - relativedelta(years=1), Y2026.start)) == 0.0
+    # A partial overlap is trimmed, not filled.
+    assert ctx.get_at(basis, Period(Y2026.start - relativedelta(years=1), Y2026.end)) == 100.0
+    # Gaps and missing values inside the window keep the source's answer.
+    assert isna(ctx.get_at(basis, Y2027))
+    assert isna(ctx.get_at(basis, Y2028))
+
+
 def test_clip_periods_bounds_are_optional():
     ctx = Context()
     from_2027 = clip_periods(rent, start=Y2027.start, name="from 2027")
     through_2026 = clip_periods(rent, end=Y2026.end, name="through 2026")
-    assert [k for k, _ in items(ctx, from_2027.cells)] == [Y2027]
-    assert [k for k, _ in items(ctx, through_2026.cells)] == [Y2026]
-    assert clip_periods(rent, name="all").cells is not rent.cells
-    assert items(ctx, clip_periods(rent, name="all").cells) == [(Y2026, 100.0), (Y2027, 110.0)]
+    assert [k for k, _ in items(ctx, from_2027._cells)] == [Y2027]
+    assert [k for k, _ in items(ctx, through_2026._cells)] == [Y2026]
+    assert clip_periods(rent, name="all")._cells is not rent._cells
+    assert items(ctx, clip_periods(rent, name="all")._cells) == [(Y2026, 100.0), (Y2027, 110.0)]
 
 
 def test_clip_periods_stops_without_walking_past_the_end():
@@ -76,13 +90,13 @@ def test_clip_periods_stops_without_walking_past_the_end():
     clipped = clip_periods(monthly, date(2026, 1, 31), date(2026, 3, 31), name="clipped")
     ctx = Context()
     assert ctx.get_at(clipped, Period(date(2026, 1, 31), date(2026, 3, 31))) == 20.0
-    assert len(items(ctx, clipped.cells)) == 2
+    assert len(items(ctx, clipped._cells)) == 2
 
 
 def test_concatenated_clips_agree_with_direct_queries():
     basis = clip_periods(rent, FREE.start, FREE.end, name="basis")
     joined = Series(
-        concat_cells(Series.of(exact, [(0, basis.cells)], name="chains").cells, name="joined"),
+        concat_cells(of_cells([(0, basis._cells)], name="chains"), name="joined"),
         accrue_drop(YF.cmonthly),
         name="joined",
     )
@@ -101,11 +115,11 @@ flows: Series[date, float, Maybe[float]] = Series.of(
 def test_clip_dates_keeps_start_exclusive_end_inclusive_and_passes_value_rules_through():
     clipped = clip_dates(flows, D1, D3, name="clipped")
     ctx = Context()
-    assert items(ctx, clipped.cells) == [(D2, 2.0), (D3, 3.0)]
-    head = ctx.get(flows.cells)
+    assert items(ctx, clipped._cells) == [(D2, 2.0), (D3, 3.0)]
+    head = ctx.get(flows._cells)
     assert head is not None
     source_node = ctx.get(head.tail)  # D2
-    clipped_node = ctx.get(clipped.cells)
+    clipped_node = ctx.get(clipped._cells)
     assert source_node is not None and clipped_node is not None
     assert clipped_node.value is source_node.value
 
@@ -120,6 +134,14 @@ def test_clip_dates_answers_inside_from_clipped_cells_and_is_na_outside(
     clipped = clip_dates(flows, D1, D3, name="clipped")
     answer = Context().get_at(clipped, q)
     assert isna(answer) if expected is None else answer == expected
+
+
+def test_clip_dates_answers_outside_only_outside_the_bounds():
+    clipped = clip_dates(flows, D1, D3, outside=0.0, name="clipped")
+    ctx = Context()
+    assert ctx.get_at(clipped, D1) == 0.0
+    assert ctx.get_at(clipped, D4) == 0.0
+    assert ctx.get_at(clipped, D2) == 2.0
 
 
 def test_clip_dates_look_back_cannot_reach_before_start():
@@ -138,4 +160,4 @@ def test_clip_dates_stops_without_walking_past_the_end():
     clipped = clip_dates(
         Series(monthly, exact, name="monthly"), date(2026, 1, 31), date(2026, 3, 31), name="clipped"
     )
-    assert [k for k, _ in items(Context(), clipped.cells)] == [date(2026, 2, 28), date(2026, 3, 31)]
+    assert [k for k, _ in items(Context(), clipped._cells)] == [date(2026, 2, 28), date(2026, 3, 31)]

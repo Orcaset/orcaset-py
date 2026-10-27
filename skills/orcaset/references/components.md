@@ -295,7 +295,7 @@ def account_line(
     label = f"{account.name} {name}"
 
     def cells(contract: Contract) -> Chain[Period, Maybe[float]]:
-        return line(contract).cells
+        return line(contract).walk()
 
     return Series(flat_map_cells(account.contracts, cells, name=label), over, name=label)
 

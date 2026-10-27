@@ -18,25 +18,25 @@ actuals = Series.of(covered, historical, name="Actuals")  # `covered` query func
 projections = Series.of(accrue_monthly, projected, name="Projections")  # `accrue_monthly` query function
 ```
 
-First, define an outer `components` series that holds each segment. The outer series uses integer indices as keys and segment series as values.
+First, define an outer `components` chain that holds each segment. The chain uses integer indices as keys and segment series as values.
 
 ```python
-components = Series.of(exact, [(0, actuals), (1, projections)], name="Revenue components")
+components = of_cells([(0, actuals), (1, projections)], name="Revenue components")
 base = Series.flatten(
-    components.cells, query=covered, split_keys=period_split, name="Actuals and projections"
+    components, query=covered, split_keys=period_split, name="Actuals and projections"
 )
 ```
 
 The nested series and flattening are visible by examining the type signatures for `components` and `base`.
 
-* `Segment` is a type alias for each component series. It doesn't matter what the series' underlying `cells` value is, only that its `query` function returns a `Maybe[float]`.
-* `components` holds `Segment` series keyed by an `int` index, and its query function returns a `Segment` or `Na`.
+* `Segment` is a type alias for each component series. It doesn't matter what the series' underlying cell values are, only that its `query` function returns a `Maybe[float]`.
+* `components` is a chain of `Segment` series keyed by an `int` index.
 * `base` flattens the outer series into a series with `Period`-`Maybe[float]` pairs and returns a `Maybe[float]` from its query function.
 
 ```py
 type Segment = Series[Period, Any, Maybe[float]]
 
-components: Series[int, Segment, Maybe[Segment]]
+components: Chain[int, Segment]
 base: Series[Period, Maybe[float], Maybe[float]]
 ```
 
@@ -62,18 +62,18 @@ print(f"\nBase Q3 value ({Q3}):", ctx.get_at(base, Q3))
 
 `base` joins two independent series. However, the terminal growth segment should depend on the segment before it, starting when the prior segment ends. It needs to be lazily created only when the outer parent series demands it.
 
-The `Series.cells` mechanism already supports these requirements. Each tail is a lazy, effectful rule that is inert until it's demanded. The segments in an outer components series can be generated on demand with information from the prior series passed through.
+The cell chain mechanism already supports these requirements. Each tail is a lazy, effectful rule that is inert until it's demanded. The segments in an outer components series can be generated on demand with information from the prior series passed through.
 
-In the example, the terminal revenue segment depends on when the prior segment ended. The `continue_series` constructor builds a sequence of two components: `base` and a lazy continuation. The continuation function accepts the last node from `base` and returns a new `Series`. An infinite base would never construct its continuation. The sequence can then be flattened back out to create a joined revenue series.
+In the example, the terminal revenue segment depends on when the prior segment ended. The `continue_series` constructor builds a sequence of two components: `base` and a lazy continuation. The continuation function accepts the last node of `base.walk()`, which holds `base`'s answer at its last key, and returns a new `Series`, or `None` to end the sequence after `base`. An infinite base would never construct its continuation. The sequence can then be flattened back out to create a joined revenue series.
 
 ```py
 def terminal_revenue(
     last_node: Cons[Period, Maybe[float]] | None,
-) -> Series[Period, Maybe[float], Maybe[float]]:
+) -> Series[Period, Maybe[float], Maybe[float]] | None:
     """Grow revenue each month at a 2% annual rate after the prior series ends."""
-    # If there is no prior node (e.g., the prior series is empty), return an empty series.
+    # If there is no prior node (e.g., the prior series is empty), nothing follows it.
     if last_node is None:
-        return Series[Period, Maybe[float], Maybe[float]].empty(accrue_monthly, name="Terminal growth")
+        return None
 
     # Otherwise, grow revenue each month at a 2% annual rate after the prior series ends.
     # Note that this series is lazily bound to `revenue`.

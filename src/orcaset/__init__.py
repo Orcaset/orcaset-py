@@ -40,6 +40,7 @@ from orcaset.series import (
     keys_until,
     map_cells,
     merge_cells,
+    of_cells,
     scan_cells,
     unfold_cells,
 )
@@ -93,6 +94,7 @@ __all__ = [
     "maybe",
     "maybe_abs_distance",
     "merge_cells",
+    "of_cells",
     "ops",
     "period_split",
     "period_union",

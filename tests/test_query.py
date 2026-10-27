@@ -488,4 +488,4 @@ def test_covered_works_over_an_infinite_chain():
 
     ctx = Context()
     assert ctx.get_at(series, Q1) == 3.0
-    assert ctx.get(Fn(lambda: covered(P2, series.cells), name="probe")) == 1.0
+    assert ctx.get(Fn(lambda: covered(P2, series._cells), name="probe")) == 1.0

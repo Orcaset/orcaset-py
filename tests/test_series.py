@@ -9,6 +9,7 @@ from orcaset import (
     Context,
     CycleError,
     DepNode,
+    Effect,
     Fn,
     Period,
     Rule,
@@ -19,6 +20,7 @@ from orcaset import (
     get_at,
     keys_until,
     map_cells,
+    of_cells,
     scan_cells,
 )
 from orcaset.maybe import Maybe, Na, isna
@@ -121,8 +123,8 @@ def test_keys_until():
     market_rent = _market_rent_series()
     ctx = Context()
 
-    keys = ctx.get(Fn(lambda: keys_until(market_rent.cells, FY19), name="probe"))
-    poison_keys = ctx.get(Fn(lambda: keys_until(poison_step.cells, FY19), name="poison probe"))
+    keys = ctx.get(Fn(lambda: keys_until(market_rent.walk(), FY19), name="probe"))
+    poison_keys = ctx.get(Fn(lambda: keys_until(poison_step.walk(), FY19), name="poison probe"))
 
     assert keys == [FY17, FY18, FY19]
     assert poison_keys == [FY17, FY18, FY19]
@@ -176,9 +178,9 @@ def test_thunk_seed_tracks_dependency_and_changes_domain_between_contexts():
 
     first_context = Context()
     assert first_context.get_at(series, first) == 1.0
-    assert first_context.depends_on(series.cells, start)
+    assert first_context.depends_on(series._cells, start)
     assert first_context.depends_on((series, first), start)
-    head_dependencies = tuple(_flatten(first_context.dependencies(series.cells, structural=True)))
+    head_dependencies = tuple(_flatten(first_context.dependencies(series._cells, structural=True)))
     assert head_dependencies[0].name == "Deferred seed.cells"
     assert any(node.name == "Start date" for node in head_dependencies)
 
@@ -203,7 +205,7 @@ def test_thunk_seed_is_lazy_until_head_is_demanded():
     )
 
     with pytest.raises(AssertionError, match="seed resolved"):
-        Context().get(series.cells)
+        Context().get(series._cells)
 
 
 def test_next_state_is_not_resolved_as_a_seed():
@@ -332,10 +334,10 @@ def test_map_cells_preserves_keys_and_defers_source_values():
 
         return Thunk(value)
 
-    mapped = Series(map_cells(source.cells, double, name="Mapped"), exact, name="Mapped")
+    mapped = Series(map_cells(source._cells, double, name="Mapped"), exact, name="Mapped")
     ctx = Context()
 
-    assert ctx.get(Fn(lambda: keys_until(mapped.cells, MODEL_START), name="keys")) == [MODEL_START]
+    assert ctx.get(Fn(lambda: keys_until(mapped.walk(), MODEL_START), name="keys")) == [MODEL_START]
     assert forced == []
     assert ctx.get_at(mapped, MODEL_START) == 4.0
 
@@ -351,7 +353,7 @@ def test_scan_cells_carries_structural_state():
         return Thunk(value), index + 1
 
     scanned = Series(
-        scan_cells(source.cells, seed=0, fn=indexed, name="Scanned"),
+        scan_cells(source._cells, seed=0, fn=indexed, name="Scanned"),
         exact,
         name="Scanned",
     )
@@ -370,14 +372,14 @@ def test_scan_cells_resolves_thunk_accumulator_seed():
         return Thunk(lambda: (yield from get(cell)) + acc), acc
 
     scanned = Series(
-        scan_cells(source.cells, seed=Thunk(lambda: get(offset)), fn=add_offset, name="Scanned"),
+        scan_cells(source._cells, seed=Thunk(lambda: get(offset)), fn=add_offset, name="Scanned"),
         exact,
         name="Scanned",
     )
     ctx = Context()
 
     assert ctx.get_at(scanned, day) == 15
-    assert ctx.depends_on(scanned.cells, offset)
+    assert ctx.depends_on(scanned._cells, offset)
 
 
 def test_empty_series_has_no_cells_and_its_query_answers_every_key():
@@ -385,6 +387,74 @@ def test_empty_series_has_no_cells_and_its_query_answers_every_key():
     dropped = Series[Period, float, Maybe[float]].empty(accrue_drop(YF.cmonthly), name="dropped")
     strict = Series[Period, float, Maybe[float]].empty(accrue(YF.cmonthly), name="strict")
     ctx = Context()
-    assert ctx.get(dropped.cells) is None
+    assert ctx.get(dropped._cells) is None
     assert ctx.get_at(dropped, q) == 0.0
     assert isna(ctx.get_at(strict, q))
+
+
+def test_walk_yields_query_answers_at_cell_keys():
+    q1 = Period(date(2024, 12, 31), date(2025, 3, 31))
+    q2 = q1.from_end(relativedelta(months=3, day=31))
+    rent = Series.of(accrue(YF.cmonthly), [(q1, 30.0), (q2, Na)], name="Rent")
+    ctx = Context()
+
+    def items() -> Effect[list[tuple[Period, Maybe[float]]]]:
+        out: list[tuple[Period, Maybe[float]]] = []
+        node = yield from get(rent.walk())
+        while node is not None:
+            out.append((node.key, (yield from get(node.value))))
+            node = yield from get(node.tail)
+        return out
+
+    walked = ctx.get(Fn(items, name="items"))
+    assert [key for key, _ in walked] == [q1, q2]
+    assert walked[0][1] == ctx.get_at(rent, q1) == 30.0
+    assert isna(walked[1][1])
+    assert rent.walk() is rent.walk()
+
+
+def test_walk_reads_keys_without_forcing_values():
+    forced: list[int] = []
+
+    def value(i: int) -> Thunk[int]:
+        def compute() -> int:
+            forced.append(i)
+            return i
+
+        return Thunk(compute)
+
+    counter = Series.unfold(exact, seed=0, step=lambda i: (i, value(i), i + 1), name="Counter")
+    ctx = Context()
+
+    assert ctx.get(Fn(lambda: keys_until(counter.walk(), 3), name="keys")) == [0, 1, 2, 3]
+    assert forced == []
+    assert ctx.get(Fn(lambda: get_walked(counter, 2), name="walked")) == 2
+    assert forced == [2]
+
+
+def get_walked(series: Series[int, int, Maybe[int]], key: int) -> Effect[Maybe[int]]:
+    node = yield from get(series.walk())
+    while node is not None and node.key < key:
+        node = yield from get(node.tail)
+    assert node is not None and node.key == key
+    return (yield from get(node.value))
+
+
+def test_walk_value_depends_on_the_series_query():
+    day = date(2024, 1, 31)
+    source = Series.of(exact, [(day, 1.0)], name="Source")
+    ctx = Context()
+    node = ctx.get(source.walk())
+    assert node is not None
+    assert ctx.get(node.value) == 1.0
+    assert ctx.depends_on(node.value, (source, day))
+
+
+def test_of_cells_builds_a_standalone_chain():
+    chain = of_cells([(1, "a"), (2, Thunk(lambda: "b"))], name="Pairs")
+    ctx = Context()
+    head = ctx.get(chain)
+    assert head is not None and head.key == 1 and ctx.get(head.value) == "a"
+    second = ctx.get(head.tail)
+    assert second is not None and ctx.get(second.value) == "b"
+    assert ctx.get(second.tail) is None

@@ -24,6 +24,7 @@ from orcaset import (
     get,
     get_at,
     keys_until,
+    of_cells,
     ops,
     period_split,
     unfold_cells,
@@ -47,7 +48,7 @@ type AmountQuery = QueryFn[Period, Maybe[float], Maybe[float]]
 
 
 def components[K: Key, W](*sources: Series[K, Any, W]) -> Chain[int, Series[K, Any, W]]:
-    return Series.of(exact, list(enumerate(sources)), name="components").cells
+    return of_cells(list(enumerate(sources)), name="components")
 
 
 def joined(*sources: Amounts, query: AmountQuery = covered) -> Amounts:
@@ -124,8 +125,8 @@ def test_straddling_continuation_is_clipped_and_queried_on_the_remainder():
     ctx = Context()
     assert ctx.get_at(revenue, Period(OCT.start, NOV.end)) == 200.0
     assert ctx.get_at(revenue, Period(Q3.start, NOV.end)) == 563.0
-    assert ctx.get(Fn(lambda: keys_until(revenue.cells, q4), name="keys")) == [Q3, q4]
-    node = ctx.get(revenue.cells)
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), q4), name="keys")) == [Q3, q4]
+    node = ctx.get(revenue._cells)
     assert node is not None
     clipped = ctx.get(node.tail)
     assert clipped is not None and clipped.key == q4
@@ -151,7 +152,7 @@ def test_flatten_composes_as_either_a_base_or_a_continuation():
         assert ctx.get_at(revenue, Period(Q1.start, Q3.end)) == 6.0
         assert ctx.get_at(revenue, Period(Q2.start, Q3.end)) == 5.0
         assert isna(ctx.get_at(revenue, Period(date(2025, 2, 1), Q3.end)))
-        assert ctx.get(Fn(lambda s=revenue: keys_until(s.cells, Q3), name="keys")) == [Q1, Q2, Q3]
+        assert ctx.get(Fn(lambda s=revenue: keys_until(s.walk(), Q3), name="keys")) == [Q1, Q2, Q3]
 
 
 def test_empty_and_fully_clipped_components_do_not_create_seams():
@@ -162,7 +163,7 @@ def test_empty_and_fully_clipped_components_do_not_create_seams():
     revenue = joined(empty, a, empty, clipped, b, empty)
     ctx = Context()
     assert ctx.get_at(revenue, Period(Q1.start, Q2.end)) == 3.0
-    assert ctx.get(Fn(lambda: keys_until(revenue.cells, Q3), name="keys")) == [Q1, Q2]
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), Q3), name="keys")) == [Q1, Q2]
     assert isna(ctx.get_at(joined(empty, empty), Q1))
     outer: Chain[int, Amounts] = components()
     assert isna(
@@ -179,7 +180,7 @@ def test_keys_and_rejected_crossing_queries_do_not_read_values():
     b = Series.of(accrue_monthly, [(Q1, Thunk(poison)), (Q3, Thunk(poison))], name="b")
     revenue = joined(a, b, query=exact)
     ctx = Context()
-    assert ctx.get(Fn(lambda: keys_until(revenue.cells, Q3), name="keys")) == [Q1, Q2, Q3]
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), Q3), name="keys")) == [Q1, Q2, Q3]
     assert isna(ctx.get_at(revenue, Period(Q2.start, Q3.end)))
 
 
@@ -219,7 +220,7 @@ def test_date_routing_preserves_exact_last_and_final_carry_forward():
     # Delegation on a post-seam gap retains the continuation's last policy.
     assert ctx.get_at(revenue, date(2025, 2, 15)) == 99.0
     assert ctx.get_at(revenue, d2) == ctx.get_at(revenue, d3) == 3.0
-    assert ctx.get(Fn(lambda: keys_until(revenue.cells, d3), name="keys")) == [d0, d1, d2]
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), d3), name="keys")) == [d0, d1, d2]
 
 
 def int_split(q: int, k: int) -> tuple[int | None, int | None]:
@@ -248,7 +249,7 @@ def test_infinite_base_does_not_force_outer_tail_or_treat_na_as_exhaustion():
     assert isna(ctx.get_at(revenue, 3))
     assert ctx.get_at(revenue, 5) == 5.0
     assert visited == list(range(6))
-    assert ctx.get(Fn(lambda: keys_until(revenue.cells, 5), name="keys")) == list(range(6))
+    assert ctx.get(Fn(lambda: keys_until(revenue.walk(), 5), name="keys")) == list(range(6))
     assert visited == list(range(7))  # keys_until's ordinary one-node lookahead
 
 
@@ -279,9 +280,9 @@ def test_infinite_outer_chain_is_also_lazy():
     assert constructed == [0, 1, 2]
 
 
-def test_finite_base_builds_terminal_growth_once_per_context_from_last_raw_node():
+def test_finite_base_builds_terminal_growth_once_per_context_from_last_node():
     forced: list[str] = []
-    calls: list[Cons[Period, float] | None] = []
+    calls: list[Cons[Period, Maybe[float]] | None] = []
 
     def initial() -> float:
         forced.append("last projection")
@@ -290,7 +291,7 @@ def test_finite_base_builds_terminal_growth_once_per_context_from_last_raw_node(
     base = Series.of(exact, [(OCT, Thunk(poison)), (NOV, Thunk(initial))], name="projections")
 
     def terminal(
-        last_node: Cons[Period, float] | None,
+        last_node: Cons[Period, Maybe[float]] | None,
     ) -> Series[Period, Maybe[float], Maybe[float]]:
         calls.append(last_node)
         assert last_node is not None
@@ -330,9 +331,9 @@ def test_finite_base_builds_terminal_growth_once_per_context_from_last_raw_node(
 
 def test_continue_an_empty_base():
     base: Series[Period, float, Maybe[float]] = Series.of(exact, [], name="empty")
-    calls: list[Cons[Period, float] | None] = []
+    calls: list[Cons[Period, Maybe[float]] | None] = []
 
-    def terminal(last_node: Cons[Period, float] | None) -> Series[Period, float, Maybe[float]]:
+    def terminal(last_node: Cons[Period, Maybe[float]] | None) -> Series[Period, float, Maybe[float]]:
         calls.append(last_node)
         return monthly("terminal", OCT, 100.0)
 
@@ -346,6 +347,40 @@ def test_continue_an_empty_base():
     assert calls == [None]
 
 
+def test_continuation_returning_none_ends_the_chain_after_base():
+    base = Series.of(covered, [(OCT, 100.0), (NOV, 110.0)], name="base")
+    calls: list[Cons[Period, Maybe[float]] | None] = []
+
+    def stop(
+        last_node: Cons[Period, Maybe[float]] | None,
+    ) -> Series[Period, float, Maybe[float]] | None:
+        calls.append(last_node)
+        return None
+
+    chain = continue_series(base, stop, name="components")
+    revenue = Series.flatten(chain, query=covered, split_keys=period_split, name="revenue")
+    ctx = Context()
+    head = ctx.get(chain)
+    assert head is not None and ctx.get(head.value) is base
+    assert calls == []
+    assert ctx.get(head.tail) is None
+    assert len(calls) == 1 and calls[0] is not None and calls[0].key == NOV
+    assert ctx.get_at(revenue, Period(OCT.start, NOV.end)) == 210.0
+    # With nothing after it, the base keeps its own answer past its last key.
+    assert ctx.get_at(revenue, DEC) == ctx.get_at(base, DEC)
+    assert len(calls) == 1
+
+
+def test_empty_base_with_no_continuation_flattens_to_no_cells():
+    base: Series[Period, float, Maybe[float]] = Series.of(covered, [], name="empty")
+    chain = continue_series(base, lambda _: None, name="components")
+    revenue = Series.flatten(chain, query=covered, split_keys=period_split, name="revenue")
+    ctx = Context()
+    head = ctx.get(chain)
+    assert head is not None and ctx.get(head.tail) is None
+    assert ctx.get(revenue.walk()) is None
+
+
 def test_base_domain_can_depend_on_the_composed_series_at_its_previous_key():
     def step(i: int) -> Effect[tuple[int, float, int] | None]:
         if i:
@@ -354,7 +389,7 @@ def test_base_domain_can_depend_on_the_composed_series_at_its_previous_key():
                 return None
         return i, float(i + 1), i + 1
 
-    def terminal(last_node: Cons[int, float] | None) -> Series[int, float, Maybe[float]]:
+    def terminal(last_node: Cons[int, Maybe[float]] | None) -> Series[int, float, Maybe[float]]:
         assert last_node is not None
 
         def terminal_step(key: int) -> tuple[int, float, int]:
@@ -414,10 +449,10 @@ def test_concat_cells_joins_chains_in_outer_order_and_skips_empty_ones():
     q1 = Series.of(accrue_monthly, [(Q1, 30.0)], name="q1")
     q2 = Series.of(accrue_monthly, [(Q2, 60.0)], name="q2")
     # Outer keys are positions of any key type; only their order matters.
-    outer = Series.of(exact, [("a", empty.cells), ("b", q1.cells), ("c", q2.cells)], name="chains")
-    rent = Series(concat_cells(outer.cells, name="rent"), accrue_monthly, name="rent")
+    outer = Series.of(exact, [("a", empty._cells), ("b", q1._cells), ("c", q2._cells)], name="chains")
+    rent = Series(concat_cells(outer._cells, name="rent"), accrue_monthly, name="rent")
     ctx = Context()
-    assert keys_of(ctx, rent.cells) == [Q1, Q2]
+    assert keys_of(ctx, rent._cells) == [Q1, Q2]
     assert ctx.get_at(rent, Period(Q1.start, Q2.end)) == 90.0
 
 
@@ -425,7 +460,7 @@ def test_concat_cells_of_an_empty_outer_chain_is_empty():
     outer: Series[int, Chain[Period, float], Maybe[Chain[Period, float]]] = Series.of(
         exact, [], name="chains"
     )
-    assert Context().get(concat_cells(outer.cells, name="rent")) is None
+    assert Context().get(concat_cells(outer._cells, name="rent")) is None
 
 
 def test_concat_cells_reads_later_chains_only_when_the_walk_reaches_them():
@@ -434,7 +469,7 @@ def test_concat_cells_reads_later_chains_only_when_the_walk_reaches_them():
     def chain(i: int) -> Thunk[Chain[int, float]]:
         def compute() -> Chain[int, float]:
             built.append(i)
-            return Series.of(exact, [(i, float(i))], name=f"chain {i}").cells
+            return of_cells([(i, float(i))], name=f"chain {i}")
 
         return Thunk(compute)
 
@@ -463,7 +498,7 @@ def keys_of[K: Key, V](ctx: Context, cells: Chain[K, V]) -> list[K]:
 def test_flat_map_cells_concatenates_under_one_query():
     outer = leases((Q1, 30.0), (Q2, 60.0))
     rent = Series(
-        flat_map_cells(outer, lambda lease: lease.cells, name="rent"), accrue_monthly, name="rent"
+        flat_map_cells(outer, lambda lease: lease._cells, name="rent"), accrue_monthly, name="rent"
     )
     ctx = Context()
     # A query across the seam reads cells from both leases; no splitting is involved.
@@ -477,8 +512,8 @@ def test_flat_map_cells_passes_inner_value_rules_through():
     lease = Series.of(accrue_monthly, [(Q1, 30.0)], name="lease")
     outer = components(lease)
     ctx = Context()
-    inner = ctx.get(lease.cells)
-    flat = ctx.get(flat_map_cells(outer, lambda s: s.cells, name="rent"))
+    inner = ctx.get(lease._cells)
+    flat = ctx.get(flat_map_cells(outer, lambda s: s._cells, name="rent"))
     assert inner is not None and flat is not None
     assert flat.value is inner.value
 
@@ -498,7 +533,7 @@ def test_flat_map_cells_reads_outer_values_only_when_reached():
         return i, value(i), i + 1
 
     def cells(i: int) -> Chain[int, float]:
-        return Series.of(exact, [(i, float(i) * 10)], name=f"component {i}").cells
+        return of_cells([(i, float(i) * 10)], name=f"component {i}")
 
     outer = unfold_cells(seed=0, step=step, name="values")
     series = Series(flat_map_cells(outer, cells, name="series"), exact, name="series")
@@ -509,7 +544,7 @@ def test_flat_map_cells_reads_outer_values_only_when_reached():
 def test_flat_map_cells_rejects_overlap_when_the_walk_reaches_it():
     overlapping = Period(date(2025, 3, 1), Q2.end)
     rent = Series(
-        flat_map_cells(leases((Q1, 30.0), (overlapping, 40.0)), lambda s: s.cells, name="rent"),
+        flat_map_cells(leases((Q1, 30.0), (overlapping, 40.0)), lambda s: s._cells, name="rent"),
         accrue_monthly,
         name="rent",
     )
@@ -521,6 +556,6 @@ def test_flat_map_cells_rejects_overlap_when_the_walk_reaches_it():
 
 @pytest.mark.parametrize(("query", "expected"), [(accrue_monthly, Na), (drop_monthly, 0.0)])
 def test_flat_map_cells_gaps_follow_the_series_query(query: AmountQuery, expected: Maybe[float]):
-    flat = flat_map_cells(leases((Q1, 30.0), (Q3, 30.0)), lambda s: s.cells, name="rent")
+    flat = flat_map_cells(leases((Q1, 30.0), (Q3, 30.0)), lambda s: s._cells, name="rent")
     rent: Amounts = Series(flat, query, name="rent")
     assert Context().get_at(rent, Q2) == expected

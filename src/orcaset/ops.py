@@ -61,7 +61,7 @@ def map[K: Key, W, T](
             return None
         return node.key, Thunk(lambda key=node.key: value_at(key)), node.tail
 
-    return Series(unfold_cells(seed=source.cells, step=step, name=name), query, name=name)
+    return Series(unfold_cells(seed=source._cells, step=step, name=name), query, name=name)
 
 
 def map2[K: Key, L, R, T](
@@ -90,7 +90,7 @@ def map2[K: Key, L, R, T](
     def cell(key: K) -> Thunk[T]:
         return Thunk(lambda: value_at(key))
 
-    cells = merge_cells([left.cells, right.cells], merge_keys, cell, name=name)
+    cells = merge_cells([left._cells, right._cells], merge_keys, cell, name=name)
     return Series(cells, query, name=name)
 
 
@@ -129,7 +129,7 @@ def mapn[K: Key, W, T](
     def cell(key: K) -> Thunk[T]:
         return Thunk(lambda: values_at(key))
 
-    chains = [source.cells for source in sources]
+    chains = [source._cells for source in sources]
     return Series(merge_cells(chains, merge_keys, cell, name=name), query, name=name)
 
 

@@ -138,7 +138,7 @@ def test_reading_names_never_evaluates_rules():
         ops.scale(clip_periods(base, D1), factor),
         merge_keys=period_union,
     )
-    rules = [base, other, factor, keyed, combined, combined.cells, base.cells]
+    rules = [base, other, factor, keyed, combined, combined._cells, base._cells]
     names = [rule.name for rule in rules]
 
     assert names[4] == "sub(add(…), scale(…))"

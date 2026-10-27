@@ -94,11 +94,11 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
 
 
 passenger = Series.extend(
-    ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells, name="Passenger"
+    ACCRUE, base=passenger_history.walk(), cont=lambda _: passenger_forecast.walk(), name="Passenger"
 )
 
 
-def constant_forecast(last: Cons[Period, float] | None) -> Chain[Period, float]:
+def constant_forecast(last: Cons[Period, Maybe[float]] | None) -> Chain[Period, Maybe[float]]:
     if last is None:
         raise ValueError("missing revenue history")
     return unfold_cells(
@@ -108,8 +108,8 @@ def constant_forecast(last: Cons[Period, float] | None) -> Chain[Period, float]:
     )
 
 
-freight = Series.extend(ACCRUE, base=freight_history.cells, cont=constant_forecast, name="Freight")
-other = Series.extend(ACCRUE, base=other_history.cells, cont=constant_forecast, name="Other")
+freight = Series.extend(ACCRUE, base=freight_history.walk(), cont=constant_forecast, name="Freight")
+other = Series.extend(ACCRUE, base=other_history.walk(), cont=constant_forecast, name="Other")
 total_operating_revenue = ops.add(
     passenger,
     freight,

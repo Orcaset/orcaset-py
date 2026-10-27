@@ -64,7 +64,7 @@ def passenger_forecast(period: Period) -> Effect[tuple[Period, Maybe[float], Per
 
 # Extend the historical passenger revenue with the forecast
 passenger = Series.extend(
-    ACCRUE, base=passenger_history.cells, cont=lambda _: passenger_forecast.cells, name="Passenger"
+    ACCRUE, base=passenger_history.walk(), cont=lambda _: passenger_forecast.walk(), name="Passenger"
 )
 ```
 

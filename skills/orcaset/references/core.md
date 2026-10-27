@@ -218,8 +218,23 @@ line_c: Series[Period, Maybe[float], Maybe[float]] = ops.add(
 
 `ops` has combinators for `map`, `map2`, `mapn`, `add`, `mul`, `neg`, `scale`, `sub` and `div`.
 
-Other constructors: `Series.of(query, pairs)` builds a series from a list of `(key, value)` pairs (values may be `Thunk`s). `Series.empty(query)` builds a series with no cells, answered entirely by its query; give the type parameters explicitly, e.g. `Series[Period, float, Maybe[float]].empty(query.accrue_drop(YF.cmonthly))`. `clip_periods` and `clip_dates` restrict a series to a window, and `concat_cells` and `flat_map_cells` join chains of chains; see [patterns.md](patterns.md).
+Other constructors: `Series.of(query, pairs)` builds a series from a list of `(key, value)` pairs (values may be `Thunk`s); `of_cells(pairs)` builds the same chain without a query, e.g. for `Series.flatten` components. `Series.empty(query)` builds a series with no cells, answered entirely by its query; give the type parameters explicitly, e.g. `Series[Period, float, Maybe[float]].empty(query.accrue_drop(YF.cmonthly))`. `clip_periods` and `clip_dates` restrict a series to a window, and `concat_cells` and `flat_map_cells` join chains of chains; see [patterns.md](patterns.md).
 Use `orcaset.date_union` as the key merge function for date-keyed series.
+
+A series' raw cells are private. Read values only through its query: `get_at(series, key)` at any key, or `series.walk()` to follow its keys. `walk()` returns a lazy `Chain[K, W]` whose node values are the series' query answers at each cell key; reading keys never forces a value. Use it to loop over a series' domain, or as the input chain to `map_cells`, `scan_cells`, `Series.extend` and `concat_cells`. Series may be infinite, so stop at a key (`keys_until(series.walk(), stop)`) or on a value. Each walked value runs a full query, so a full walk of `n` cells is quadratic for scanning queries.
+
+```py
+def total_distributions() -> Effect[Maybe[float]]:
+    total = 0.0
+    node = yield from get(distributions.walk())  # a finite series
+    while node is not None:
+        amount = yield from get(node.value)
+        if isna(amount):
+            return Na
+        total += amount
+        node = yield from get(node.tail)
+    return total
+```
 
 The `query` module holds functions for querying over cell chains.
 - `exact[K: Key, V](q: K, cells: Chain[K, V]) -> Effect[Maybe[V]]`: Return the value for the cell with `q == K` or `Na` if no exact match exists.
@@ -230,7 +245,7 @@ The `query` module holds functions for querying over cell chains.
 - `avg_drop[V: float | NaType](yf: DayCount) -> QueryFn[Period, V, Maybe[float]]`: Average only the covered part of the query. Uncovered time is left out of the weights. A complete miss is `Na`. An `Na` cell still makes the result `Na`.
 - `avg_fill[V: float | NaType](yf: DayCount, fill: float) -> QueryFn[Period, V, Maybe[float]]`: Hold uncovered time at the level `fill`, then average, so the result spans the whole query. A complete miss is `fill`. An `Na` cell still makes the result `Na`. Use `0` for unused capacity and `1` for an index base.
 
-The query decides what time without cells means, so choose it from what a gap represents: missing data (`accrue`, `avg`: `Na`), nothing happened (`accrue_drop`: `0.0`), or a known level (`avg_fill`).
+The query decides what time without cells means, so choose it from what a gap represents: missing data (`accrue`, `avg`: `Na`), nothing happened (`accrue_drop`: `0.0`), or a known level (`avg_fill`). A series should fill only when the fill is a fact about its data, such as a sparse flow being zero between payments. When the right treatment depends on the consumer, query strictly and let `Na` reach the consumer, which fills it (e.g. `ops.add(..., fill=0.0)`, `maybe.value_or`). A consumer can always replace `Na`, but it cannot recover a value a series already filled.
 
 ## Key selection
 

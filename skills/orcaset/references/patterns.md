@@ -80,6 +80,7 @@ from dateutil.relativedelta import relativedelta
 
 from orcaset import (
     YF,
+    Chain,
     Cons,
     Effect,
     Maybe,
@@ -91,6 +92,7 @@ from orcaset import (
     get,
     get_at,
     maybe,
+    of_cells,
     period_split,
     query,
 )
@@ -111,11 +113,11 @@ projections = Series.of(
 
 type Segment = Series[Period, Any, Maybe[float]]
 
-components: Series[int, Segment, Maybe[Segment]] = Series.of(
-    query.exact, pairs=[(0, actuals), (1, projections)], name="Revenue components"
+components: Chain[int, Segment] = of_cells(
+    [(0, actuals), (1, projections)], name="Revenue components"
 )
 base = Series.flatten(
-    components.cells,
+    components,
     query=query.covered,
     split_keys=period_split,
     name="Actuals and projections",
@@ -131,14 +133,14 @@ Flattening delegates a query wholly within a segment to that segment. For a quer
 - November remains missing. Flattening supplies no zero-fill or fallback for missing cells; queries in gaps follow the owning component's query policy.
 - An infinite component prevents later components from being reached.
 
-To add a forecast that starts after the finite base ends, continue the same example with `continue_series`. Its callback receives the last raw base node, or `None` for an empty base, and constructs the next segment only when needed.
+To add a forecast that starts after the finite base ends, continue the same example with `continue_series`. Its callback receives the last node of `base.walk()`, whose value is the base's answer at its last key, or `None` for an empty base, and constructs the next segment only when needed. It returns the next segment, or `None` to end the chain after the base.
 
 ```py
 def terminal_revenue(
     last_node: Cons[Period, Maybe[float]] | None,
-) -> Series[Period, Maybe[float], Maybe[float]]:
+) -> Series[Period, Maybe[float], Maybe[float]] | None:
     if last_node is None:
-        return Series.of(query.accrue(YF.cmonthly), pairs=[], name="Terminal growth")
+        return None  # Nothing to grow from: end after the empty base.
 
     @Series.define(query.accrue(YF.cmonthly), seed=last_node.key, name="Terminal growth")
     def growth(prior_period: Period) -> Effect[tuple[Period, Maybe[float], Period]]:
@@ -161,9 +163,9 @@ revenue = Series.flatten(
 
 The continuation's state is the prior period; its emitted key is the next period. This avoids duplicating the terminal base key. Its reference to the combined `revenue` is resolved lazily, so January can depend on December's projection. This example follows the extend-series example's simple prorated growth: January is `121 * (1 + 0.02 / 12)`. The callback and nested series are part of the lazy continuation mechanism, not a generic builder for unrelated line items.
 
-Do not exhaust the base to find its last value before constructing the combined series. `continue_series` discovers the frontier lazily; an infinite base never invokes its continuation. Handle an empty base according to the model's intended behavior, and let a missing terminal amount propagate unless an explicit replacement is justified.
+Do not exhaust the base to find its last value before constructing the combined series. `continue_series` discovers the frontier lazily; an infinite base never invokes its continuation. Handle an empty base according to the model's intended behavior: return `None` when nothing should follow, rather than an empty series, so code walking the components sees the chain end. Let a missing terminal amount propagate unless an explicit replacement is justified.
 
-For raw cells sharing one query policy, `Series.extend(query, base=base.cells, cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
+For segments sharing one query policy, `Series.extend(query, base=base.walk(), cont=...)` is a lower-level alternative. Its callback returns a cell chain, and the first continuation key must be strictly after the base's final key. It applies one query to the combined chain; it does not preserve separate segment query policies like `Series.flatten` does.
 
 ## Joining chains of chains
 
@@ -172,7 +174,7 @@ For raw cells sharing one query policy, `Series.extend(query, base=base.cells, c
 ```py
 from datetime import date
 
-from orcaset import YF, Chain, Maybe, Period, Series, concat_cells, query
+from orcaset import YF, Chain, Maybe, Period, Series, concat_cells, of_cells, query
 
 opening = date(2025, 12, 31)
 midyear = date(2026, 6, 30)
@@ -184,14 +186,14 @@ first: Series[Period, float, Maybe[float]] = Series.of(
 second: Series[Period, float, Maybe[float]] = Series.of(
     query.accrue(YF.cmonthly), [(Period(midyear, year_end), 2.0)], name="Second"
 )
-segments: Series[int, Chain[Period, float], Maybe[Chain[Period, float]]] = Series.of(
-    query.exact, [(0, first.cells), (1, second.cells)], name="Segments"
+segments: Chain[int, Chain[Period, Maybe[float]]] = of_cells(
+    [(0, first.walk()), (1, second.walk())], name="Segments"
 )
-joined = Series(concat_cells(segments.cells, name="Joined"), query.accrue_drop(YF.cmonthly), name="Joined")
+joined = Series(concat_cells(segments, name="Joined"), query.accrue_drop(YF.cmonthly), name="Joined")
 # Context().get_at(joined, Period(opening, year_end)) == 3.0
 ```
 
-- Inner cells pass through with their own value rules. The segments' own queries are dropped; the joined series' query answers everything, including gaps between segments.
+- Inner cells pass through with their own value rules; walked segments contribute their answers at their own keys. The segments' own queries are dropped for every other key; the joined series' query answers everything, including gaps between segments.
 - Keys must be strictly ascending across the join. Nothing is clipped: an overlap raises `ValueError` when the walk reaches it.
 - An outer value is read only when the walk exhausts the chain before it, so an infinite inner chain leaves later outer values unbuilt, and the outer chain may itself be lazy and infinite.
 
@@ -228,8 +230,9 @@ balance_after_close = clip_dates(balance, start=date(2026, 3, 31), name="Balance
 # 2026-04-30: Na, since the earlier cell is outside the window; 2026-07-31: 20.0
 ```
 
-- `clip_periods` trims each query to the window and forwards it to the source, so a window crossing a step in the source values each side at its own amount. Its cells are the source cells trimmed to the window, each valued by the source's query, so they agree with direct queries. A query entirely outside is `Na`; the result type is `Series[Period, W, Maybe[W]]`.
-- `clip_dates` passes cells inside the window through unchanged and answers queries inside with the source's query over those cells only, so a look-back query like `query.last` cannot reach a cell before `start`. Queries outside are `Na`.
+- `clip_periods` trims each query to the window and forwards it to the source, so a window crossing a step in the source values each side at its own amount. Its cells are the source cells trimmed to the window, each valued by the source's query, so they agree with direct queries. A query entirely outside answers `outside`, which defaults to `Na`; the result type is `Series[Period, W, Maybe[W]]`.
+- `clip_dates` passes cells inside the window through unchanged and answers queries inside with the source's query over those cells only, so a look-back query like `query.last` cannot reach a cell before `start`. Queries outside answer `outside`, which defaults to `Na`.
+- Pass `outside=` only when it states what the window means, such as `outside=0.0` for a flow that stops at the window (a lease's share of an expense pool over its term). Do not re-wrap a clip's cells in another query to change what it answers outside: the source keeps answering inside the window, so a missing value there stays `Na`.
 - Clipped series are views: they follow scenario changes to the source and record it as a dependency.
 - A zero-length window should be an empty series (`Series[...].empty(query.accrue_drop(yf))`) when the caller expects a flow that answers `0.0`, rather than a clip whose answers are all `Na`.
 
@@ -364,14 +367,13 @@ def build_cohort(source_key: Period) -> Cohort:
     )
 
 
-cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    map_cells(
-        capex.cells,
-        lambda source_key, _cell: build_cohort(source_key),
-        name="Depreciation cohorts",
-    ),
-    query.exact,
+cohort_cells = map_cells(
+    capex.walk(),
+    lambda source_key, _cell: build_cohort(source_key),
     name="Depreciation cohorts",
+)
+cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
+    cohort_cells, query.exact, name="Depreciation cohorts"
 )
 
 
@@ -395,13 +397,13 @@ def rollup(
 
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
-    scan_cells(cohort_schedules.cells, seed=(), fn=rollup, name="Total depreciation"),
+    scan_cells(cohort_cells, seed=(), fn=rollup, name="Total depreciation"),
     by_days,
     name="Total depreciation",
 )
 ```
 
-The callbacks construct and query the lazily created child schedules required by this pattern. `map_cells` receives a source key and its cell rule without forcing the amount. Each depreciation cell uses a `Thunk` so its `get_at(capex, source_key)` runs only when the amount is demanded. The outer `query.exact` locates a cohort by its original capex key; the child query calculates its depreciation for a requested interval.
+The callbacks construct and query the lazily created child schedules required by this pattern. `map_cells` receives a source key and its walked answer rule without forcing the amount. The cohort chain is built in the model, so the rollup scans it directly rather than reading it back out of `cohort_schedules`. Each depreciation cell uses a `Thunk` so its `get_at(capex, source_key)` runs only when the amount is demanded. The outer `query.exact` locates a cohort by its original capex key; the child query calculates its depreciation for a requested interval.
 
 The scan stores `Rule[Cohort]` objects, not resolved schedules or depreciation amounts. Returning a `Thunk` keeps calculation separate from structural traversal. Querying a total resolves the accumulated cohort rules and their values, retaining dependencies back to capex.
 

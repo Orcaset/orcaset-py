@@ -16,7 +16,7 @@ from orcaset import (
     keys_until,
     unfold_cells,
 )
-from orcaset.maybe import Maybe, Na, isna, some
+from orcaset.maybe import Maybe, Na, isna, mul_some, some
 from orcaset.query import exact
 
 YEAR = relativedelta(years=1, day=31)
@@ -33,8 +33,8 @@ def test_extend_two_literal_series():
     then = Series.of(exact, [(FY19, 3.0), (FY20, 4.0)], name="Then")
     series = Series.extend(
         exact,
-        base=first.cells,
-        cont=lambda _: then.cells,
+        base=first.walk(),
+        cont=lambda _: then.walk(),
         name="Extended",
     )
     ctx = Context()
@@ -45,7 +45,7 @@ def test_extend_two_literal_series():
         3.0,
         4.0,
     ]
-    assert ctx.get(Fn(lambda: keys_until(series.cells, FY20), name="keys")) == [
+    assert ctx.get(Fn(lambda: keys_until(series.walk(), FY20), name="keys")) == [
         FY17,
         FY18,
         FY19,
@@ -57,7 +57,7 @@ def test_extend_lazy_continuation():
     base = Series.of(exact, [(FY17, 1.0)], name="Base")
     calls: list[Period | None] = []
 
-    def cont(last: Cons[Period, float] | None):
+    def cont(last: Cons[Period, Maybe[float]] | None):
         assert last is not None
         calls.append(last.key)
 
@@ -66,7 +66,7 @@ def test_extend_lazy_continuation():
 
         return unfold_cells(seed=FY18, step=step, name="Continuation")
 
-    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
+    series = Series.extend(exact, base=base.walk(), cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY17) == 1.0
@@ -92,8 +92,8 @@ def test_extend_rejects_overlapping_continuation():
     )
     series = Series.extend(
         exact,
-        base=base.cells,
-        cont=lambda _last: continuation.cells,
+        base=base.walk(),
+        cont=lambda _last: continuation.walk(),
         name="Extended",
     )
     ctx = Context()
@@ -107,13 +107,13 @@ def test_extend_rejects_overlapping_continuation():
 def test_extend_empty_base():
     base = Series.of(exact, [], name="Empty")
     continuation = Series.of(exact, [(FY17, 1.0), (FY18, 2.0)], name="Continuation")
-    calls: list[Cons[Period, float] | None] = []
+    calls: list[Cons[Period, Maybe[float]] | None] = []
 
-    def cont(last: Cons[Period, float] | None):
+    def cont(last: Cons[Period, Maybe[float]] | None):
         calls.append(last)
-        return continuation.cells
+        return continuation.walk()
 
-    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
+    series = Series.extend(exact, base=base.walk(), cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY17) == 1.0
@@ -146,7 +146,7 @@ def test_extend_self_referential_compounding():
 
     market_rent: Series[Period, Maybe[float], Maybe[float]] = Series.extend(
         exact,
-        base=base.cells,
+        base=base.walk(),
         cont=cont,
         name="Market rent",
     )
@@ -170,14 +170,14 @@ def test_extend_continuation_reads_last_cell():
 
     base = Series.of(exact, [(FY17, observed(FY17, 2.0)), (FY18, observed(FY18, 3.0))], name="Base")
 
-    def cont(last: Cons[Period, float] | None) -> Chain[Period, float]:
+    def cont(last: Cons[Period, Maybe[float]] | None) -> Chain[Period, Maybe[float]]:
         assert last is not None
         last_cell = last.value
 
-        def step(period: Period) -> tuple[Period, Thunk[float], Period]:
+        def step(period: Period) -> tuple[Period, Thunk[Maybe[float]], Period]:
             return (
                 period,
-                Thunk(lambda: (yield from get(last_cell)) * 10.0),
+                Thunk(lambda: mul_some((yield from get(last_cell)), 10.0)),
                 period.shift(YEAR),
             )
 
@@ -187,7 +187,7 @@ def test_extend_continuation_reads_last_cell():
             name="Continuation",
         )
 
-    series = Series.extend(exact, base=base.cells, cont=cont, name="Extended")
+    series = Series.extend(exact, base=base.walk(), cont=cont, name="Extended")
     ctx = Context()
 
     assert ctx.get_at(series, FY19) == 30.0

@@ -550,7 +550,7 @@ class Context:
         """
         if not isinstance(rule, Series):
             return None
-        node = self._compute_cache.get((rule.cells.id, _UNIT))
+        node = self._compute_cache.get((rule._cells.id, _UNIT))
         while isinstance(node, Cons):
             if node.key == key:
                 return (node.value.id, _UNIT)

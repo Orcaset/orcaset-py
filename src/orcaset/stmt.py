@@ -234,7 +234,7 @@ def _query_key(kind: _KeyKind, key: StmtKey) -> StmtKey | None:
 
 
 def _key_kind(ctx: Context, series: StmtSeries) -> _KeyKind:
-    node = ctx.get(series.cells)
+    node = ctx.get(series._cells)
     if node is None:
         return "empty"
     key = node.key

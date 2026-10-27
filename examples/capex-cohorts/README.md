@@ -42,17 +42,17 @@ def build_cohort(source_key: Period) -> Cohort:
 ```
 The `Thunk` defers reading capex until a depreciation value is requested. The `get_at` call keeps the dependency from each cohort value to its source spend.
 
-The outer `cohort_schedules` series maps each capex key to a child schedule. `map_cells` receives the source key and cell rule without evaluating the spend. The outer series uses `exact` to look up a schedule by its original capex period; each child uses `by_days` to query depreciation amounts.
+The outer `cohort_schedules` series maps each capex key to a child schedule. `map_cells` walks `capex` and receives each source key and answer rule without evaluating the spend. The outer series uses `exact` to look up a schedule by its original capex period; each child uses `by_days` to query depreciation amounts.
 
 ```py
-cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
-    map_cells(
-        capex.cells,
-        lambda source_key, _cell: build_cohort(source_key),
-        name="cohort_schedules",
-    ),
-    exact,
+# The cohort chain is built here, so both the schedule lookup and the rollup can share it.
+cohort_cells = map_cells(
+    capex.walk(),
+    lambda source_key, _cell: build_cohort(source_key),
     name="cohort_schedules",
+)
+cohort_schedules: Series[Period, Cohort, Maybe[Cohort]] = Series(
+    cohort_cells, exact, name="cohort_schedules"
 )
 ```
 ## Rolling up cohorts
@@ -86,7 +86,7 @@ def rollup(
 
 total_depreciation: Series[Period, float, Maybe[float]] = Series(
     scan_cells(
-        cohort_schedules.cells,
+        cohort_cells,
         seed=(),
         fn=rollup,
         name="total_depreciation",
@@ -95,7 +95,7 @@ total_depreciation: Series[Period, float, Maybe[float]] = Series(
     name="total_depreciation",
 )
 ```
-The source connection is explicit: `scan_cells` receives `cohort_schedules.cells`, and `sum_cohorts` receives the accumulated rules. Building the scan does not evaluate the schedules. Querying an annual total resolves each captured cohort and sums its answer, skipping `Na` for periods outside the schedule.
+The source connection is explicit: `scan_cells` receives `cohort_cells`, and `sum_cohorts` receives the accumulated rules. Building the scan does not evaluate the schedules. Querying an annual total resolves each captured cohort and sums its answer, skipping `Na` for periods outside the schedule.
 
 The total inherits the annual capex keys and uses `by_days` for partial-period queries. The first year has no depreciation; the next has 50.0 from one cohort; subsequent years have 100.0 from two overlapping cohorts. Expired cohort rules remain in the accumulator, so the stored history grows with the horizon.
 

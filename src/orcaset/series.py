@@ -100,6 +100,11 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
     ``K`` is both the cell key type and the query type. ``V`` is the cell
     value type and ``W`` the query answer type. ``name`` is optional; the
     constructors derive one when it is omitted.
+
+    Raw cells are private: values are read only through the query, at any
+    key or along ``walk``. A query must answer each cell key with that
+    cell's value (as ``exact``, ``last``, ``accrue`` and ``covered`` do), so
+    the cells are just the query's backing data.
     """
 
     def __init__(
@@ -108,14 +113,27 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         super().__init__(name)
         self._cells = cells
         self._query = query
-
-    @property
-    def cells(self) -> Chain[K, V]:
-        """The rule resolving the first node of this series."""
-        return self._cells
+        self._walk: Chain[K, W] | None = None
 
     def compute(self, q: K, /) -> Effect[W]:
         return (yield from _as_effect(self._query(q, self._cells)))
+
+    def walk(self) -> Chain[K, W]:
+        """The cell keys as a lazy chain of this series' answers at each key.
+
+        Walking reads only keys; a node's value queries the series at its
+        key. The chain may be infinite, so stop at a key (``keys_until``) or
+        on a value rather than walking to the end. Each value runs a full
+        query, so walking ``n`` cells costs ``O(n²)`` scan steps for
+        scanning queries. The chain is built once per series.
+        """
+        if self._walk is None:
+
+            def answer(key: K, _value: Rule[V]) -> Thunk[W]:
+                return Thunk(lambda: get_at(self, key))
+
+            self._walk = map_cells(self._cells, answer, name=f"{self.name}.walk")
+        return self._walk
 
     @classmethod
     @overload
@@ -255,23 +273,8 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         name: str | None = None,
     ) -> Series[K, V, W]:
         """Build a series from a sequence of pairs or a rule resolving one."""
-
-        def step(
-            state: tuple[Pairs[K, V], int],
-        ) -> tuple[K, V | Thunk[V], tuple[Pairs[K, V], int]] | None:
-            source, index = state
-            if index == len(source):
-                return None
-            key, value = source[index]
-            return key, value, (source, index + 1)
-
-        if isinstance(pairs, Rule):
-
-            def initial() -> Effect[tuple[Pairs[K, V], int]]:
-                return (yield from get(pairs)), 0
-
-            return cls.unfold(query, seed=Thunk(initial), step=step, name=name)
-        return cls.unfold(query, seed=(pairs, 0), step=step, name=name)
+        name = _resolve_name(name, cls.__name__)
+        return cls(of_cells(pairs, name=name), query, name=name)
 
     @classmethod
     def empty(cls, query: QueryFn[K, V, W], *, name: str | None = None) -> Series[K, V, W]:
@@ -389,6 +392,30 @@ def unfold_cells[S, K: Key, V](
     A ``Thunk`` seed is resolved once by the head node before the first step.
     """
     return _UnfoldRule(_resolve_name(name, "unfold_cells"), None, seed, step)
+
+
+def of_cells[K: Key, V](
+    pairs: Pairs[K, V] | Rule[Pairs[K, V]], *, name: str | None = None
+) -> Chain[K, V]:
+    """Build a standalone cell chain from a sequence of pairs or a rule resolving one."""
+
+    def step(
+        state: tuple[Pairs[K, V], int],
+    ) -> tuple[K, V | Thunk[V], tuple[Pairs[K, V], int]] | None:
+        source, index = state
+        if index == len(source):
+            return None
+        key, value = source[index]
+        return key, value, (source, index + 1)
+
+    name = _resolve_name(name, "of_cells")
+    if isinstance(pairs, Rule):
+
+        def initial() -> Effect[tuple[Pairs[K, V], int]]:
+            return (yield from get(pairs)), 0
+
+        return unfold_cells(seed=Thunk(initial), step=step, name=name)
+    return unfold_cells(seed=(pairs, 0), step=step, name=name)
 
 
 def map_cells[K: Key, A, B](
@@ -571,12 +598,15 @@ def clip_periods[V, W](
     start: date | None = None,
     end: date | None = None,
     *,
+    outside: Maybe[W] = Na,
     name: str | None = None,
 ) -> Series[Period, W, Maybe[W]]:
     """``source`` within ``(start, end]``; either bound may be open.
 
     A query is trimmed to the bounds and forwarded to ``source``, so time outside
-    them is left out; a query entirely outside is ``Na``. Cells are ``source``'s
+    them is left out; a query entirely outside answers ``outside``. Give a value
+    only when it is what the window means, e.g. ``0.0`` for a flow that stops at
+    the window; a gap inside the bounds still gets ``source``'s answer. Cells are ``source``'s
     cells trimmed to the bounds, each holding ``source``'s answer for its trimmed
     period, so concatenations agree with direct queries. Cells before ``start``
     are skipped and the walk stops at the first cell starting at or after ``end``,
@@ -603,10 +633,10 @@ def clip_periods[V, W](
     def compute(q: Period, _cells: Chain[Period, W]) -> Effect[Maybe[W]]:
         inside = _clip_period(q, start, end)
         if inside is None:
-            return Na
+            return outside
         return (yield from get_at(source, inside))
 
-    return Series(unfold_cells(seed=source.cells, step=step, name=name), compute, name=name)
+    return Series(unfold_cells(seed=source._cells, step=step, name=name), compute, name=name)
 
 
 def clip_dates[V, W](
@@ -614,6 +644,7 @@ def clip_dates[V, W](
     start: date | None = None,
     end: date | None = None,
     *,
+    outside: Maybe[W] = Na,
     name: str | None = None,
 ) -> Series[date, V, Maybe[W]]:
     """``source`` within ``(start, end]``; either bound may be open.
@@ -621,7 +652,7 @@ def clip_dates[V, W](
     Cells are ``source``'s cells within the bounds, passed through with their own
     value rules. A query inside the bounds is answered by ``source``'s query over
     those cells, so a look-back query such as ``last`` cannot reach a cell before
-    ``start``; a query outside the bounds is ``Na``. Cells before ``start`` are
+    ``start``; a query outside the bounds answers ``outside``. Cells before ``start`` are
     skipped and the walk stops at the first cell after ``end``, reading keys only.
     """
     name = name if name is not None else derived_name("clip_dates", source)
@@ -643,41 +674,45 @@ def clip_dates[V, W](
 
     def query(q: date, cells: Chain[date, V]) -> Effect[Maybe[W]]:
         if not inside(q):
-            return Na
+            return outside
         return (yield from _as_effect(source._query(q, cells)))
 
-    return Series(walk(None, source.cells), query, name=name)
+    return Series(walk(None, source._cells), query, name=name)
 
 
-def continue_series[K: Key, V, W](
-    base: Series[K, V, W],
-    cont: Callable[[Cons[K, V] | None], Series[K, Any, W]],
+def continue_series[K: Key, W](
+    base: Series[K, Any, W],
+    cont: Callable[[Cons[K, W] | None], Series[K, Any, W] | None],
     *,
     name: str | None = None,
 ) -> Chain[int, Series[K, Any, W]]:
-    """Build ``[base, lazy cont(last)]`` for ``Series.flatten``.
+    """Build ``[base, cont(last)]`` for ``Series.flatten``.
 
-    ``cont`` receives the last raw base node, or ``None`` if empty. Its
-    construction is memoized per context; reading the first outer node does
-    not inspect the base. Flatten only requests the outer tail after the
-    base ends, so an infinite base never constructs its continuation. Direct
-    callers must obey the same discipline: requesting this outer tail itself
-    exhausts the base, whose end may depend on other rules.
+    ``cont`` receives the last node of ``base.walk()``, whose value is the
+    base's answer at its last key, or ``None`` if empty. It returns the next
+    series, or ``None`` to end the chain after ``base``. It runs when the
+    outer tail is requested and is memoized per context; reading the first
+    outer node does not inspect the base. Flatten only requests the outer
+    tail after the base ends, so an infinite base never invokes its
+    continuation. Direct callers must obey the same discipline: requesting
+    this outer tail itself exhausts the base, whose end may depend on other
+    rules.
     """
 
-    def step(
-        index: int,
-    ) -> Effect[tuple[int, Series[K, Any, W] | Thunk[Series[K, Any, W]], int] | None]:
+    def step(index: int) -> Effect[tuple[int, Series[K, Any, W], int] | None]:
         if index == 0:
             return 0, base, 1
         if index != 1:
             return None
-        last: Cons[K, V] | None = None
-        node = yield from get(base.cells)
+        last: Cons[K, W] | None = None
+        node = yield from get(base.walk())
         while node is not None:
             last = node
             node = yield from get(node.tail)
-        return 1, Thunk(lambda: cont(last)), 2
+        following = cont(last)
+        if following is None:
+            return None
+        return 1, following, 2
 
     name = name if name is not None else derived_name("continue_series", base)
     return unfold_cells(seed=0, step=step, name=name)
@@ -711,7 +746,7 @@ def _flatten_owners[K: Key, W](
                 if owner is None:
                     return None
                 source = yield from get(owner.value)
-                inner = source.cells
+                inner = source._cells
             assert inner is not None
             node = yield from get(inner)
             if node is None:
