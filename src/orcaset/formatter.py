@@ -193,7 +193,16 @@ def _render_table(
     return _RenderedTable(
         start_header=_start_header(columns, date_format),
         end_header=_end_header(columns, date_format),
-        rows=tuple(_render_rows(result.rows, columns, cell_format, indent)),
+        rows=_collapse_spacers(_render_rows(result.rows, columns, cell_format, indent)),
+    )
+
+
+def _collapse_spacers(rows: Sequence[_RenderedRow]) -> tuple[_RenderedRow, ...]:
+    """Drop each spacer that follows another, so adjacent groups share one blank row."""
+    return tuple(
+        row
+        for index, row in enumerate(rows)
+        if not (isinstance(row, _Spacer) and index > 0 and isinstance(rows[index - 1], _Spacer))
     )
 
 

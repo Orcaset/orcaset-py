@@ -435,3 +435,28 @@ def test_type_formatters_still_win_over_a_row_format():
         date_formatter=lambda dt: dt.strftime("%m/%d"),
         type_formatters={Money: lambda money: f"${money.amount:.2f}"},
     ).endswith("A,$2.00,1.0")
+
+
+def test_tables_separate_adjacent_groups_with_one_blank_row():
+    result = stmt.StatementResult(
+        rows=(
+            stmt.GroupRow("First", (stmt.LineRow("A", A, (cell(P1, 1.0),)),)),
+            stmt.GroupRow(
+                None, (stmt.GroupRow("Second", (stmt.LineRow("B", B, (cell(P1, 2.0),)),)),)
+            ),
+        ),
+        keys=(P1,),
+    )
+
+    def dates(dt: date) -> str:
+        return dt.strftime("%m/%d")
+
+    assert (
+        formatter.fixed_width_table(result, date_formatter=dates)
+        == "Start     01/01\nEnd       04/01\n\nFirst\n  A        1.00\n\n  Second\n    B      2.00\n"
+    )
+    assert (
+        formatter.csv_table(result, date_formatter=dates)
+        == "Start,01/01\nEnd,04/01\n\nFirst,\nA,1.00\n\nSecond,\nB,2.00\n"
+    )
+    assert formatter.markdown_table(result, date_formatter=dates).count("|  |  |") == 3
