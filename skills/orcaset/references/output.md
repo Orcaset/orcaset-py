@@ -8,9 +8,10 @@ Use `orcaset.stmt` to arrange line items and `orcaset.formatter` to render the r
 
 | Construct | Purpose |
 |---|---|
-| `stmt.Stmt(*items)` | Ordered collection of series, totals, and groups |
-| `stmt.Total(series, items)` | Display an existing total series below its component rows |
-| `stmt.Group(*items, label=None)` | Group rows under an optional label without calculating a total |
+| `stmt.Stmt(*items, format=None)` | Ordered collection of series, rows, totals, and groups |
+| `stmt.Row(series, format=None)` | A line item with its own format |
+| `stmt.Total(series, items, format=None)` | Display an existing total series below its component rows |
+| `stmt.Group(*items, label=None, format=None)` | Group rows under an optional label without calculating a total |
 
 `Total` does not sum its children or verify that they reconcile. Define the total as a model series, then reference that same series in the statement. Nest totals to show intermediate subtotals. Row names come from the underlying series `name`, which must be given explicitly; `Stmt` rejects a series with a derived name. Group labels describe sections.
 
@@ -67,6 +68,24 @@ result = statement.values(ctx, [periods[0].start, *periods])
 ## Formats and missing values
 
 `formatter.fixed_width_table`, `formatter.markdown_table`, and `formatter.csv_table` return strings. Each key is one value column, in order. A period column's `Start` and `End` headers are that period's start and end dates; a date column has a blank `Start` and the date as `End`. Cells align by key. A dates-only result renders with a blank `Start` row. Each accepts `date_formatter: Callable[[date], str]`, `value_formatter: Callable[[float | None], str]`, and `type_formatters: Mapping[type, Callable[[Any], str]]`. Cells print with `formatter.format_value`: `None` and `Na` go to `value_formatter(None)`; otherwise a `type_formatters` entry for the value's type (or nearest base class) wins, then `value_formatter(float(value))` when the type defines `__float__`, then `str(value)`. Fixed-width and Markdown tables also accept `indent`; fixed-width tables accept `padding`.
+
+A row's own format takes the place of `value_formatter` for that row. Give a format, a `Callable[[float | None], str]`, to a line item with `stmt.Row(series, format=...)`, or to a `Total`, `Group`, or `Stmt` to apply it to every row inside that doesn't set its own; the nearest one wins. Use this to mix units in one statement:
+
+```py
+def thousands(value: float | None) -> str:
+    return "" if value is None else f"{value / 1000:,.0f}"
+
+
+def percent(value: float | None) -> str:
+    return "" if value is None else f"{value:.1%}"
+
+
+statement = stmt.Stmt(
+    stmt.Total(profit, [revenue, costs]),
+    stmt.Row(margin, format=percent),
+    format=thousands,
+)
+```
 
 The defaults use ISO dates, two decimal places with thousands separators, and a blank for missing values. Preserve the distinction between missing values and genuine zeroes; use an explicit missing-value label when blanks could mislead.
 

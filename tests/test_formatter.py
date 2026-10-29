@@ -382,3 +382,56 @@ def test_tables_format_non_float_values_with_type_formatters():
         )
         == "Start    01/01  04/01\nEnd      04/01  07/01\nRevenue   $100"
     )
+
+
+def test_tables_format_rows_with_their_own_format_before_value_formatter():
+    def times(value: float | None) -> str:
+        return "-" if value is None else f"{value:.1f}x"
+
+    result = stmt.StatementResult(
+        rows=(
+            stmt.LineRow("A", A, (cell(P1, 1.25), cell(P2, None)), format=times),
+            stmt.TotalRow(
+                "Total",
+                B,
+                (cell(P1, 3.0), cell(P2, 4.0)),
+                (stmt.LineRow("C", C, (cell(P1, 0.5), cell(P2, 0.25))),),
+            ),
+        ),
+        keys=(P1, P2),
+    )
+
+    def plain(value: float | None) -> str:
+        return "" if value is None else f"{value:g}"
+
+    def dates(dt: date) -> str:
+        return dt.strftime("%m/%d")
+
+    assert (
+        formatter.fixed_width_table(result, date_formatter=dates, value_formatter=plain)
+        == "Start  01/01  04/01\nEnd    04/01  07/01\nA       1.2x      -\n  C      0.5   0.25\n-------------------\nTotal      3      4"
+    )
+    assert (
+        formatter.csv_table(result, date_formatter=dates, value_formatter=plain)
+        == "Start,01/01,04/01\nEnd,04/01,07/01\nA,1.2x,-\nC,0.5,0.25\nTotal,3,4"
+    )
+    assert "| A | 1.2x | - |" in formatter.markdown_table(
+        result, date_formatter=dates, value_formatter=plain
+    )
+
+
+def test_type_formatters_still_win_over_a_row_format():
+    @dataclass(frozen=True)
+    class Money:
+        amount: float
+
+    result = stmt.StatementResult(
+        rows=(stmt.LineRow("A", A, (cell(P1, Money(2.0)), cell(P2, 1.0)), format=str),),
+        keys=(P1, P2),
+    )
+
+    assert formatter.csv_table(
+        result,
+        date_formatter=lambda dt: dt.strftime("%m/%d"),
+        type_formatters={Money: lambda money: f"${money.amount:.2f}"},
+    ).endswith("A,$2.00,1.0")

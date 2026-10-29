@@ -38,6 +38,12 @@ change between minor releases.
   series' query answers at each key. Values are not forced by walking.
 - `clip_periods` and `clip_dates` take `outside=`, the answer for a query
   entirely outside the window (default `Na`).
+- Statement rows can carry their own format: a function from a float (`None`
+  when missing) to display text. Wrap a line item in `stmt.Row(series,
+  format=...)`, or pass `format=` to `Total`, `Group`, or `Stmt` to apply it to
+  every row inside that doesn't set its own. `LineRow` and `TotalRow` carry the
+  format that applies to them, and the formatters use it in place of
+  `value_formatter`.
 - `continue_series(base, *conts)` takes any number of continuations, each
   called with the last walk node of the components before it:
   `continue_series(actuals, renewal, reabsorption)`. Calls with one

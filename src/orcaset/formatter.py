@@ -37,7 +37,7 @@ __all__ = [
 type ValueFormatter = Callable[[float | None], str]
 type TypeFormatters = Mapping[type[Any], Callable[[Any], str]]
 type DateFormatter = Callable[[date], str]
-type _CellFormatter = Callable[[object], str]
+type _CellFormatter = Callable[[object, ValueFormatter | None], str]
 type _RenderedRow = tuple[str, ...] | _HorizontalRule | _Spacer
 
 
@@ -56,7 +56,8 @@ def fixed_width_table(
     Each key in ``result.keys`` is one value column, in order. A period column's
     headers are its start and end; a date column has a blank start and the date
     as its end. Each value lands in the column matching its ``key``; a column
-    with no value is blank. Cells are printed with ``format_value``. Raises
+    with no value is blank. Cells are printed with ``format_value``, using the
+    row's ``format`` in place of ``value_formatter`` when the row has one. Raises
     ``ValueError`` if a value's key is not in ``result.keys``.
     """
     table = _render_table(result, date_formatter, value_formatter, type_formatters, indent)
@@ -92,7 +93,8 @@ def csv_table(
     Each key in ``result.keys`` is one value column, in order. A period column's
     headers are its start and end; a date column has a blank start and the date
     as its end. Each value lands in the column matching its ``key``; a column
-    with no value is blank. Cells are printed with ``format_value``. Raises
+    with no value is blank. Cells are printed with ``format_value``, using the
+    row's ``format`` in place of ``value_formatter`` when the row has one. Raises
     ``ValueError`` if a value's key is not in ``result.keys``.
     """
     table = _render_table(result, date_formatter, value_formatter, type_formatters, 0)
@@ -127,7 +129,8 @@ def markdown_table(
     Each key in ``result.keys`` is one value column, in order. A period column's
     headers are its start and end; a date column has a blank start and the date
     as its end. Each value lands in the column matching its ``key``; a column
-    with no value is blank. Cells are printed with ``format_value``. Raises
+    with no value is blank. Cells are printed with ``format_value``, using the
+    row's ``format`` in place of ``value_formatter`` when the row has one. Raises
     ``ValueError`` if a value's key is not in ``result.keys``.
     """
     table = _render_table(result, date_formatter, value_formatter, type_formatters, indent)
@@ -180,9 +183,11 @@ def _render_table(
     date_format = date_formatter or _format_date
     columns = result.keys
 
-    def cell_format(value: object) -> str:
+    def cell_format(value: object, row_format: ValueFormatter | None) -> str:
         return format_value(
-            value, value_formatter=value_formatter, type_formatters=type_formatters
+            value,
+            value_formatter=row_format if row_format is not None else value_formatter,
+            type_formatters=type_formatters,
         )
 
     return _RenderedTable(
@@ -223,13 +228,13 @@ def _render_rows(
     for row in rows:
         if isinstance(row, LineRow):
             rendered.append(
-                _value_row(row.name, row.values, columns, cell_format, indent, level)
+                _value_row(row.name, row.values, row.format, columns, cell_format, indent, level)
             )
         elif isinstance(row, TotalRow):
             rendered.extend(_render_rows(row.children, columns, cell_format, indent, level + 1))
             rendered.append(_HorizontalRule())
             rendered.append(
-                _value_row(row.name, row.values, columns, cell_format, indent, level)
+                _value_row(row.name, row.values, row.format, columns, cell_format, indent, level)
             )
         elif isinstance(row, GroupRow):
             rendered.append(_Spacer())
@@ -243,6 +248,7 @@ def _render_rows(
 def _value_row(
     name: str,
     values: Sequence[StmtValue],
+    row_format: ValueFormatter | None,
     columns: Sequence[StmtKey],
     cell_format: _CellFormatter,
     indent: int,
@@ -251,7 +257,10 @@ def _value_row(
     values_by_key = _values_by_key(values, columns)
     return (
         _label(name, indent, level),
-        *(cell_format(values_by_key[key]) if key in values_by_key else "" for key in columns),
+        *(
+            cell_format(values_by_key[key], row_format) if key in values_by_key else ""
+            for key in columns
+        ),
     )
 
 

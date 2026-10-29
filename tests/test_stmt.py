@@ -34,6 +34,7 @@ def test_stmt_types_are_exported_only_from_stmt_module():
         "Group",
         "GroupRow",
         "LineRow",
+        "Row",
         "StatementResult",
         "Stmt",
         "StmtItem",
@@ -375,7 +376,7 @@ def test_stmt_converts_na_answers_to_none():
 def test_stmt_rejects_items_that_are_not_series_totals_or_groups():
     bad: Any = "Revenue"
 
-    with pytest.raises(TypeError, match="Series, Total, or Group"):
+    with pytest.raises(TypeError, match="Series, Row, Total, or Group"):
         stmt.Stmt(bad).values(Context(), [Period(date(2025, 1, 1), date(2025, 4, 1))])
 
 
@@ -393,3 +394,61 @@ def test_stmt_value_keeps_model_value_unchanged():
     assert isinstance(row, stmt.LineRow)
     (value,) = row.values
     assert value.value is cited
+
+
+def thousands(value: float | None) -> str:
+    return "" if value is None else f"{value / 1000:,.0f}"
+
+
+def percent(value: float | None) -> str:
+    return "" if value is None else f"{value:.0%}"
+
+
+def test_stmt_rows_take_the_nearest_format():
+    q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
+    revenue = Series.of(exact, [(q1, 1000.0)], name="Revenue")
+    costs = Series.of(exact, [(q1, -400.0)], name="Costs")
+    profit = ops.add(revenue, costs, merge_keys=period_union, name="Profit")
+    margin = ops.div(profit, revenue, merge_keys=period_union, name="Margin")
+
+    result_rows = rows(
+        stmt.Stmt(
+            stmt.Group(stmt.Total(profit, [revenue, costs])),
+            stmt.Row(margin, format=percent),
+            stmt.Group(revenue, format=str),
+            format=thousands,
+        ).values(Context(), [q1])
+    )
+
+    group, margin_row, other = result_rows
+    assert isinstance(group, stmt.GroupRow)
+    (total,) = group.children
+    assert isinstance(total, stmt.TotalRow)
+    assert total.format is thousands
+    assert [child.format for child in total.children if isinstance(child, stmt.LineRow)] == [
+        thousands,
+        thousands,
+    ]
+    assert isinstance(margin_row, stmt.LineRow)
+    assert margin_row.name == "Margin"
+    assert margin_row.format is percent
+    assert row_values(margin_row) == (0.6,)
+    assert isinstance(other, stmt.GroupRow)
+    assert [child.format for child in other.children if isinstance(child, stmt.LineRow)] == [str]
+
+
+def test_stmt_rows_have_no_format_unless_one_is_set():
+    q1 = Period(date(2025, 1, 1), date(2025, 4, 1))
+    revenue = Series.of(exact, [(q1, 1000.0)], name="Revenue")
+
+    (row,) = rows(stmt.Stmt(stmt.Row(revenue)).values(Context(), [q1]))
+
+    assert isinstance(row, stmt.LineRow)
+    assert row.format is None
+
+
+def test_stmt_row_requires_an_explicit_name():
+    revenue = Series.of(exact, [], name="Revenue")
+
+    with pytest.raises(ValueError, match="explicit name"):
+        stmt.Stmt(stmt.Row(ops.scale(revenue, 2.0)))

@@ -3,8 +3,12 @@
 
 """Statement views over period- and date-keyed series.
 
-Build a ``Stmt`` from line items, ``Total``s, and ``Group``s, then evaluate with
-``values`` at any mix of periods and dates.
+Build a ``Stmt`` from line items, ``Row``s, ``Total``s, and ``Group``s, then
+evaluate with ``values`` at any mix of periods and dates.
+
+Any item can take a ``format``, a function from a float (``None`` when missing) to
+display text. A ``Total``, ``Group``, or ``Stmt`` format applies to every row inside
+it that doesn't set its own; each row carries the format that applies to it.
 
 Every row holds one ``StmtValue`` per requested key, in key order, and each
 value names its ``key``. At a ``Period`` key, period-keyed series are queried
@@ -16,7 +20,7 @@ the series, the key it was queried at, and the model value unchanged.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
@@ -30,6 +34,7 @@ __all__ = [
     "Group",
     "GroupRow",
     "LineRow",
+    "Row",
     "StatementResult",
     "Stmt",
     "StmtItem",
@@ -42,7 +47,8 @@ __all__ = [
 ]
 
 type StmtSeries = Series[Any, Any, Any]
-type StmtItem = StmtSeries | Total | Group
+type StmtItem = StmtSeries | Row | Total | Group
+type _Format = Callable[[float | None], str]
 type StmtKey = Period | date
 type _KeyKind = Literal["period", "date", "empty"]
 
@@ -71,6 +77,7 @@ class LineRow:
     name: str
     series: StmtSeries
     values: tuple[StmtValue, ...]
+    format: _Format | None = None
 
 
 @dataclass(slots=True)
@@ -79,6 +86,7 @@ class TotalRow:
     series: StmtSeries
     values: tuple[StmtValue, ...]
     children: tuple[StmtRow, ...]
+    format: _Format | None = None
 
 
 @dataclass(slots=True)
@@ -107,36 +115,65 @@ class StatementResult:
 
 
 @dataclass(slots=True)
+class Row:
+    """A line item with its own ``format``."""
+
+    series: StmtSeries
+    format: _Format | None = None
+
+    def __init__(self, series: StmtSeries, *, format: _Format | None = None) -> None:
+        self.series = series
+        self.format = format
+
+
+@dataclass(slots=True)
 class Total:
     series: StmtSeries
     items: tuple[StmtItem, ...]
+    format: _Format | None = None
 
-    def __init__(self, series: StmtSeries, items: Sequence[StmtItem]) -> None:
+    def __init__(
+        self,
+        series: StmtSeries,
+        items: Sequence[StmtItem],
+        *,
+        format: _Format | None = None,
+    ) -> None:
         self.series = series
         self.items = tuple(items)
+        self.format = format
 
 
 @dataclass(slots=True)
 class Group:
     items: tuple[StmtItem, ...]
     label: str | None = None
+    format: _Format | None = None
 
-    def __init__(self, *items: StmtItem, label: str | None = None) -> None:
+    def __init__(
+        self,
+        *items: StmtItem,
+        label: str | None = None,
+        format: _Format | None = None,
+    ) -> None:
         self.items = tuple(items)
         self.label = label
+        self.format = format
 
 
 class Stmt:
     """A statement layout.
 
     Every line item and total must have an explicit name, since it labels a
-    row; a series with a derived name raises ``ValueError``.
+    row; a series with a derived name raises ``ValueError``. ``format`` applies
+    to every row that doesn't set its own.
     """
 
-    __slots__ = ("items",)
+    __slots__ = ("format", "items")
 
-    def __init__(self, *items: StmtItem) -> None:
+    def __init__(self, *items: StmtItem, format: _Format | None = None) -> None:
         self.items = tuple(items)
+        self.format = format
         for item in self.items:
             _require_names(item)
 
@@ -156,7 +193,7 @@ class Stmt:
         deduplicated; periods may have gaps, overlap, or nest.
         """
         key_tuple = tuple(keys)
-        rows = tuple(_row(ctx, item, key_tuple) for item in self.items)
+        rows = tuple(_row(ctx, item, key_tuple, self.format) for item in self.items)
         return StatementResult(rows=rows, keys=key_tuple)
 
 
@@ -169,6 +206,8 @@ def _require_names(item: StmtItem) -> None:
         case Group():
             for child in item.items:
                 _require_names(child)
+        case Row():
+            _require_named(item.series)
         case Series():
             _require_named(item)
         case _:
@@ -187,28 +226,42 @@ def _row(
     ctx: Context,
     item: StmtItem,
     keys: Sequence[StmtKey],
+    inherited: _Format | None,
 ) -> StmtRow:
     match item:
         case Total():
+            format = item.format if item.format is not None else inherited
             return TotalRow(
                 name=item.series.name,
                 series=item.series,
                 values=_series_values(ctx, item.series, keys),
-                children=tuple(_row(ctx, child, keys) for child in item.items),
+                children=tuple(_row(ctx, child, keys, format) for child in item.items),
+                format=format,
             )
         case Group():
+            format = item.format if item.format is not None else inherited
             return GroupRow(
                 label=item.label,
-                children=tuple(_row(ctx, child, keys) for child in item.items),
+                children=tuple(_row(ctx, child, keys, format) for child in item.items),
+            )
+        case Row():
+            return LineRow(
+                name=item.series.name,
+                series=item.series,
+                values=_series_values(ctx, item.series, keys),
+                format=item.format if item.format is not None else inherited,
             )
         case Series():
             return LineRow(
                 name=item.name,
                 series=item,
                 values=_series_values(ctx, item, keys),
+                format=inherited,
             )
         case _:
-            raise TypeError(f"statement items must be Series, Total, or Group, got {type(item)!r}")
+            raise TypeError(
+                f"statement items must be Series, Row, Total, or Group, got {type(item)!r}"
+            )
 
 
 def _series_values(
