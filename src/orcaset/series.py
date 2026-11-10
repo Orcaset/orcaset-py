@@ -115,8 +115,8 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         self._query = query
         self._walk: Chain[K, W] | None = None
 
-    def compute(self, q: K, /) -> Effect[W]:
-        return (yield from _as_effect(self._query(q, self._cells)))
+    def compute(self, q: K, /) -> Effect[W] | W:
+        return self._query(q, self._cells)
 
     def walk(self) -> Chain[K, W]:
         """The cell keys as a lazy chain of this series' answers at each key.
