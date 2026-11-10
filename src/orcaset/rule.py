@@ -6,7 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Hashable, Mapping
 from dataclasses import dataclass
-from typing import Any, cast, overload
+from typing import Any, overload
 
 from orcaset.ids import next_id
 from orcaset.maybe import Maybe, isna
@@ -185,8 +185,12 @@ def get_at[K: Hashable, V](
     One spec anywhere in the cycle is enough, from any query entrypoint; they
     are ignored when the demand is not part of a cycle.
     """
-    value = yield Demand(rule, key, _iterate(seed, distance, tol, max_iter))
-    return cast(V, value)
+    if seed is _NO_SEED_DISTANCE and distance is _NO_SEED_DISTANCE:
+        return (yield Demand(rule, key))
+    if seed is _NO_SEED_DISTANCE or distance is _NO_SEED_DISTANCE:
+        raise TypeError("seed and distance must be provided together")
+    iterate = Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
+    return (yield Demand(rule, key, iterate))
 
 
 @overload
@@ -222,21 +226,12 @@ def get[V](
     ``get_at``, and are typed against this call's return type ``V``.
     One spec anywhere in the cycle is enough, from any query entrypoint.
     """
-    value = yield Demand(rule, _UNIT, _iterate(seed, distance, tol, max_iter))
-    return cast(V, value)
-
-
-def _iterate[V](
-    seed: V | Any,
-    distance: Callable[[V, V], float] | Any,
-    tol: float | None,
-    max_iter: int | None,
-) -> Iterate[V] | None:
     if seed is _NO_SEED_DISTANCE and distance is _NO_SEED_DISTANCE:
-        return None
+        return (yield Demand(rule, _UNIT))
     if seed is _NO_SEED_DISTANCE or distance is _NO_SEED_DISTANCE:
         raise TypeError("seed and distance must be provided together")
-    return Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
+    iterate = Iterate(seed=seed, distance=distance, tol=tol, max_iter=max_iter)
+    return (yield Demand(rule, _UNIT, iterate))
 
 
 class Rule[V](_Identity, ABC):
