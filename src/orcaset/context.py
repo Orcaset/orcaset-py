@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import gc
 from collections import deque
-from collections.abc import Callable, Generator, Hashable
+from collections.abc import Callable, Generator, Hashable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import GeneratorType
 from typing import Any, NoReturn, cast, overload
@@ -157,9 +159,18 @@ class _FixedPoint:
 
 
 class Context:
-    def __init__(self, *, tol: float = 1e-9, max_iter: int = 1000) -> None:
+    def __init__(self, *, tol: float = 1e-9, max_iter: int = 1000, pause_gc: bool = True) -> None:
+        """
+        ``pause_gc`` suspends Python's cyclic garbage collector while this
+        context computes, and restores it afterwards. Everything a context
+        computes is memoized, so the collector otherwise keeps re-scanning a
+        growing set of live objects and finds nothing to free. Reference
+        counting still frees acyclic garbage immediately. Pass ``False`` to
+        leave the collector alone.
+        """
         self._tol = tol
         self._max_iter = max_iter
+        self._pause_gc = pause_gc
         self._compute_cache: dict[RuleKey, Any] = {}
         self._deps: dict[RuleKey, set[RuleKey]] = {}
         self._stack: list[RuleKey] = []
@@ -287,6 +298,10 @@ class Context:
         fixed_points = self._fp
         stack_start = len(stack)
 
+        resume_gc = self._pause_gc and gc.isenabled()
+        if resume_gc:
+            gc.disable()
+
         frames: list[Effect[Any]] = [result]
         stack.append(cell)
         on_stack.add(cell)
@@ -355,8 +370,22 @@ class Context:
             for stale in stack[stack_start:]:
                 on_stack.discard(stale)
             del stack[stack_start:]
+            if resume_gc:
+                gc.enable()
 
         return cast(V, cache[cell])
+
+    @contextmanager
+    def _gc_paused(self) -> Iterator[None]:
+        """Hold the collector off across several demands (see ``pause_gc``)."""
+        resume_gc = self._pause_gc and gc.isenabled()
+        if resume_gc:
+            gc.disable()
+        try:
+            yield
+        finally:
+            if resume_gc:
+                gc.enable()
 
     def _on_cycle(
         self,

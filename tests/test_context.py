@@ -161,3 +161,39 @@ def test_structural_flag_keeps_chain_machinery():
     assert len(full) >= len(folded)
     assert full[0] == folded[0] and full[-1] == folded[-1]
     assert full[-1].name == "Revenue" and full[-1].key == FEB
+
+
+def test_context_pauses_the_garbage_collector_only_while_computing():
+    import gc
+
+    seen: list[bool] = []
+
+    def observe() -> int:
+        seen.append(gc.isenabled())
+        return 1
+
+    assert gc.isenabled()
+    assert Context().get(Fn(lambda: (yield from get(Fn(observe))))) == 1
+    assert seen == [False]
+    assert gc.isenabled()
+
+    assert Context(pause_gc=False).get(Fn(lambda: (yield from get(Fn(observe))))) == 1
+    assert seen == [False, True]
+
+    gc.disable()
+    try:
+        Context().get(Fn(lambda: (yield from get(Fn(observe)))))
+        assert not gc.isenabled()
+    finally:
+        gc.enable()
+
+
+def test_context_restores_the_garbage_collector_when_a_compute_raises():
+    import gc
+
+    def fail() -> int:
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        Context().get(Fn(lambda: (yield from get(Fn(fail)))))
+    assert gc.isenabled()

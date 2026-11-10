@@ -193,7 +193,8 @@ class Stmt:
         deduplicated; periods may have gaps, overlap, or nest.
         """
         key_tuple = tuple(keys)
-        rows = tuple(_row(ctx, item, key_tuple, self.format) for item in self.items)
+        with ctx._gc_paused():
+            rows = tuple(_row(ctx, item, key_tuple, self.format) for item in self.items)
         return StatementResult(rows=rows, keys=key_tuple)
 
 
