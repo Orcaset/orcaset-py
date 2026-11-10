@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Generator, Hashable
 from dataclasses import dataclass, field
+from types import GeneratorType
 from typing import Any, NoReturn, cast, overload
 
 from orcaset.rule import _UNIT, Effect, Iterate, KeyedRule, Rule
@@ -142,12 +143,6 @@ def _history_lines(values: tuple[Any, ...], residuals: tuple[float, ...]) -> lis
     ]
 
 
-def _completed(value: Any) -> Effect[Any]:
-    """A step that immediately completes with `value`."""
-    return value
-    yield  # unreachable; makes this function a generator
-
-
 @dataclass(slots=True)
 class _FixedPoint:
     cut: RuleKey
@@ -262,15 +257,22 @@ class Context:
         key: Hashable,
         compute: Callable[[], Effect[V] | V],
     ) -> V:
-        cell: RuleKey = (target.id, key)
-        self._targets[target.id] = target
+        cell: RuleKey = (target._id, key)
+        targets = self._targets
+        targets[target._id] = target
+        on_stack = self._on_stack
+        cache = self._compute_cache
 
-        if cell in self._on_stack:
+        if cell in on_stack:
             self._raise_cycle(cell)
 
-        cached = self._compute_cache.get(cell, _MISSING)
+        cached = cache.get(cell, _MISSING)
         if cached is not _MISSING:
             return cast(V, cached)
+
+        result = compute()
+        if result.__class__ is not GeneratorType and not isinstance(result, Generator):
+            return cast(V, self._commit(cell, result))
 
         # Suspending scheduler: each frame is a paused ``compute`` generator.
         # Yielded ``Demand``s either resolve from cache immediately or push a
@@ -279,53 +281,82 @@ class Context:
         # once per cell. On a cycle, any executed ``Iterate`` spec in the
         # component can cut it; the scheduler iterates until every seeded
         # cell observed this iteration is within its tolerance.
-        stack_start = len(self._stack)
-        frames: list[Effect[Any]] = []
-        self._push(cell, compute(), frames)
+        stack = self._stack
+        deps_by_cell = self._deps
+        pending_spec = self._pending_spec
+        fixed_points = self._fp
+        stack_start = len(stack)
+
+        frames: list[Effect[Any]] = [result]
+        stack.append(cell)
+        on_stack.add(cell)
+        # The running frame's dependency set, ``None`` until it records one.
+        deps = deps_by_cell.get(cell)
+        send = result.send
         to_send: Any = None
         try:
-            while frames:
+            while True:
                 try:
-                    demanded = frames[-1].send(to_send)
+                    demanded = send(to_send)
                 except StopIteration as stop:
-                    finished = self._stack.pop()
-                    self._on_stack.discard(finished)
+                    finished = stack.pop()
+                    on_stack.discard(finished)
                     frames.pop()
-                    to_send = self._commit(finished, stop.value)
+                    to_send = stop.value
+                    cache[finished] = to_send
+                    if pending_spec:
+                        pending_spec.pop(finished, None)
+                    if fixed_points:
+                        self._note_written(finished)
+                    if not frames:
+                        break
+                    send = frames[-1].send
+                    deps = deps_by_cell.get(stack[-1])
                 else:
                     dep_target = demanded.target
-                    child: RuleKey = (dep_target.id, demanded.key)
-                    self._targets[dep_target.id] = dep_target
-                    self._record_dep(self._stack[-1], child)
+                    dep_key = demanded.key
+                    # ``_UNIT`` is private, so only an unkeyed ``Rule`` is demanded with it.
+                    child: RuleKey = (
+                        dep_target._cell  # type: ignore[missing-attribute]
+                        if dep_key is _UNIT
+                        else (dep_target._id, dep_key)
+                    )
+                    targets[dep_target._id] = dep_target
+                    if deps is None:
+                        deps = deps_by_cell.setdefault(stack[-1], set())
+                    deps.add(child)
 
-                    dep_cached = self._compute_cache.get(child, _MISSING)
+                    dep_cached = cache.get(child, _MISSING)
                     if dep_cached is not _MISSING:
                         to_send = dep_cached
-                    elif child in self._on_stack:
+                    elif child in on_stack:
                         to_send = self._on_cycle(child, demanded.iterate, frames, stack_start)
                         if not frames:
                             break
+                        send = frames[-1].send
+                        deps = deps_by_cell.get(stack[-1])
                     else:
                         if demanded.iterate is not None:
-                            self._pending_spec.setdefault(child, demanded.iterate)
-                        self._push(child, _start(dep_target, demanded.key), frames)
-                        to_send = None
+                            pending_spec.setdefault(child, demanded.iterate)
+                        started = _start(dep_target, dep_key)
+                        if started.__class__ is GeneratorType or isinstance(started, Generator):
+                            stack.append(child)
+                            on_stack.add(child)
+                            frames.append(started)
+                            send = started.send
+                            deps = deps_by_cell.get(child)
+                            to_send = None
+                        else:
+                            # A plain value needs no frame: memoize it directly.
+                            to_send = self._commit(child, started)
         finally:
             for frame in reversed(frames):
                 frame.close()
-            for stale in self._stack[stack_start:]:
-                self._on_stack.discard(stale)
-            del self._stack[stack_start:]
+            for stale in stack[stack_start:]:
+                on_stack.discard(stale)
+            del stack[stack_start:]
 
-        return cast(V, self._compute_cache[cell])
-
-    def _push(self, cell: RuleKey, result: Effect[Any] | Any, frames: list[Effect[Any]]) -> None:
-        self._stack.append(cell)
-        self._on_stack.add(cell)
-        if isinstance(result, Generator):
-            frames.append(result)
-        else:
-            frames.append(_completed(result))
+        return cast(V, cache[cell])
 
     def _on_cycle(
         self,
@@ -650,11 +681,8 @@ class Context:
     def _target_names(self) -> dict[int, str]:
         return {k: v.name for k, v in self._targets.items()}
 
-    def _record_dep(self, consumer: RuleKey, dependency: RuleKey) -> None:
-        self._deps.setdefault(consumer, set()).add(dependency)
-
 
 def _start(target: Target, key: Hashable) -> Effect[Any] | Any:
-    if isinstance(target, Rule):
-        return target.compute()
-    return target.compute(key)
+    if key is _UNIT:
+        return target.compute()  # type: ignore[bad-argument-count]
+    return target.compute(key)  # type: ignore[bad-argument-count]
