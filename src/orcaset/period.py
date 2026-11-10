@@ -35,15 +35,9 @@ class Period(_Period):
                 f"start date ({start.isoformat()}) must be strictly before "
                 f"end date ({end.isoformat()})"
             )
-        return super().__new__(cls, start, end)
+        return tuple.__new__(cls, (start, end))  # type: ignore[bad-specialization]
 
-    def __hash__(self) -> int:
-        return hash((self.start, self.end))
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Period):
-            return NotImplemented
-        return self.start == other.start and self.end == other.end
+    # Hashing and equality are the inherited tuple ones, on ``(start, end)``.
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, Period):
