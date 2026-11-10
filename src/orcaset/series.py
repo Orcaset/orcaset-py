@@ -333,8 +333,16 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
         return decorator
 
 
+class _StructuralFn[V](Fn[V]):
+    """An ``Fn`` that is chain machinery: a cell's value or a chain's tail."""
+
+    _structural = True
+
+
 class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
     """Rule that materializes one unfold node and its deferred tail."""
+
+    _structural = True
 
     def __init__(
         self,
@@ -344,7 +352,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
         step: UnfoldStep[S, K, V],
     ) -> None:
         name = f"{series_name}.cells" if prev_key is None else f"{series_name}.tail@{prev_key}"
-        super().__init__(name, structural=True)
+        super().__init__(name)
         self._series_name = series_name
         self._prev_key = prev_key
         self._state = state
@@ -366,7 +374,7 @@ class _UnfoldRule[S, K: Key, V](Rule[Cons[K, V] | None]):
             )
         return Cons(
             key,
-            Fn(_cell_fn(value), name=f"{self._series_name}@{key}", structural=True),
+            _StructuralFn(_cell_fn(value), name=f"{self._series_name}@{key}"),
             _UnfoldRule(self._series_name, key, next_state, self._unfold_step),
         )
 
@@ -520,7 +528,7 @@ def extend_cells[K: Key, V](
             return node
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
-        return Fn(compute, name=label, structural=True)
+        return _StructuralFn(compute, name=label)
 
     return wrap(None, base)
 
@@ -564,7 +572,7 @@ def concat_cells[J: Key, K: Key, V](
                 return Cons(node.key, node.value, walk(node, remaining, node.tail))
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev.key}"
-        return Fn(compute, name=label, structural=True)
+        return _StructuralFn(compute, name=label)
 
     return walk(None, outer, None)
 
@@ -675,7 +683,7 @@ def clip_dates[V, W](
             return Cons(node.key, node.value, walk(node.key, node.tail))
 
         label = f"{name}.cells" if prev is None else f"{name}.tail@{prev}"
-        return Fn(compute, name=label, structural=True)
+        return _StructuralFn(compute, name=label)
 
     def query(q: date, cells: Chain[date, V]) -> Effect[Maybe[W]]:
         if not inside(q):

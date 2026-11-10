@@ -9,6 +9,11 @@ change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `Fn` no longer takes a `structural` argument. Whether a rule is
+  internal chain machinery is fixed by its class.
+
 ## [0.15.0] - 2026-11-02
 
 ### Changed

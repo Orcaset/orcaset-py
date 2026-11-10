@@ -83,10 +83,11 @@ class _Identity:
     name the first time it is read. Reading a name never evaluates a rule.
     """
 
-    def __init__(self, name: str | None = None, *, structural: bool = False) -> None:
+    _structural = False
+
+    def __init__(self, name: str | None = None) -> None:
         self._name = name
         self._id = next_id()
-        self._structural = structural
 
     @property
     def id(self) -> int:
@@ -237,8 +238,8 @@ def get[V](
 class Rule[V](_Identity, ABC):
     """A single memoized computation (no key)."""
 
-    def __init__(self, name: str | None = None, *, structural: bool = False) -> None:
-        super().__init__(name, structural=structural)
+    def __init__(self, name: str | None = None) -> None:
+        super().__init__(name)
         self._cell: tuple[int, Hashable] = (self._id, _UNIT)
 
     @abstractmethod
@@ -288,14 +289,8 @@ class Fn[V](Rule[V]):
     Without a ``name``, the function's ``__name__`` is used (``Fn#n`` for lambdas).
     """
 
-    def __init__(
-        self,
-        fn: Callable[[], Effect[V] | V],
-        *,
-        name: str | None = None,
-        structural: bool = False,
-    ) -> None:
-        super().__init__(name, structural=structural)
+    def __init__(self, fn: Callable[[], Effect[V] | V], *, name: str | None = None) -> None:
+        super().__init__(name)
         self._fn = fn
 
     def compute(self) -> Effect[V] | V:
