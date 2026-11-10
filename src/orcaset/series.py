@@ -261,7 +261,10 @@ class Series[K: Key, V, W](KeyedRule[K, W]):
             head = yield from get(parts)
             if head is not None and head.key == q:
                 return (yield from get(head.value))
-            return (yield from _as_effect(query(q, parts)))
+            answer = query(q, parts)
+            if _is_effect(answer):
+                return (yield from answer)
+            return answer
 
         return cls(map_cells(owners, value, name=name), compute, name=name)
 
@@ -677,7 +680,10 @@ def clip_dates[V, W](
     def query(q: date, cells: Chain[date, V]) -> Effect[Maybe[W]]:
         if not inside(q):
             return outside
-        return (yield from _as_effect(source._query(q, cells)))
+        answer = source._query(q, cells)
+        if _is_effect(answer):
+            return (yield from answer)
+        return answer
 
     return Series(walk(None, source._cells), query, name=name)
 
