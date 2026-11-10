@@ -237,6 +237,10 @@ def get[V](
 class Rule[V](_Identity, ABC):
     """A single memoized computation (no key)."""
 
+    def __init__(self, name: str | None = None, *, structural: bool = False) -> None:
+        super().__init__(name, structural=structural)
+        self._cell: tuple[int, Hashable] = (self._id, _UNIT)
+
     @abstractmethod
     def compute(self) -> Effect[V] | V:
         """Compute this rule's value.
