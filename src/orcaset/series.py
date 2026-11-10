@@ -6,7 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable, Generator, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Protocol, Self, cast, overload
+from types import GeneratorType
+from typing import Any, Protocol, Self, TypeIs, cast, overload
 
 from orcaset.maybe import Maybe, Na
 from orcaset.period import Period
@@ -474,7 +475,8 @@ def scan_cells[K: Key, A, S, B](
     if isinstance(seed, Thunk):
 
         def head_seed() -> Effect[tuple[Chain[K, A], S]]:
-            return source, (yield from _as_effect(seed.fn()))
+            acc = seed.fn()
+            return source, ((yield from acc) if _is_effect(acc) else acc)
 
         return unfold_cells(seed=Thunk[tuple[Chain[K, A], S]](head_seed), step=step, name=name)
     return unfold_cells(seed=(source, seed), step=step, name=name)
@@ -855,6 +857,11 @@ def _resolve_seed[S](seed: S | Thunk[S]) -> Effect[S]:
     if isinstance(seed, Thunk):
         return (yield from _as_effect(seed.fn()))
     return seed
+
+
+def _is_effect[V](value: Effect[V] | V) -> TypeIs[Effect[V]]:
+    """Whether a callback returned a generator to run rather than a plain value."""
+    return value.__class__ is GeneratorType or isinstance(value, Generator)
 
 
 def _as_effect[V](value: Effect[V] | V) -> Effect[V]:
