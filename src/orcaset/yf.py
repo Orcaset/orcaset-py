@@ -6,11 +6,19 @@ from collections.abc import Callable
 from datetime import date
 from typing import Self
 
-
 ####################
 # Date functions
+_MONTH_DAYS = (0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+
+def _days_in_month(year: int, month: int) -> int:
+    if month == 2 and calendar.isleap(year):
+        return 29
+    return _MONTH_DAYS[month]
+
+
 def is_month_end(dt: date):
-    return dt.day == calendar.monthrange(dt.year, dt.month)[1]
+    return dt.day == _days_in_month(dt.year, dt.month)
 
 
 ####################
@@ -101,11 +109,11 @@ class YF:
             year_month_frac = ((y2 * 360 + m2 * 30) - (y1 * 360 + m1 * 30)) / 360
 
             # year frac of starting month stub in range (if any)
-            start_month_last_day = calendar.monthrange(y1, m1)[1]
+            start_month_last_day = _days_in_month(y1, m1)
             start_stub = (start_month_last_day - d1) / start_month_last_day
 
             # year frac of ending month stub *NOT* in range (if any)
-            end_month_last_day = calendar.monthrange(y2, m2)[1]
+            end_month_last_day = _days_in_month(y2, m2)
             end_stub = (end_month_last_day - d2) / end_month_last_day
 
             return (year_month_frac + (start_stub - end_stub) / 12) * flipped
