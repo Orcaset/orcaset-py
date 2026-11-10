@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Generator, Sequence
-from typing import Any
+from types import GeneratorType
+from typing import Any, TypeIs
 
 from orcaset import maybe
 from orcaset.maybe import Maybe, Na
@@ -24,11 +25,9 @@ from orcaset.series import (
 )
 
 
-def _as_effect[V](value: Effect[V] | V) -> Effect[V]:
-    """Resolve either an effectful or plain callback result."""
-    if isinstance(value, Generator):
-        return (yield from value)
-    return value
+def _is_effect[V](value: Effect[V] | V) -> TypeIs[Effect[V]]:
+    """Whether a callback returned a generator to run rather than a plain value."""
+    return value.__class__ is GeneratorType or isinstance(value, Generator)
 
 
 def map[K: Key, W, T](
@@ -49,11 +48,13 @@ def map[K: Key, W, T](
     name = name if name is not None else derived_name("map", source)
 
     def value_at(key: K) -> Effect[T]:
-        value = yield from get_at(source, key)
-        return (yield from _as_effect(fn(value)))
+        value = fn((yield from get_at(source, key)))
+        if _is_effect(value):
+            return (yield from value)
+        return value
 
     def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
-        return (yield from value_at(q))
+        return value_at(q)
 
     def step(cells: Chain[K, Any]) -> Effect[tuple[K, Thunk[T], Chain[K, Any]] | None]:
         node = yield from get(cells)
@@ -82,10 +83,13 @@ def map2[K: Key, L, R, T](
     def value_at(key: K) -> Effect[T]:
         left_value = yield from get_at(left, key)
         right_value = yield from get_at(right, key)
-        return (yield from _as_effect(fn(left_value, right_value)))
+        value = fn(left_value, right_value)
+        if _is_effect(value):
+            return (yield from value)
+        return value
 
     def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
-        return (yield from value_at(q))
+        return value_at(q)
 
     def cell(key: K) -> Thunk[T]:
         return Thunk(lambda: value_at(key))
@@ -121,10 +125,13 @@ def mapn[K: Key, W, T](
         values: list[W] = []
         for source in sources:
             values.append((yield from get_at(source, key)))
-        return (yield from _as_effect(fn(values)))
+        value = fn(values)
+        if _is_effect(value):
+            return (yield from value)
+        return value
 
     def query(q: K, _cells: Chain[K, T]) -> Effect[T]:
-        return (yield from values_at(q))
+        return values_at(q)
 
     def cell(key: K) -> Thunk[T]:
         return Thunk(lambda: values_at(key))
