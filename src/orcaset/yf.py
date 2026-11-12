@@ -51,9 +51,16 @@ class YF:
     class _Thirty360:
         def __call__(self, dt1: date, dt2: date) -> float:
             """
-            Returns the fraction of a year between `dt1` and `dt2` on 30 / 360 day count basis.
+            Returns the fraction of a year between `dt1` and `dt2` on a 30 / 360 day count basis.
+
+            Follows the US bond basis (30/360 US, SIA) convention, applying these day
+            adjustments in order:
+
+            1. If `dt1` and `dt2` are both the last day of February, `d2` becomes 30.
+            2. If `dt1` is the last day of February, `d1` becomes 30.
+            3. If `d2` is 31 and `d1` is 30 or 31, `d2` becomes 30.
+            4. If `d1` is 31, `d1` becomes 30.
             """
-            # Based on this answer https://stackoverflow.com/a/62232820/18582661
             # swap so dt1 is always before dt2
             flipped = 1
             if dt1 > dt2:
@@ -65,11 +72,11 @@ class YF:
 
             if (m2 == 2 and is_month_end(dt2)) and (m1 == 2 and is_month_end(dt1)):
                 d2 = 30
+            if m1 == 2 and is_month_end(dt1):
+                d1 = 30
             if d2 == 31 and d1 >= 30:
                 d2 = 30
             if d1 == 31:
-                d1 = 30
-            if m1 == 2 and is_month_end(dt1):
                 d1 = 30
 
             days = (d2 + m2 * 30 + y2 * 360) - (d1 + m1 * 30 + y1 * 360)
