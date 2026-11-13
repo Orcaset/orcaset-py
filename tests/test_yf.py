@@ -35,12 +35,12 @@ from orcaset import YF
         (date(2026, 12, 31), date(2027, 12, 31), 360),
     ],
 )
-def test_thirty360_us_bond_basis(dt1: date, dt2: date, days: int):
+def test_thirty360_us(dt1: date, dt2: date, days: int):
     assert YF.thirty360(dt1, dt2) * 360 == pytest.approx(days)
     assert YF.thirty360(dt2, dt1) * 360 == pytest.approx(-days)
 
 
-# Under US bond basis, month-end periods don't sum to 360: Jan 31 -> end of February
+# Under 30/360 US, month-end periods don't sum to 360: Jan 31 -> end of February
 # counts actual February days, and end of February -> Mar 31 counts 30.
 @pytest.mark.parametrize(("year", "days"), [(2027, 358), (2028, 359)])
 def test_thirty360_month_end_periods(year: int, days: int):

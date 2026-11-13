@@ -53,7 +53,7 @@ class YF:
             """
             Returns the fraction of a year between `dt1` and `dt2` on a 30 / 360 day count basis.
 
-            Follows the US bond basis (30/360 US, SIA) convention, applying these day
+            Follows the 30/360 US (SIA) convention, applying these day
             adjustments in order:
 
             1. If `dt1` and `dt2` are both the last day of February, `d2` becomes 30.
